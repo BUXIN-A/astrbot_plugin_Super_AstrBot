@@ -1,0 +1,11 @@
+# 统一换行符：避免在 Windows 上产生 CRLF/LF 噪声提交
+* text=auto eol=lf
+
+# 二进制资源按原样处理
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

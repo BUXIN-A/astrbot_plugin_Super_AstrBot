@@ -1,0 +1,35 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- 虚拟环境 ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- 测试与缓存 ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.log
+
+# --- 本地敏感配置 ---
+.env
+.env.*
+*.local.json
+
+# --- 运行时数据（持久化数据一律写 AstrBot data 目录，插件目录内不应出现）---
+data/
+*.db
+*.db-wal
+*.db-shm

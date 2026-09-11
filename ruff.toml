@@ -1,0 +1,23 @@
+# Ruff 配置（遵循 AstrBot 开发原则：提交前必须 ruff 检查与格式化）
+#
+# 目标：以「低噪声、高价值」为原则选取规则集，避免为了迎合风格规则而扭曲代码。
+
+line-length = 100
+target-version = "py310"
+
+[lint]
+# E4/E7/E9 + F 为 pyflakes/pycodestyle 核心；I 为 import 排序；W 为基本告警。
+select = ["E4", "E7", "E9", "F", "W", "I"]
+ignore = [
+    "E731",   # 测试中 lambda 赋值可读性更好
+    "E402",   # main.py 需要在 sys.path 处理后导入
+]
+
+[lint.per-file-ignores]
+# 测试允许更宽松的写法（长断言、私有属性访问等）
+"tests/*" = ["E501"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

@@ -1,0 +1,79 @@
+"""把 ``AstrMessageEvent`` 转换为纯数据视图。
+
+业务层只持有 ``EventView``，避免在协程之外持有框架对象（也便于单测构造）。
+所有属性访问都做防御式处理：任何一个可选 API 缺失都不应让整条链路失败。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .protocols import EventView
+
+
+def _call(obj: Any, name: str, default: Any = None) -> Any:
+    """安全调用无参方法/读取属性。"""
+    attr = getattr(obj, name, None)
+    if attr is None:
+        return default
+    if callable(attr):
+        try:
+            return attr()
+        except Exception:  # noqa: BLE001 - 单个可选 API 失败不应中断
+            return default
+    return attr
+
+
+def to_event_view(event: Any, *, now: float | None = None) -> EventView:
+    """从事件对象提取视图。
+
+    Args:
+        event: ``AstrMessageEvent`` 实例。
+        now: 用于缺省时间戳注入（便于测试确定性）。
+    """
+    umo = str(_call(event, "unified_msg_origin", "") or "")
+    is_private = bool(_call(event, "is_private_chat", False))
+    group_id = str(_call(event, "get_group_id", "") or "")
+    # 部分适配器在私聊下也可能返回空 group_id，这里以 is_private_chat 为准。
+    is_group = (not is_private) and bool(umo) or bool(group_id)
+
+    timestamp = getattr(event, "created_at", None)
+    if not isinstance(timestamp, (int, float)) or timestamp <= 0:
+        timestamp = now if now is not None else 0.0
+
+    return EventView(
+        umo=umo,
+        platform=str(_call(event, "get_platform_name", "") or ""),
+        session_id=str(_call(event, "get_session_id", "") or ""),
+        is_group=is_group,
+        group_id=group_id,
+        sender_id=str(_call(event, "get_sender_id", "") or ""),
+        sender_name=str(_call(event, "get_sender_name", "") or ""),
+        text=str(_call(event, "get_message_str", "") or ""),
+        timestamp=float(timestamp),
+        is_admin=bool(_call(event, "is_admin", False)),
+        stopped=bool(_call(event, "is_stopped", False)),
+    )
+
+
+def is_event_stopped(event: Any) -> bool:
+    """判断事件是否已被 ``/stop``（用于循环控制的停止感知）。"""
+    return bool(_call(event, "is_stopped", False))
+
+
+def extract_result_text(event: Any) -> str:
+    """提取事件当前的待发送文本（用于记录 Bot 回复作为反思原料）。
+
+    注意：AstrBot 的 ``RespondStage`` 会在触发 ``OnAfterMessageSentEvent`` **之后**
+    才 ``clear_result()``，因此在该钩子里仍能拿到结果。
+    """
+    result = _call(event, "get_result", None)
+    if result is None:
+        return ""
+    getter = getattr(result, "get_plain_text", None)
+    if callable(getter):
+        try:
+            return str(getter() or "")
+        except Exception:  # noqa: BLE001
+            return ""
+    return ""
