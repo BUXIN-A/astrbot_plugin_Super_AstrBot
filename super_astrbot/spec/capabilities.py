@@ -141,6 +141,18 @@ CAPABILITIES: tuple[Capability, ...] = (
         depends_on=("journal.enabled", "reflection.enabled"),
         description="每周固定时间阅读本周周记并产出洞察。",
     ),
+    Capability(
+        key="agent.memory_tools",
+        title="Agent 记忆工具",
+        domain="agent",
+        default=False,
+        depends_on=("memory.enabled",),
+        hot_reloadable=False,
+        description=(
+            "向模型暴露「记忆检索 / 记忆写入」函数工具，让 Bot 能主动回忆与记录。"
+            "会改变所有会话的模型行为，默认关闭；开启后需重载插件生效。"
+        ),
+    ),
 )
 
 _BY_KEY: dict[str, Capability] = {item.key: item for item in CAPABILITIES}

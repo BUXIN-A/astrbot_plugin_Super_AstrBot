@@ -17,18 +17,22 @@ from typing import Any, Mapping
 
 from . import __version__
 from .harness import (
+    MEMORY_TOOL_NAMES,
     Harness,
     clear_options,
     compat,
     create_harness,
     inject_string_options,
+    register_memory_tools,
     to_event_view,
+    unregister_tools,
 )
 from .harness.protocols import EventView
 from .journal import JournalConfig, JournalService
 from .learning import ReflectionConfig, ReflectionService
 from .loop import ConcurrencyGate, LLMBudget, Scheduler, TaskScope
 from .memory import (
+    AgentMemoryBackend,
     HybridRetriever,
     KeywordRetriever,
     MemoryConfig,
@@ -184,14 +188,17 @@ class SuperAstrBotApp:
 
         self._setup_services()
         await self._start_background()
+        self._setup_agent_tools()
 
         self._ready = True
         self._report_startup()
 
     async def shutdown(self) -> None:
-        """收敛全部资源：调度 → 任务 → 数据库。"""
+        """收敛全部资源：Agent 工具 → 调度 → 任务 → 数据库。"""
         self._ready = False
         self._started = False
+
+        self._teardown_agent_tools()
 
         if self._scheduler is not None:
             try:
@@ -423,7 +430,7 @@ class SuperAstrBotApp:
             return {
                 "ok": False,
                 "needs_reload": True,
-                "message": f"「{cap.title}」需要重载插件后生效，已记录到配置。",
+                "message": f"「{cap.title}」需要重载插件才能生效：请在插件配置页修改后重载。",
             }
 
         if enabled:
@@ -665,6 +672,42 @@ class SuperAstrBotApp:
         # 5) 配置页动态下拉：把真实的嵌入模型列表注入到 schema
         if self._enabled("memory.enabled"):
             self._scope.spawn(self._schema_sync_loop(), name="schema-sync")
+
+    # ------------------------------------------------------------------ #
+    # Agent 函数工具
+    # ------------------------------------------------------------------ #
+
+    def _setup_agent_tools(self) -> int:
+        """把记忆函数工具注册到框架；框架不支持时降级为「不注册」。"""
+        if not self._enabled("agent.memory_tools"):
+            return 0
+        if self._memory_service is None:
+            self._warn("记忆服务未就绪，跳过 Agent 记忆工具注册。")
+            return 0
+
+        backend = AgentMemoryBackend(
+            service=self._memory_service, config=self._config, logger=self._logger
+        )
+        try:
+            registered = register_memory_tools(self._context, backend, logger=self._logger)
+        except Exception as exc:  # noqa: BLE001 - 注册失败不影响核心能力
+            self._warn("注册 Agent 记忆工具失败：%s", safe_detail(exc))
+            return 0
+        if not registered:
+            self._warn(
+                "Agent 记忆工具未注册（框架未提供 FunctionTool 或注册接口不可用），"
+                "记忆功能不受影响。"
+            )
+            return 0
+        self._info("Agent 记忆工具已注册：%s", "、".join(MEMORY_TOOL_NAMES))
+        return registered
+
+    def _teardown_agent_tools(self) -> None:
+        """注销本插件注册的函数工具，避免插件卸载/重载后残留。"""
+        try:
+            unregister_tools(self._context, logger=self._logger)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("注销 Agent 记忆工具失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
     # 配置页动态选项

@@ -416,6 +416,29 @@ def test_feature_catalog_coerces_string_bool(tmp_path: Path) -> None:
     assert catalog["memory.enabled"]["configured"] is False
 
 
+def test_app_agent_tools_degrade_without_framework(tmp_path: Path) -> None:
+    """开启 Agent 记忆工具但框架不支持时，插件仍须正常就绪（只告警、不报错）。"""
+
+    async def _run() -> tuple[bool, int, bool]:
+        app = SuperAstrBotApp(
+            star=FakeStar(),
+            context=FakeContext(),
+            config={"agent": {"memory_tools": True}},
+            data_dir=tmp_path,
+        )
+        await app.start()
+        ready = app.ready
+        # 本地无 AstrBot → 拿不到 FunctionTool，注册数应为 0 且不影响就绪
+        registered = app._setup_agent_tools()
+        await app.shutdown()
+        return ready, registered, bool(app.capabilities["agent.memory_tools"])
+
+    ready, registered, capability_on = asyncio.run(_run())
+    assert ready is True
+    assert registered == 0
+    assert capability_on is True
+
+
 class MutableEmbeddingContext(FakeContext):
     """可动态增减嵌入提供商的 Context 替身（模拟 ProviderManager 后初始化）。"""
 

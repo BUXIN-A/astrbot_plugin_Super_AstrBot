@@ -51,6 +51,8 @@ SOURCE_REFLECTION = "reflection"
 SOURCE_WEEKLY = "weekly_reflection"
 SOURCE_JOURNAL = "journal"
 SOURCE_MANUAL = "manual"
+SOURCE_AGENT = "agent"
+"""由 Agent 函数工具写入。"""
 SOURCE_IMPORT = "import"
 
 # 来源 → 面板显示名
@@ -60,6 +62,7 @@ SOURCE_LABELS = {
     SOURCE_WEEKLY: "周度洞察",
     SOURCE_JOURNAL: "周记",
     SOURCE_MANUAL: "手动写入",
+    SOURCE_AGENT: "Agent 写入",
     SOURCE_IMPORT: "导入",
 }
 

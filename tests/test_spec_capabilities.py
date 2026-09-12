@@ -133,3 +133,18 @@ def test_config_value_helpers() -> None:
     assert as_float(None, 2.5) == 2.5
     assert as_str(None, "x") == "x"
     assert as_str(3, "") == "3"
+
+
+def test_agent_tools_capability_requires_memory() -> None:
+    """Agent 记忆工具默认关闭、依赖记忆能力，且需要重载才能注册/注销。"""
+    item = capability("agent.memory_tools")
+    assert item.default is False
+    assert item.domain == "agent"
+    assert item.depends_on == ("memory.enabled",)
+    assert item.hot_reloadable is False
+
+    disabled = resolve_capabilities({"memory": {"enabled": False}})
+    assert disabled["agent.memory_tools"] is False
+
+    enabled = resolve_capabilities({"agent": {"memory_tools": True}})
+    assert enabled["agent.memory_tools"] is True

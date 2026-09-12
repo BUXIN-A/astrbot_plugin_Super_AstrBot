@@ -7,6 +7,7 @@
 - ``MemoryDraft`` / ``MemoryItem``  数据模型
 """
 
+from .agent_tools import AgentMemoryBackend
 from .config import (
     INJECTION_DISABLED,
     INJECTION_EXTRA,
@@ -22,6 +23,7 @@ from .models import (
     KIND_INSIGHT,
     KIND_JOURNAL,
     KIND_PREFERENCE,
+    SOURCE_AGENT,
     SOURCE_CAPTURE,
     SOURCE_JOURNAL,
     SOURCE_MANUAL,
@@ -46,6 +48,7 @@ from .service import MemoryService
 
 __all__ = [
     "MemoryService",
+    "AgentMemoryBackend",
     "MemoryConfig",
     "MemoryLifecycle",
     "MemoryDraft",
@@ -70,6 +73,7 @@ __all__ = [
     "SOURCE_REFLECTION",
     "SOURCE_WEEKLY",
     "SOURCE_JOURNAL",
+    "SOURCE_AGENT",
     "SOURCE_MANUAL",
     "STATUS_ACTIVE",
     "STATUS_BUFFERED",

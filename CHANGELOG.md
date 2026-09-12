@@ -2,6 +2,39 @@
 
 本文件记录 Super_AstrBot 的版本变更。版本号以 `metadata.yaml` 为唯一来源。
 
+## [0.4.0] - 未发布
+
+新增「Agent 函数工具」（路线 P1.5）：让 Bot 主动读写记忆。**默认关闭**。
+
+### 新增
+
+- **Agent 记忆函数工具**（默认关闭，需重载插件生效）
+  - `sab_memory_search`：检索长期记忆，命中结果按既有格式化规则回给模型；无命中给出明确提示。
+  - `sab_memory_write`：写入一条长期记忆，来源标记为 `agent`（面板显示「Agent 写入」），
+    与自动采集、反思产出可区分。
+  - 分层：`harness/tools.py` 只做接线（构造 `FunctionTool`、注册/注销），业务规则在
+    `memory/agent_tools.py: AgentMemoryBackend`，两者以 `MemoryToolBackend` 协议解耦。
+  - 硬性约束：写入门槛与 `/sab remember` 一致（`basic.admin_only_commands` 开启时仅管理员）；
+    内容上限 400 字；`kind` 白名单；`importance` 钳制到 0.1~1.0；
+    工具内异常一律吞掉并返回可读文本；检索命中累计 `access_count`（与注入路径一致）。
+  - 降级：框架未提供 `FunctionTool` 或注册接口不可用时跳过注册并告警一次，其它能力不受影响。
+  - 控制台「功能」页新增 `agent` 分组，该开关标注「需重载」。
+
+### 兼容性说明
+
+- 工具以 `FunctionTool(handler=...)` 构造：AstrBot 执行器优先调用 `handler`，其次子类
+  `call()`，最后回退旧版 `run()`，因此同一份实现覆盖新旧几代执行路径。
+- 注册优先走官方 `context.add_llm_tools(*tools)`，不可用时退化为写入
+  `FunctionToolManager.func_list`；注册前按工具名去重，重载不会堆积同名工具。
+- 刻意不做热切换（不调用 `deactivate_llm_tool`）：运行期停用在框架侧语义不稳定，
+  一旦失效会出现「界面显示已关闭、模型仍能看到工具」的静默不一致。
+
+### 测试
+
+通过用例 142 项（v0.3.1 为 127）。新增 `tests/test_agent_tools.py`：工具 schema 构造、
+参数规整（字符串数字与非法值）、工具内异常兜底、注册/去重/注销与降级、写入的权限门槛、
+内容与类型校验、检索命中累计访问次数。
+
 ## [0.3.1] - 未发布
 
 全量代码审查与加固：修复一个会造成数据丢失的作用域缺陷，并系统性消除存储层并发、

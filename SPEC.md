@@ -80,6 +80,7 @@
 | `reflection.enabled` | 自我学习 | on | `memory.enabled` | ✅ | 反思式自我学习 |
 | `journal.enabled` | 周记 | on | `basic.enabled` | ✅ | 周记现实记忆 |
 | `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
+| `agent.memory_tools` | Agent 工具 | **off** | `memory.enabled` | ❌ | 向模型暴露记忆检索/写入函数工具（见第 9 节） |
 
 **依赖解析规则**：某能力的前置不满足时，该能力视为关闭，并记录一条 `DegradedReason`（只告警一次）。
 
@@ -101,11 +102,12 @@
 class Host(Protocol):
     def data_dir(self) -> Path: ...
     def app_config(self) -> Mapping[str, Any]: ...  # 插件配置
-    def log(self, name: str) -> LoggerLike: ...
+    def log(self) -> LoggerLike: ...
     def now(self) -> float: ...  # Unix 秒
     async def kv_get(self, key, default=None): ...
     async def kv_put(self, key, value) -> None: ...
     async def kv_delete(self, key) -> None: ...
+    async def send_message(self, umo: str, text: str) -> bool: ...  # 失败返回 False
 
 
 class LlmGateway(Protocol):
@@ -122,8 +124,22 @@ class LlmGateway(Protocol):
     ) -> LlmResult: ...  # 失败抛 LlmError；预算耗尽抛 BudgetExhausted
 
 
-class MemoryInjector(Protocol):
-    def inject(self, request: Any, blocks: Sequence[str]) -> bool: ...
+class Injector(Protocol):
+    def compose(self, blocks: Sequence[str]) -> str: ...
+    def inject(
+        self, target: Any, blocks: Sequence[str], *, prefer: str = "auto"
+    ) -> InjectResult: ...
+    def clear(self, target: Any) -> int: ...
+
+
+class MemoryToolBackend(Protocol):
+    # Agent 函数工具的业务回调（见第 9 节）；harness 只依赖本协议
+    async def memory_search(
+        self, *, view: EventView, query: str, limit: int | None = None
+    ) -> str: ...
+    async def memory_write(
+        self, *, view: EventView, content: str, kind: str = "fact", importance: float = 0.6
+    ) -> str: ...
 ```
 
 ### 4.2 事件视图（`harness/protocols.py: EventView`）
@@ -248,7 +264,44 @@ class EventView:
 
 ---
 
-## 9. 可观测性与运维
+## 9. Agent 函数工具规格
+
+对应路线 P1.5：把记忆能力以**函数工具**形式暴露给模型，实现「Bot 主动读写记忆」。
+
+### 9.1 工具清单
+
+| 工具名 | 作用 | 参数 | 返回 |
+|---|---|---|---|
+| `sab_memory_search` | 检索长期记忆 | `query`（必填）、`limit`（1–20，可选） | 格式化后的记忆列表；无命中返回明确提示 |
+| `sab_memory_write` | 写入一条长期记忆 | `content`（必填，≤400 字）、`kind`（fact / insight / preference）、`importance`（0.1–1.0） | 成功回执（含记忆 ID）或可读的拒绝原因 |
+
+工具名必须固定：`ToolSet.openai_schema()` 按名字排序生成定义，改名会破坏模型侧前缀缓存。
+
+### 9.2 分层与依赖
+
+- `harness/tools.py` 只做**接线**（构造 `FunctionTool`、注册 / 注销），不实现业务规则；
+- 业务规则由 `memory/agent_tools.py: AgentMemoryBackend` 实现，经 `MemoryToolBackend`
+  协议与 harness 解耦（harness 不 import `memory`）；
+- 工具用 `FunctionTool(handler=...)` 构造：AstrBot 执行器优先调用 `handler`，
+  其次才是子类的 `call()`，最后才回退旧版 `run()`；`handler` 是这几代执行路径的最小公约数。
+
+### 9.3 硬性约束
+
+1. **默认关闭**：开启会改变所有会话的模型行为并占用上下文，属「非侵入式增强」的例外，
+   必须由用户显式开启（`agent.memory_tools`）。
+2. **需要重载**：`hot_reloadable=False`。运行期增删已注册工具在框架侧没有稳定 API，
+   故不做热切换，避免「界面显示已关闭、模型仍能看到工具」的静默不一致。
+3. **写入门槛与命令一致**：`basic.admin_only_commands` 开启时仅管理员可通过工具写入，
+   防止普通成员绕过 `/sab remember` 的限制。
+4. **失败不打断对话**：工具内任何异常都被吞掉并返回可读文本。
+5. **读取即访问**：检索命中的记忆与注入路径一致地累计 `access_count`，
+   否则高频被工具使用的记忆会因计数为 0 而被衰减归档。
+6. **来源可追溯**：`memory_write` 写入的记忆 `source='agent'`，与自动采集 / 反思区分。
+7. 框架未提供 `FunctionTool` 或注册接口时，降级为「不注册工具」并告警一次，不影响其它能力。
+
+---
+
+## 10. 可观测性与运维
 
 - 日志统一经 `Host.log()`；关键路径分级，`debug_log` 开启才输出检索打分细节。
 - 命令采用**单一顶层入口** `sab`（别名 `superastrbot`），子命令由
@@ -274,7 +327,7 @@ class EventView:
 
 ---
 
-## 10. 借鉴来源与合规
+## 11. 借鉴来源与合规
 
 本插件的设计思路来源于仓库上一级 `docs/Super_AstrBot_项目学习分析文档.md` 所分析的开源项目，**仅借鉴设计思路与公开 API 用法，不复制其源码**。若后续引入任何第三方代码或资源，必须：
 
@@ -293,7 +346,7 @@ class EventView:
 
 ---
 
-## 11. 验收标准（MVP）
+## 12. 验收标准（MVP）
 
 1. 插件可在 AstrBot ≥ 4.24.2 正常加载、卸载、重载，无残留任务与残留 handler。
 2. 未配置 Embedding Provider 时插件正常可用（自动降级），配置后自动启用向量路。
@@ -301,12 +354,14 @@ class EventView:
 4. 反思在满足条件时触发，产出写入记忆且可在 `/sab search` 中检索到。
 5. 周记可写入、可检索、可被周度反思消费，且周度任务当日只执行一次。
 6. 所有外部调用失败均降级为「不影响正常对话」，并输出一次告警。
-7. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等。
-8. `ruff check .` 与 `ruff format .` 通过。
+7. Agent 记忆工具：开启后可被模型调用并读写当前会话记忆，写入的记忆 `source='agent'`；
+   默认关闭或框架不支持时不注册工具，插件仍正常就绪。
+8. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等、Agent 工具。
+9. `ruff check .` 与 `ruff format .` 通过。
 
 ---
 
-## 12. 迭代路线
+## 13. 迭代路线
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -315,12 +370,12 @@ class EventView:
 | P1.6 | 修复指令冲突面/嵌入模型下拉/面板加载失败；控制台重建为六分区 | ✅ 已完成（v0.2.0） |
 | P1.7 | 功能管理界面（能力热开关）；修复调度器误报与向量能力永久不可用 | ✅ 已完成（v0.3.0） |
 | P1.8 | 全量代码审查：作用域越界删除、存储串行化、LIKE 转义、向量作用域扫描、写放大与死代码清理 | ✅ 已完成（v0.3.1） |
-| P1.5 | Agent 函数工具（`memory_search` / `memory_write`） | 待做（近期） |
+| P1.5 | Agent 函数工具（`sab_memory_search` / `sab_memory_write`） | ✅ 已完成（v0.4.0） |
 | P2 | 上下文治理（token 估算 / 工具与图片历史占位 / 摘要水位线） | 规划 |
 | P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | 规划 |
 | P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | 规划 |
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | 规划 |
 
-**验收结果**：`pytest tests -q` 127 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
-`node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换
-与向量路启用仍待服务器实测（本地无运行实例）。
+**验收结果**：`pytest tests -q` 142 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+`node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换、
+向量路启用与 Agent 工具调用仍待服务器实测（本地无运行实例）。

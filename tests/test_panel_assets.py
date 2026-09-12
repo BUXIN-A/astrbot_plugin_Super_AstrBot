@@ -121,3 +121,13 @@ def test_feature_toggle_ui_present() -> None:
     assert "loadFeatures" in js
     assert "handleFeatureToggle" in js
     assert "feature-toggle" in js
+
+
+def test_every_capability_domain_has_frontend_title() -> None:
+    """功能面板按 domain 分组渲染；注册表新增域时前端必须同步标题映射。"""
+    from super_astrbot.spec.capabilities import CAPABILITIES
+
+    js = _read(PAGES / "app.js")
+    for domain in {item.domain for item in CAPABILITIES}:
+        assert f'{domain}: "domain.' in js, f"前端缺少功能域 {domain} 的标题映射"
+        assert f'"domain.{domain}"' in js, f"前端缺少功能域 {domain} 的中文文案"

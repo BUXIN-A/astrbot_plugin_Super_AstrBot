@@ -34,6 +34,7 @@ const LOCAL_I18N = {
     "domain.memory": "记忆",
     "domain.reflection": "自我学习",
     "domain.journal": "周记",
+    "domain.agent": "Agent 工具",
     "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
@@ -102,6 +103,7 @@ const LOCAL_I18N = {
     "domain.memory": "Memory",
     "domain.reflection": "Self-learning",
     "domain.journal": "Journal",
+    "domain.agent": "Agent tools",
     "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
@@ -444,6 +446,7 @@ const DOMAIN_TITLES = {
   memory: "domain.memory",
   reflection: "domain.reflection",
   journal: "domain.journal",
+  agent: "domain.agent",
 };
 
 function featureStatusPill(item) {

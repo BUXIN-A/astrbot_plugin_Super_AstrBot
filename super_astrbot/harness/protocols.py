@@ -243,3 +243,30 @@ class Injector(Protocol):
 
     def clear(self, target: Any) -> int:
         """清理本插件历史注入的块，返回清理数量。"""
+
+
+# --------------------------------------------------------------------------- #
+# Agent 函数工具
+# --------------------------------------------------------------------------- #
+
+
+@runtime_checkable
+class MemoryToolBackend(Protocol):
+    """Agent 记忆工具的业务回调。
+
+    harness 只负责把工具接线到框架；检索/写入的规则与校验由 ``memory`` 域实现。
+    因此这里只声明「一次工具调用需要什么、产出什么」，不引入任何业务类型。
+    """
+
+    async def memory_search(self, *, view: EventView, query: str, limit: int | None = None) -> str:
+        """检索长期记忆，返回可直接回给模型的文本。"""
+
+    async def memory_write(
+        self,
+        *,
+        view: EventView,
+        content: str,
+        kind: str = "fact",
+        importance: float = 0.6,
+    ) -> str:
+        """写入一条长期记忆；参数不合法或权限不足时返回可读的说明文本。"""

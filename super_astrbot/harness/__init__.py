@@ -30,10 +30,20 @@ from .protocols import (
     LlmGateway,
     LlmResult,
     LoggerLike,
+    MemoryToolBackend,
     ProviderInfo,
     TokenUsage,
 )
 from .schema_options import clear_options, inject_string_options
+from .tools import (
+    MEMORY_SEARCH_TOOL,
+    MEMORY_TOOL_NAMES,
+    MEMORY_WRITE_TOOL,
+    create_memory_tools,
+    register_memory_tools,
+    register_tools,
+    unregister_tools,
+)
 
 __all__ = [
     "Harness",
@@ -44,6 +54,13 @@ __all__ = [
     "AstrBotInjector",
     "MEMORY_BLOCK_START",
     "MEMORY_BLOCK_END",
+    "MEMORY_SEARCH_TOOL",
+    "MEMORY_WRITE_TOOL",
+    "MEMORY_TOOL_NAMES",
+    "create_memory_tools",
+    "register_memory_tools",
+    "register_tools",
+    "unregister_tools",
     "to_event_view",
     "is_event_stopped",
     "compat",
@@ -54,6 +71,7 @@ __all__ = [
     "EmbeddingGateway",
     "Injector",
     "BudgetGuard",
+    "MemoryToolBackend",
     "LoggerLike",
     "EventView",
     "ChatMessage",

@@ -256,6 +256,19 @@
       }
     }
   },
+  "agent": {
+    "description": "Agent 工具",
+    "type": "object",
+    "hint": "把插件能力暴露为模型的函数工具，让 Bot 主动调用（默认关闭）",
+    "items": {
+      "memory_tools": {
+        "description": "启用记忆函数工具",
+        "type": "bool",
+        "default": false,
+        "hint": "向模型提供「记忆检索 / 记忆写入」两个工具。会改变所有会话的模型行为并占用少量上下文，建议先在小范围会话验证效果；修改后需重载插件生效。"
+      }
+    }
+  },
   "runtime": {
     "description": "运行与性能",
     "type": "object",
