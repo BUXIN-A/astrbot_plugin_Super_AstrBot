@@ -2,6 +2,62 @@
 
 本文件记录 Super_AstrBot 的版本变更。版本号以 `metadata.yaml` 为唯一来源。
 
+## [0.3.1] - 未发布
+
+全量代码审查与加固：修复一个会造成数据丢失的作用域缺陷，并系统性消除存储层并发、
+检索正确性、写放大与死代码问题。
+
+### 修复
+
+- **重置会话会连带删除全局记忆**（严重）
+  `/sab reset confirm` 经 `MemoryService.reset_scope`，其中误用 `retrieval_scopes()` 取作用域集合；
+  该函数的语义是「检索并集」，总会附加全局作用域，导致一次会话级重置会不可逆地清空全局共享记忆。
+  现改为只作用于传入的单一作用域，并补回归测试锁定。
+
+- **数据库读操作未纳入串行化锁**
+  `Database.query/query_one/scalar` 绕过 `asyncio.Lock`，与 `transaction()`（持锁 + `BEGIN IMMEDIATE`）
+  并发时可能读到未提交的中间态，也违背模块自述的不变量。现读路径同样持锁。
+
+- **LIKE 查询未转义通配符**
+  面板关键词与 FTS 降级路径直接把 `%{term}%` 拼进 `LIKE`，用户输入中的 `%` / `_`
+  会被当作通配符放大匹配范围。现统一转义并声明 `ESCAPE`。
+
+- **向量检索的作用域过滤时机错误**
+  原先先从全库按 `updated_at` 取 `vector_max_scan` 条向量、再在应用层按作用域过滤；
+  其它作用域的新向量会挤占扫描额度，导致当前作用域的向量可能一条都取不到（向量路静默失效）。
+  现改为在 SQL 层与 `memories` 联结后按作用域过滤。
+
+- **聊天记录类型判定在 API 缺失时可能误判**
+  `is_group` 原先依赖 `(not is_private) and umo or group_id` 的运算优先级；当 `is_private_chat`
+  不可用时会把私聊判成群聊。现以该 API 为唯一依据，缺失时才退化为按 `group_id` 判断。
+
+- 面板「已配置」状态改用与能力解析一致的布尔转换，配置写成字符串 `"false"` 时不再误显示为已开启。
+- `AstrBotInjector` 协议签名补齐 `prefer` 参数，与实现对齐。
+- 框架符号解析失败时保留已读到的版本号，避免诊断信息退化为 `unknown`。
+
+### 优化
+
+- **消除写放大**：对话缓冲的「裁剪 + 过期清理」由每条消息两次 DELETE 改为按写入条数节流；
+  批量归档/遗忘的索引与向量删除由 `2N` 次单条 SQL 改为 `IN` 批量删除。
+- **配置读取去重**：`as_bool` / `as_int` / `as_float` / `as_str` 收敛到 `spec/capabilities.py`，
+  删除 memory / learning / journal 三处重复实现，保证同一份 schema 在各域的边界语义一致。
+- **死代码清理**：移除未使用的 `MutableFlag`、`unwrap`、`VectorRetriever._log_debug`、
+  `MemoryRepository.iter_active`、`decode_tags`/`coerce_tags`，以及 `update_fields` 中不可达的 `tags` 分支。
+- 嵌入能力探测复用已装配的 harness 网关，避免探测实例与实际检索实例结论分叉。
+- `MemoryItem.from_row` 只取一次 `sqlite3.Row.keys()`；前端 `navigate()` 缩进统一；
+  面板读取私有点改为走 `MemoryService` 的公开方法。
+
+### 注释
+
+- 清理与实现矛盾或叙述开发史的注释：`TaskScope` 用法示例改为 `is not ABANDONED`、
+  jieba 分词模式说明改为「精确模式」、移除对已不存在模块的引用。
+
+### 测试
+
+通过用例 127 项（v0.3.0 为 119）。新增覆盖：重置不越界删除全局记忆、LIKE 通配符转义、
+向量按作用域扫描、遗忘同时清理索引与向量、配置值转换语义、字符串布尔的能力状态、
+`is_group` 判定优先级与降级。
+
 ## [0.3.0] - 未发布
 
 新增「功能管理界面」；并修复服务器日志与面板暴露的两个真实缺陷。

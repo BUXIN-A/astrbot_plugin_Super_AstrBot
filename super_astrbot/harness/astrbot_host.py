@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -85,8 +86,6 @@ class AstrBotHost:
         return self._logger
 
     def now(self) -> float:
-        import time
-
         return time.time()
 
     # ------------------------------------------------------------------ #

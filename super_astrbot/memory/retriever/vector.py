@@ -6,7 +6,8 @@
   存在签名不一致的历史包袱：``retrieve(k=...)`` vs ``retrieve(top_k=...)``，
   直接依赖容易踩坑）；
 - 个人机器人规模（数千条记忆）下，纯 Python 余弦完全够用；
-- 扫描条数由 ``vector_max_scan`` 限制，超限时只扫描最近的记忆，保证主流程延迟可控。
+- 扫描条数由 ``vector_max_scan`` 限制，且**在 SQL 层就按作用域过滤**，
+  保证额度只花在当前可见的记忆上。
 
 Embedding 不可用时本路直接返回空，融合层会自然地只用关键词路的结果。
 """
@@ -18,7 +19,7 @@ from typing import Sequence
 
 from ...harness.protocols import EmbeddingGateway
 from ...spec.scopes import MemoryScope
-from ...storage import MemoryRepository, VectorRepository
+from ...storage import VectorRepository
 from .base import Candidate
 
 
@@ -47,16 +48,12 @@ class VectorRetriever:
         self,
         embedding: EmbeddingGateway,
         vectors: VectorRepository,
-        memories: MemoryRepository,
         *,
         max_scan: int = 5000,
-        logger=None,
     ) -> None:
         self._embedding = embedding
         self._vectors = vectors
-        self._memories = memories
         self._max_scan = max(100, int(max_scan or 5000))
-        self._logger = logger
 
     async def search(
         self,
@@ -73,19 +70,13 @@ class VectorRetriever:
             return []
 
         fingerprint = self._embedding.fingerprint()
-        rows = await self._vectors.load(fingerprint, limit=self._max_scan)
+        # 按作用域取向量：过滤在 SQL 层完成，避免其它作用域的向量挤占扫描额度。
+        rows = await self._vectors.load_scoped(fingerprint, scopes, limit=self._max_scan)
         if not rows:
-            return []
-
-        allowed_rows = await self._memories.iter_active(scopes, limit=self._max_scan)
-        allowed = {int(row["id"]) for row in allowed_rows}
-        if not allowed:
             return []
 
         scored: list[tuple[int, float]] = []
         for memory_id, dim, blob in rows:
-            if memory_id not in allowed:
-                continue
             vector = VectorRepository.decode(blob, dim)
             if not vector:
                 continue
@@ -105,7 +96,3 @@ class VectorRetriever:
             )
             for index, (memory_id, similarity) in enumerate(selected)
         ]
-
-    def _log_debug(self, message: str, *args) -> None:
-        if self._logger is not None:
-            self._logger.debug(message, *args)

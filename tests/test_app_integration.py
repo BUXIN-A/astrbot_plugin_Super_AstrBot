@@ -396,6 +396,26 @@ def test_feature_catalog_and_hot_toggle(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
+def test_feature_catalog_coerces_string_bool(tmp_path: Path) -> None:
+    """配置写成字符串 "false" 时，面板的「已配置」必须与能力解析一致地显示为关闭。"""
+
+    async def _run() -> dict:
+        app = SuperAstrBotApp(
+            star=FakeStar(),
+            context=FakeContext(),
+            config={"memory": {"enabled": "false"}},
+            data_dir=tmp_path,
+        )
+        await app.start()
+        catalog = {item["key"]: item for item in app.feature_catalog()}
+        await app.shutdown()
+        return catalog
+
+    catalog = asyncio.run(_run())
+    assert catalog["memory.enabled"]["enabled"] is False
+    assert catalog["memory.enabled"]["configured"] is False
+
+
 class MutableEmbeddingContext(FakeContext):
     """可动态增减嵌入提供商的 Context 替身（模拟 ProviderManager 后初始化）。"""
 

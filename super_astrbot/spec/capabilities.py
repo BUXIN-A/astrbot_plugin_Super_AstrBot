@@ -196,7 +196,11 @@ def set_path(config: Any, path: str, value: Any) -> bool:
     return True
 
 
-def _as_bool(value: Any, default: bool) -> bool:
+_TRUE_STRINGS = frozenset({"1", "true", "yes", "on", "是", "开启"})
+
+
+def as_bool(value: Any, default: bool = False) -> bool:
+    """把任意配置值规整为布尔。"""
     if isinstance(value, bool):
         return value
     if value is None:
@@ -204,8 +208,51 @@ def _as_bool(value: Any, default: bool) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on", "开启", "是"}
+        return value.strip().lower() in _TRUE_STRINGS
     return default
+
+
+def as_int(
+    value: Any,
+    default: int = 0,
+    *,
+    low: int | None = None,
+    high: int | None = None,
+) -> int:
+    """把任意配置值规整为整数，可选上下界裁剪。"""
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        result = default
+    if low is not None:
+        result = max(low, result)
+    if high is not None:
+        result = min(high, result)
+    return result
+
+
+def as_float(
+    value: Any,
+    default: float = 0.0,
+    *,
+    low: float | None = None,
+    high: float | None = None,
+) -> float:
+    """把任意配置值规整为浮点数，可选上下界裁剪。"""
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        result = default
+    if low is not None:
+        result = max(low, result)
+    if high is not None:
+        result = min(high, result)
+    return result
+
+
+def as_str(value: Any, default: str = "") -> str:
+    """把任意配置值规整为字符串（``None`` 取默认值）。"""
+    return default if value is None else str(value)
 
 
 def resolve_capabilities(
@@ -227,9 +274,9 @@ def resolve_capabilities(
 
     # 依赖是单向的且无环，按声明顺序两轮即可稳定收敛。
     for item in CAPABILITIES:
-        configured = _as_bool(get_path(config, item.key, item.default), item.default)
+        configured = as_bool(get_path(config, item.key, item.default), item.default)
         if item.key in overrides:
-            configured = _as_bool(overrides[item.key], configured)
+            configured = as_bool(overrides[item.key], configured)
         resolved[item.key] = configured
 
     # 依赖传导：反复传播直到无变化（能力数量很小，成本可忽略）。
@@ -258,7 +305,7 @@ def explain_disabled(
     for item in CAPABILITIES:
         if resolved.get(item.key, False):
             continue
-        if item.key in overrides and not _as_bool(overrides[item.key], True):
+        if item.key in overrides and not as_bool(overrides[item.key], True):
             reasons.append((item.key, "运行环境不支持，已自动降级"))
             continue
         blocking: Iterable[str] = (dep for dep in item.depends_on if not resolved.get(dep, False))

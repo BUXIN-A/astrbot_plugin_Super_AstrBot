@@ -5,29 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from ..spec.capabilities import get_path
-
-
-def _bool(config: Mapping[str, Any], path: str, default: bool) -> bool:
-    raw = get_path(config, path, default)
-    if isinstance(raw, bool):
-        return raw
-    if raw is None:
-        return default
-    if isinstance(raw, (int, float)):
-        return bool(raw)
-    if isinstance(raw, str):
-        return raw.strip().lower() in {"1", "true", "yes", "on", "是", "开启"}
-    return default
-
-
-def _int(config: Mapping[str, Any], path: str, default: int, *, low: int, high: int) -> int:
-    raw = get_path(config, path, default)
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
+from ..spec.capabilities import as_bool, as_int, get_path
 
 
 @dataclass
@@ -50,12 +28,16 @@ class JournalConfig:
         else:
             tags = ("生活",)
         return cls(
-            enabled=_bool(config, "journal.enabled", True),
-            allow_user_write=_bool(config, "journal.allow_user_write", True),
-            admin_only_write=_bool(config, "journal.admin_only_write", False),
-            weekly_reflection=_bool(config, "journal.weekly_reflection", True),
-            weekly_weekday=_int(config, "journal.weekly_reflection_weekday", 6, low=0, high=6),
-            weekly_hour=_int(config, "journal.weekly_reflection_hour", 22, low=0, high=23),
+            enabled=as_bool(get_path(config, "journal.enabled", True), True),
+            allow_user_write=as_bool(get_path(config, "journal.allow_user_write", True), True),
+            admin_only_write=as_bool(get_path(config, "journal.admin_only_write", False), False),
+            weekly_reflection=as_bool(get_path(config, "journal.weekly_reflection", True), True),
+            weekly_weekday=as_int(
+                get_path(config, "journal.weekly_reflection_weekday", 6), 6, low=0, high=6
+            ),
+            weekly_hour=as_int(
+                get_path(config, "journal.weekly_reflection_hour", 22), 22, low=0, high=23
+            ),
             default_tags=tags or ("生活",),
         )
 

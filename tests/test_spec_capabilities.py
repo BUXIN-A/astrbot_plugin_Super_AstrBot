@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from super_astrbot.spec.capabilities import (
+    as_bool,
+    as_float,
+    as_int,
+    as_str,
     capability,
     explain_disabled,
     get_path,
@@ -114,3 +118,18 @@ def test_capability_metadata_complete_for_ui() -> None:
     ):
         item = capability(key)
         assert item.title and item.domain and item.description
+
+
+def test_config_value_helpers() -> None:
+    """统一后的配置值解析必须在各域之间保持同一套语义。"""
+    assert as_bool("false", True) is False
+    assert as_bool("0", True) is False
+    assert as_bool("on", False) is True
+    assert as_bool(None, True) is True
+
+    assert as_int("12", 0, low=1, high=10) == 10
+    assert as_int("bad", 7, low=1, high=10) == 7
+    assert as_float("0.5", 1.0, low=0.0, high=1.0) == 0.5
+    assert as_float(None, 2.5) == 2.5
+    assert as_str(None, "x") == "x"
+    assert as_str(3, "") == "3"

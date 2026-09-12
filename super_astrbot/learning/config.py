@@ -5,39 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from ..spec.capabilities import get_path
+from ..spec.capabilities import as_bool, as_int, as_str, get_path
 
 MODE_ROUNDS = "rounds"
 MODE_INTERVAL = "interval"
 MODE_BOTH = "both"
 VALID_MODES = (MODE_ROUNDS, MODE_INTERVAL, MODE_BOTH)
-
-
-def _bool(config: Mapping[str, Any], path: str, default: bool) -> bool:
-    raw = get_path(config, path, default)
-    if isinstance(raw, bool):
-        return raw
-    if raw is None:
-        return default
-    if isinstance(raw, (int, float)):
-        return bool(raw)
-    if isinstance(raw, str):
-        return raw.strip().lower() in {"1", "true", "yes", "on", "是", "开启"}
-    return default
-
-
-def _int(config: Mapping[str, Any], path: str, default: int, *, low: int, high: int) -> int:
-    raw = get_path(config, path, default)
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
-
-
-def _str(config: Mapping[str, Any], path: str, default: str) -> str:
-    raw = get_path(config, path, default)
-    return str(raw) if raw is not None else default
 
 
 @dataclass
@@ -61,20 +34,32 @@ class ReflectionConfig:
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "ReflectionConfig":
-        mode = _str(config, "reflection.mode", MODE_ROUNDS)
+        mode = as_str(get_path(config, "reflection.mode", MODE_ROUNDS))
         if mode not in VALID_MODES:
             mode = MODE_ROUNDS
-        base_timeout = _int(config, "runtime.llm_timeout_seconds", 45, low=5, high=300)
+        base_timeout = as_int(
+            get_path(config, "runtime.llm_timeout_seconds", 45), 45, low=5, high=300
+        )
         return cls(
-            enabled=_bool(config, "reflection.enabled", True),
+            enabled=as_bool(get_path(config, "reflection.enabled", True), True),
             mode=mode,
-            trigger_rounds=_int(config, "reflection.trigger_rounds", 30, low=2, high=1000),
-            interval_minutes=_int(config, "reflection.interval_minutes", 720, low=1, high=10080),
-            provider_id=_str(config, "reflection.provider_id", ""),
-            min_messages=_int(config, "reflection.min_messages", 8, low=2, high=200),
-            approval_required=_bool(config, "reflection.approval_required", False),
-            max_facts_per_run=_int(config, "reflection.max_facts_per_run", 5, low=1, high=20),
-            cooldown_minutes=_int(config, "reflection.cooldown_minutes", 60, low=1, high=10080),
+            trigger_rounds=as_int(
+                get_path(config, "reflection.trigger_rounds", 30), 30, low=2, high=1000
+            ),
+            interval_minutes=as_int(
+                get_path(config, "reflection.interval_minutes", 720), 720, low=1, high=10080
+            ),
+            provider_id=as_str(get_path(config, "reflection.provider_id", "")),
+            min_messages=as_int(get_path(config, "reflection.min_messages", 8), 8, low=2, high=200),
+            approval_required=as_bool(
+                get_path(config, "reflection.approval_required", False), False
+            ),
+            max_facts_per_run=as_int(
+                get_path(config, "reflection.max_facts_per_run", 5), 5, low=1, high=20
+            ),
+            cooldown_minutes=as_int(
+                get_path(config, "reflection.cooldown_minutes", 60), 60, low=1, high=10080
+            ),
             # 反思输出较长，给 2 倍超时并封顶，避免单个任务长期占用预算。
             timeout_seconds=float(min(180, max(20, base_timeout * 2))),
         )

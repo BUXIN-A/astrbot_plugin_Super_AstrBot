@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
@@ -231,28 +231,15 @@ class InjectResult:
 class Injector(Protocol):
     """把记忆块注入到平台的请求对象中。"""
 
-    def inject(self, target: Any, blocks: Sequence[str]) -> InjectResult:
-        """注入；``target`` 通常为 ``ProviderRequest``。"""
+    def compose(self, blocks: Sequence[str]) -> str:
+        """把多个文本块拼成带边界标记的注入正文。"""
+
+    def inject(self, target: Any, blocks: Sequence[str], *, prefer: str = "auto") -> InjectResult:
+        """注入；``target`` 通常为 ``ProviderRequest``。
+
+        ``prefer`` 取 ``auto`` / ``extra_user_content`` / ``system_prompt``，
+        表示调用方期望的注入方式，实现在宿主不支持时可降级。
+        """
 
     def clear(self, target: Any) -> int:
         """清理本插件历史注入的块，返回清理数量。"""
-
-
-# --------------------------------------------------------------------------- #
-# 通用
-# --------------------------------------------------------------------------- #
-
-
-@dataclass
-class MutableFlag:
-    """线程/协程可见的简单标记，用于「只告警一次」等场景。"""
-
-    value: bool = False
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    def set_once(self) -> bool:
-        """首次调用返回 ``True``，之后返回 ``False``。"""
-        if self.value:
-            return False
-        self.value = True
-        return True

@@ -15,9 +15,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Awaitable, Callable
 
 from astrbot.api.web import error_response, json_response, request
+
+from ..spec.scopes import MemoryScope
 
 PLUGIN_NAME = "astrbot_plugin_Super_AstrBot"
 PLUGIN_NAME_LOWER = PLUGIN_NAME.lower()
@@ -175,10 +178,7 @@ def _feature_toggle(app: Any) -> Handler:
 
         if not result.get("ok"):
             # 依赖未满足 / 需要重载 / 运行环境不支持，均以 400 + 可读信息返回
-            return error_response(
-                str(result.get("message") or "切换失败"),
-                data={"needs_reload": bool(result.get("needs_reload"))},
-            )
+            return error_response(str(result.get("message") or "切换失败"))
 
         return _ok(
             {
@@ -248,15 +248,13 @@ def _memory_detail(app: Any) -> Handler:
         if raw_id is None:
             return error_response("缺少参数 id")
         try:
-            record = await memory._memories.get(int(raw_id))  # noqa: SLF001 - 面板只读详情
+            item = await memory.get_memory(int(raw_id))
         except Exception as exc:  # noqa: BLE001
             return error_response(f"读取记忆失败：{exc}")
-        if record is None:
+        if item is None:
             return error_response("记忆不存在", status_code=404)
 
-        from ..memory import MemoryItem
-
-        return _ok(_memory_payload(MemoryItem.from_row(record)))
+        return _ok(_memory_payload(item))
 
     return handler
 
@@ -281,8 +279,6 @@ def _search(app: Any) -> Handler:
         umo = str(payload.get("umo") or "").strip()
         try:
             if umo:
-                from ..spec.scopes import MemoryScope
-
                 result = await memory.recall(MemoryScope.for_session(umo), query, limit=limit)
                 items = [
                     {
@@ -335,7 +331,7 @@ def _journals(app: Any) -> Handler:
         offset = _int_param("offset", 0, low=0, high=1_000_000)
         try:
             rows = await memory.list_all_journals(offset=offset, limit=limit)
-            total = await memory._journals.count_all()  # noqa: SLF001 - 面板只读统计
+            total = await memory.count_all_journals()
         except Exception as exc:  # noqa: BLE001
             return error_response(f"读取周记失败：{exc}")
 
@@ -368,12 +364,10 @@ def _journals(app: Any) -> Handler:
 
 
 def _review_items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    import json as _json
-
     items: list[dict[str, Any]] = []
     for row in rows:
         try:
-            payload = _json.loads(row.get("payload") or "{}")
+            payload = json.loads(row.get("payload") or "{}")
         except (TypeError, ValueError):
             payload = {}
         items.append(
@@ -398,8 +392,6 @@ def _reviews(app: Any) -> Handler:
         umo = _str_param("umo")
         limit = _int_param("limit", 20, low=1, high=100)
         try:
-            from ..spec.scopes import MemoryScope
-
             scope = MemoryScope.for_session(umo) if umo else MemoryScope.global_scope()
             rows = await reflection.pending_reviews(scope, limit=limit)
         except Exception as exc:  # noqa: BLE001

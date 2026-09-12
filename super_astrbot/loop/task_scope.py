@@ -11,7 +11,7 @@
     scope = TaskScope("reflection", logger=log)
     token = scope.token()
     result = await scope.run(lambda: llm.chat(...), timeout=30, token=token)
-    if result is not None and scope.is_current(token):
+    if result is not ABANDONED and scope.is_current(token):
         ...  # 安全地使用结果
 """
 
@@ -36,8 +36,8 @@ class ScopeToken:
 class _Abandoned:
     """哨兵：表示任务被放弃（停止 / 超时 / 令牌失效）。
 
-    必须与「任务正常返回 None」区分开：早期实现用 ``result is None`` 判断放弃，
-    导致所有正常返回 None 的任务都被误判为超时（调度器会误报 WARN 并计入跳过）。
+    必须与「任务正常返回 ``None``」区分开——否则所有正常结束的任务都会被
+    误判为超时（调度器会误报 WARN 并计入跳过）。
     """
 
     __slots__ = ()
@@ -180,7 +180,7 @@ class TaskScope:
         *,
         timeout: float | None = None,
         token: ScopeToken | None = None,
-    ) -> Any | None:
+    ) -> Any:
         """在停止感知下执行一个协程。
 
         Args:

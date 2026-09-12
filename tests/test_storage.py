@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from super_astrbot.spec.scopes import MemoryScope
 from super_astrbot.storage import (
     CURRENT_VERSION,
     Database,
     MemoryRepository,
     SqliteStateStore,
+    VectorRepository,
 )
 
 
@@ -135,3 +137,72 @@ def test_transaction_rolls_back_on_error(tmp_path: Path) -> None:
         return rows
 
     assert asyncio.run(_run()) == 0
+
+
+def test_like_keyword_escapes_wildcards(tmp_path: Path) -> None:
+    """关键词里的 ``%`` / ``_`` 必须按字面匹配，否则筛选范围会被意外放大。"""
+
+    async def _run() -> tuple[list[str], list[int]]:
+        db = Database(tmp_path / "like.db")
+        await db.connect()
+        repo = MemoryRepository(db)
+        for index, content in enumerate(("进度 50% 已完成", "进度 50点 已完成"), start=1):
+            await repo.insert(
+                scope_type="session",
+                scope_id="s1",
+                kind="fact",
+                content=content,
+                importance=0.5,
+                confidence=0.8,
+                source="manual",
+                tags=[],
+                created_at=float(index),
+            )
+        rows = await repo.list_all_page(offset=0, limit=10, keyword="50%")
+        like_ids = await repo.like_search((MemoryScope.for_session("s1"),), ["50%"], limit=10)
+        await db.close()
+        return [str(row["content"]) for row in rows], like_ids
+
+    contents, like_ids = asyncio.run(_run())
+    assert contents == ["进度 50% 已完成"]
+    assert like_ids == [1]
+
+
+def test_vector_load_scoped_filters_by_scope(tmp_path: Path) -> None:
+    """向量扫描必须在 SQL 层按作用域过滤，避免其它作用域挤占扫描额度。"""
+
+    async def _run() -> list[int]:
+        db = Database(tmp_path / "vec.db")
+        await db.connect()
+        memories = MemoryRepository(db)
+        vectors = VectorRepository(db)
+        mine = await memories.insert(
+            scope_type="session",
+            scope_id="mine",
+            kind="fact",
+            content="我的记忆",
+            importance=0.5,
+            confidence=0.8,
+            source="manual",
+            tags=[],
+            created_at=1.0,
+        )
+        other = await memories.insert(
+            scope_type="session",
+            scope_id="other",
+            kind="fact",
+            content="别人的记忆",
+            importance=0.5,
+            confidence=0.8,
+            source="manual",
+            tags=[],
+            created_at=2.0,
+        )
+        await vectors.upsert(mine, "fp", [0.1, 0.2], at=1.0)
+        await vectors.upsert(other, "fp", [0.3, 0.4], at=2.0)
+
+        rows = await vectors.load_scoped("fp", (MemoryScope.for_session("mine"),), limit=10)
+        await db.close()
+        return [row[0] for row in rows]
+
+    assert asyncio.run(_run()) == [1]

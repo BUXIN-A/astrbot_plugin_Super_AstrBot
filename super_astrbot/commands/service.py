@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Sequence
 
@@ -168,8 +169,6 @@ class CommandService:
         journal = self._app.journal
         if journal is None:
             return self._not_ready()
-        if self.admin_only() and not view.is_admin and journal.config.admin_only_write:
-            return self._permission_error()
 
         raw = (payload or "").strip()
         if not raw:
@@ -223,8 +222,6 @@ class CommandService:
             return "待审队列为空。"
         lines = ["待审记忆："]
         for row in rows:
-            import json
-
             try:
                 payload = json.loads(row.get("payload") or "{}")
             except (TypeError, ValueError):
@@ -252,19 +249,15 @@ class CommandService:
         try:
             if approve:
                 memory_id = await reflection.approve(review_id)
-            else:
-                ok = await reflection.reject(review_id)
-                memory_id = None if ok else -1
+                if memory_id is None:
+                    return f"#{review_id} 不存在或已处理。"
+                return f"已批准 #{review_id}，写入记忆 #{memory_id}。"
+            rejected = await reflection.reject(review_id)
+            if not rejected:
+                return f"#{review_id} 不存在或已处理。"
+            return f"已驳回 #{review_id}。"
         except Exception as exc:  # noqa: BLE001
             return f"处理失败：{safe_detail(exc)}"
-
-        if approve:
-            if memory_id is None:
-                return f"#{review_id} 不存在或已处理。"
-            return f"已批准 #{review_id}，写入记忆 #{memory_id}。"
-        if memory_id == -1:
-            return f"#{review_id} 不存在或已处理。"
-        return f"已驳回 #{review_id}。"
 
     async def reset(self, view: EventView, confirm: str) -> str:
         memory = self._app.memory

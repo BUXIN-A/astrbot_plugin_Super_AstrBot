@@ -252,14 +252,18 @@ class SuperAstrBotApp:
             return overrides
 
         try:
-            from .harness.astrbot_host import AstrBotHost
-            from .harness.astrbot_llm import AstrBotEmbeddingGateway
+            gateway = self._harness.embedding if self._harness is not None else None
+            if gateway is None:
+                # 装配早期（_build_configs 阶段）尚无 harness，只能临时构造探测网关。
+                from .harness.astrbot_host import AstrBotHost
+                from .harness.astrbot_llm import AstrBotEmbeddingGateway
 
-            probe_host = AstrBotHost(self._star, self._context, self._config)
-            probe = AstrBotEmbeddingGateway(
-                self._context, probe_host, provider_id=embedding_provider_id
-            )
-            if not probe.available:
+                gateway = AstrBotEmbeddingGateway(
+                    self._context,
+                    AstrBotHost(self._star, self._context, self._config),
+                    provider_id=embedding_provider_id,
+                )
+            if not gateway.available:
                 overrides["memory.vector_enabled"] = False
         except Exception as exc:  # noqa: BLE001 - 探测失败按不可用处理
             overrides["memory.vector_enabled"] = False
@@ -300,9 +304,7 @@ class SuperAstrBotApp:
                 VectorRetriever(
                     self._harness.embedding,
                     VectorRepository(self._db),
-                    memories,
                     max_scan=(self._memory_config.vector_max_scan if self._memory_config else 5000),
-                    logger=self._logger,
                 )
             )
         else:
@@ -353,8 +355,7 @@ class SuperAstrBotApp:
         """框架完全加载完成：重新探测能力。
 
         AstrBot 先加载插件、后初始化 ProviderManager，因此插件启动阶段探测不到
-        嵌入提供商；这里补一次探测，让向量检索自动启用
-        （v0.2.0 在服务器上因此一直显示「向量能力不可用」）。
+        嵌入提供商；这里补一次探测，让向量检索自动启用。
         """
         if not self._started:
             return
@@ -370,7 +371,7 @@ class SuperAstrBotApp:
 
     def feature_catalog(self) -> list[dict[str, Any]]:
         """列出全部功能及其状态，供控制台渲染开关。"""
-        from .spec.capabilities import CAPABILITIES, get_path
+        from .spec.capabilities import CAPABILITIES, as_bool, get_path
 
         catalog: list[dict[str, Any]] = []
         for item in CAPABILITIES:
@@ -382,7 +383,9 @@ class SuperAstrBotApp:
                     "domain": item.domain,
                     "description": item.description,
                     "enabled": bool(self._effective_capabilities.get(item.key)),
-                    "configured": bool(get_path(self._config, item.key, item.default)),
+                    "configured": as_bool(
+                        get_path(self._config, item.key, item.default), item.default
+                    ),
                     "depends_on": list(item.depends_on),
                     "hot_reloadable": item.hot_reloadable,
                     "runtime_dependent": item.runtime_dependent,
@@ -567,9 +570,7 @@ class SuperAstrBotApp:
                 VectorRetriever(
                     self._harness.embedding,
                     VectorRepository(self._db),
-                    self._memories,
                     max_scan=self._memory_config.vector_max_scan,
-                    logger=self._logger,
                 )
             )
 
@@ -833,7 +834,7 @@ class SuperAstrBotApp:
     async def _job_maintenance(self) -> None:
         if self._memory_service is None:
             return
-        async with self._gate.write("__maintenance__") if self._gate else _null_gate():
+        async with self._gate.write("__maintenance__") if self._gate else _NullGate():
             stats = await self._memory_service.maintain()
         self._info("每日维护完成：%s", stats)
 
@@ -957,7 +958,7 @@ class SuperAstrBotApp:
         self._logger.debug(message, *args)
 
 
-class _null_gate:
+class _NullGate:
     """``async with`` 占位：无门闸时保持调用形状一致。"""
 
     async def __aenter__(self) -> None:

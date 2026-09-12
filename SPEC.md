@@ -164,8 +164,12 @@ class EventView:
 ### 4.4 存储契约（`storage/`）
 
 - 数据库位于 `<plugin_data_dir>/super_astrbot.db`，启用 `WAL` + `busy_timeout`。
+- **所有**数据库访问（读与写）经同一把 `asyncio.Lock` 串行化：单连接 + 显式事务，
+  杜绝事务交错，也避免读操作在事务进行中读到未提交的中间态。
 - 迁移由 `storage/migrations.py` 版本化驱动（`schema_version` 表），**只做增量、不删列**；迁移前自动备份。
 - 写操作必须经 `Database.transaction()`；跨表写入需可恢复（记录写日志，启动时重放未完成项）。
+- 模糊查询（面板关键词、降级 LIKE 检索）必须转义 `%` / `_` 并声明 `ESCAPE`，
+  避免用户输入被当作通配符放大匹配范围。
 
 ---
 
@@ -185,6 +189,9 @@ class EventView:
 | `kv_state` | 运行状态（节流/游标/幂等） | `key`, `value`(JSON), `updated_at` |
 
 **作用域语义**：`scope_type ∈ {session, user, global}`；`scope_id` 为对应 umo / user_id / `"*"`。检索时按「当前会话 + 当前用户 + 全局」三层并集召回。
+
+> **写入与删除只作用于单一作用域**：`retrieval_scopes()` 表达的是「检索并集」（总会附带全局兜底），
+> 因此禁止用于重置/清理路径 —— 否则一次会话级 `/sab reset` 会连带删掉全局共享记忆。
 
 **记忆状态机（决定是否参与检索）**：
 
@@ -307,12 +314,13 @@ class EventView:
 | P1 | Memory 闭环 + 周记 + 命令 + 面板 | ✅ 已完成 |
 | P1.6 | 修复指令冲突面/嵌入模型下拉/面板加载失败；控制台重建为六分区 | ✅ 已完成（v0.2.0） |
 | P1.7 | 功能管理界面（能力热开关）；修复调度器误报与向量能力永久不可用 | ✅ 已完成（v0.3.0） |
+| P1.8 | 全量代码审查：作用域越界删除、存储串行化、LIKE 转义、向量作用域扫描、写放大与死代码清理 | ✅ 已完成（v0.3.1） |
 | P1.5 | Agent 函数工具（`memory_search` / `memory_write`） | 待做（近期） |
 | P2 | 上下文治理（token 估算 / 工具与图片历史占位 / 摘要水位线） | 规划 |
 | P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | 规划 |
 | P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | 规划 |
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | 规划 |
 
-**验收结果**：`pytest tests -q` 119 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+**验收结果**：`pytest tests -q` 127 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
 `node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换
 与向量路启用仍待服务器实测（本地无运行实例）。

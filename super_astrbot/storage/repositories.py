@@ -3,7 +3,8 @@
 约定：
 
 - 仓储只接受/返回**普通字典型数据**，不返回 ORM 对象，避免上层被存储细节污染；
-- 所有写操作尽量走 ``Database.transaction()``（由高层的服务层决定事务边界与写日志）；
+- 单条写走 ``Database.execute``（autocommit），需要跨语句原子性时由服务层显式
+  使用 ``Database.transaction()``（事务边界与写日志由服务层决定）；
 - 时间戳统一由调用方传入（便于测试注入固定时钟）。
 """
 
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import json
 import struct
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 from ..spec.scopes import MemoryScope
 from .db import Database
@@ -30,22 +31,19 @@ def _scope_where(scopes: Sequence[MemoryScope], alias: str = "") -> tuple[str, l
     return " OR ".join(clauses), params
 
 
+def _like_pattern(term: str) -> str:
+    """把关键词包装成 LIKE 模式并转义通配符。
+
+    不转义时用户输入里的 ``%`` / ``_`` 会被当作通配符，导致匹配范围意外放大。
+    """
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 def row_to_dict(row: Any) -> dict[str, Any]:
     if row is None:
         return {}
     return {key: row[key] for key in row.keys()}
-
-
-def _decode_tags(raw: Any) -> list[str]:
-    if not raw:
-        return []
-    try:
-        value = json.loads(raw)
-    except (TypeError, ValueError):
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    return []
 
 
 # --------------------------------------------------------------------------- #
@@ -151,8 +149,6 @@ class MemoryRepository:
         for key, value in fields.items():
             if key not in allowed:
                 continue
-            if key == "tags":
-                value = json.dumps(list(value), ensure_ascii=False)
             assignments.append(f"{key}=?")
             params.append(value)
         if not assignments:
@@ -296,24 +292,6 @@ class MemoryRepository:
         )
         return [row_to_dict(row) for row in rows]
 
-    async def iter_active(
-        self,
-        scopes: Sequence[MemoryScope],
-        *,
-        limit: int,
-        status: str = "active",
-    ) -> list[dict[str, Any]]:
-        """按新近度取出用于向量扫描的候选。"""
-        where, params = _scope_where(scopes)
-        rows = await self._db.query(
-            f"SELECT id, content, importance, confidence, created_at, last_access_at,"
-            f" access_count, kind, source, scope_type, scope_id, tags, status, updated_at"
-            f" FROM memories WHERE status=? AND ({where})"
-            " ORDER BY created_at DESC LIMIT ?",
-            [status, *params, limit],
-        )
-        return [row_to_dict(row) for row in rows]
-
     async def list_page(
         self,
         scopes: Sequence[MemoryScope],
@@ -330,8 +308,8 @@ class MemoryRepository:
         clauses.append(f"({where})")
         params.extend(scope_params)
         if keyword:
-            clauses.append("content LIKE ?")
-            params.append(f"%{keyword}%")
+            clauses.append("content LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(keyword))
         params.extend([limit, offset])
         rows = await self._db.query(
             f"SELECT * FROM memories WHERE {' AND '.join(clauses)}"
@@ -356,8 +334,8 @@ class MemoryRepository:
             clauses.append("kind=?")
             params.append(kind)
         if keyword:
-            clauses.append("content LIKE ?")
-            params.append(f"%{keyword}%")
+            clauses.append("content LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(keyword))
         params.extend([limit, offset])
         rows = await self._db.query(
             f"SELECT * FROM memories WHERE {' AND '.join(clauses)}"
@@ -376,8 +354,8 @@ class MemoryRepository:
             clauses.append("kind=?")
             params.append(kind)
         if keyword:
-            clauses.append("content LIKE ?")
-            params.append(f"%{keyword}%")
+            clauses.append("content LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(keyword))
         return int(
             await self._db.scalar(
                 f"SELECT COUNT(*) FROM memories WHERE {' AND '.join(clauses)}",
@@ -403,10 +381,14 @@ class MemoryRepository:
                 "INSERT INTO memory_index(rowid, tokens) VALUES (?,?)", (memory_id, tokens_text)
             )
 
-    async def delete_index(self, memory_id: int) -> None:
-        if not self._db.fts_available:
+    async def delete_index_many(self, ids: Sequence[int]) -> None:
+        """批量删除 FTS 索引（批量归档/遗忘时避免逐条删除）。"""
+        if not ids or not self._db.fts_available:
             return
-        await self._db.execute("DELETE FROM memory_index WHERE rowid=?", (memory_id,))
+        placeholders = ",".join("?" for _ in ids)
+        await self._db.execute(
+            f"DELETE FROM memory_index WHERE rowid IN ({placeholders})", list(ids)
+        )
 
     async def fts_search(
         self,
@@ -440,11 +422,11 @@ class MemoryRepository:
         if not terms:
             return []
         where, params = _scope_where(scopes)
-        term_clauses = " OR ".join("content LIKE ?" for _ in terms)
+        term_clauses = " OR ".join("content LIKE ? ESCAPE '\\'" for _ in terms)
         rows = await self._db.query(
             f"SELECT id FROM memories WHERE status='active' AND ({where})"
             f" AND ({term_clauses}) ORDER BY created_at DESC LIMIT ?",
-            [*params, *[f"%{term}%" for term in terms], limit],
+            [*params, *[_like_pattern(term) for term in terms], limit],
         )
         return [int(row["id"]) for row in rows]
 
@@ -484,14 +466,32 @@ class VectorRepository:
             (memory_id, fingerprint, len(vector), self.encode(vector), at),
         )
 
-    async def delete(self, memory_id: int) -> None:
-        await self._db.execute("DELETE FROM memory_vectors WHERE memory_id=?", (memory_id,))
+    async def delete_many(self, ids: Sequence[int]) -> int:
+        """批量删除向量（批量归档/遗忘时避免逐条删除）。"""
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        result = await self._db.execute(
+            f"DELETE FROM memory_vectors WHERE memory_id IN ({placeholders})", list(ids)
+        )
+        return int(result.rowcount or 0)
 
-    async def load(self, fingerprint: str, *, limit: int) -> list[tuple[int, int, bytes]]:
+    async def load_scoped(
+        self, fingerprint: str, scopes: Sequence[MemoryScope], *, limit: int
+    ) -> list[tuple[int, int, bytes]]:
+        """按作用域加载可用向量（仅 ``active`` 记忆）。
+
+        必须在 SQL 层与 ``memories`` 联结后按作用域过滤：若先全库取 ``limit`` 条
+        再在应用层过滤，其它作用域的向量会挤占扫描额度，当前作用域的向量可能
+        一条都取不到（进而让向量路静默失效）。
+        """
+        where, params = _scope_where(scopes, alias="m")
         rows = await self._db.query(
-            "SELECT memory_id, dim, vector FROM memory_vectors WHERE fingerprint=?"
-            " ORDER BY updated_at DESC LIMIT ?",
-            (fingerprint, limit),
+            "SELECT v.memory_id AS memory_id, v.dim AS dim, v.vector AS vector"
+            " FROM memory_vectors v JOIN memories m ON m.id = v.memory_id"
+            f" WHERE v.fingerprint=? AND m.status='active' AND ({where})"
+            " ORDER BY v.updated_at DESC LIMIT ?",
+            [fingerprint, *params, limit],
         )
         return [(int(row["memory_id"]), int(row["dim"]), bytes(row["vector"])) for row in rows]
 
@@ -747,15 +747,3 @@ class ReviewRepository:
                 default=0,
             )
         )
-
-
-def decode_tags(raw: Any) -> list[str]:
-    """对外暴露标签解码（仓储内部也使用）。"""
-    return _decode_tags(raw)
-
-
-def coerce_tags(value: Iterable[Any] | None) -> list[str]:
-    """把任意标签容器规整为字符串列表。"""
-    if not value:
-        return []
-    return [str(item).strip().lstrip("#") for item in value if str(item).strip()]

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -81,8 +82,6 @@ def _as_tags(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     if isinstance(value, str) and value:
-        import json
-
         try:
             parsed = json.loads(value)
         except (TypeError, ValueError):
@@ -118,10 +117,12 @@ class MemoryItem:
     @classmethod
     def from_row(cls, row: Any) -> "MemoryItem":
         """从数据库行/字典构造。"""
+        # sqlite3.Row.keys() 每次调用都要构造列表，这里只取一次复用。
+        keys = set(row.keys()) if hasattr(row, "keys") else None
 
         def _get(key: str, default: Any = None) -> Any:
-            if hasattr(row, "keys"):
-                return row[key] if key in row.keys() else default
+            if keys is not None:
+                return row[key] if key in keys else default
             return row.get(key, default)
 
         return cls(

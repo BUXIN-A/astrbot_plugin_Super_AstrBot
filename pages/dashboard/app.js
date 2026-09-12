@@ -879,23 +879,23 @@ const LOADERS = {
 };
 
 function navigate(page, options = {}) {
-    const target = PAGE_TITLES[page] ? page : "overview";
-    state.page = target;
-    document.querySelectorAll(".nav-item").forEach((node) => {
-      node.classList.toggle("active", node.dataset.page === target);
-    });
-    document.querySelectorAll(".page").forEach((node) => {
-      node.classList.toggle("active", node.id === `page-${target}`);
-    });
-    $("page-title").textContent = t(PAGE_TITLES[target]);
-    if (!options.skipLoad && target !== "recall") {
-      const loader = LOADERS[target];
-      if (loader) loader();
-    }
-    if (!options.skipHash) {
-      window.location.hash = `#/${target}`;
-    }
+  const target = PAGE_TITLES[page] ? page : "overview";
+  state.page = target;
+  document.querySelectorAll(".nav-item").forEach((node) => {
+    node.classList.toggle("active", node.dataset.page === target);
+  });
+  document.querySelectorAll(".page").forEach((node) => {
+    node.classList.toggle("active", node.id === `page-${target}`);
+  });
+  $("page-title").textContent = t(PAGE_TITLES[target]);
+  if (!options.skipLoad && target !== "recall") {
+    const loader = LOADERS[target];
+    if (loader) loader();
   }
+  if (!options.skipHash) {
+    window.location.hash = `#/${target}`;
+  }
+}
 
 function currentPageFromHash() {
   const match = /^#\/([a-z-]+)/.exec(window.location.hash || "");

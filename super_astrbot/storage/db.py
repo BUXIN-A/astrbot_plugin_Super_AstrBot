@@ -179,13 +179,16 @@ class Database:
             return await Transaction(self._require_conn()).executemany(sql, seq)
 
     async def query(self, sql: str, params: Sequence[Any] = ()) -> list[sqlite3.Row]:
-        return await Transaction(self._require_conn()).query(sql, params)
+        async with self._lock:
+            return await Transaction(self._require_conn()).query(sql, params)
 
     async def query_one(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Row | None:
-        return await Transaction(self._require_conn()).query_one(sql, params)
+        async with self._lock:
+            return await Transaction(self._require_conn()).query_one(sql, params)
 
     async def scalar(self, sql: str, params: Sequence[Any] = (), default: Any = None) -> Any:
-        return await Transaction(self._require_conn()).scalar(sql, params, default)
+        async with self._lock:
+            return await Transaction(self._require_conn()).scalar(sql, params, default)
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Transaction]:

@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..spec.errors import RuntimeNotReadyError
@@ -88,8 +88,9 @@ def _resolve() -> FrameworkSymbols:
     )
     ok = symbols.Star is not None and symbols.logger is not None
     if not ok:
-        return FrameworkSymbols(ok=False, error="关键符号缺失：Star/logger 不可用")
-    return FrameworkSymbols(**{**symbols.__dict__, "ok": True})
+        # 保留已解析出的 version：版本不匹配时，诊断信息里它最有价值。
+        return replace(symbols, ok=False, error="关键符号缺失：Star/logger 不可用")
+    return replace(symbols, ok=True)
 
 
 SYMBOLS: FrameworkSymbols = _resolve()

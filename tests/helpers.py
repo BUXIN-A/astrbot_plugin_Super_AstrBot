@@ -139,7 +139,7 @@ async def build_stack(
 
     routes: list[Any] = [KeywordRetriever(memories)]
     if vector_available:
-        routes.append(VectorRetriever(embedding, vectors, memories, max_scan=100))
+        routes.append(VectorRetriever(embedding, vectors, max_scan=100))
 
     retriever = HybridRetriever(routes=routes, memories=memories, config=cfg.retrieval_config())
     lifecycle = MemoryLifecycle(

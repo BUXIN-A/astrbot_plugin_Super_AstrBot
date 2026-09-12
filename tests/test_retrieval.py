@@ -145,3 +145,48 @@ def test_global_scope_memories_are_visible_from_session(tmp_path: Path) -> None:
     result = asyncio.run(_run())
     assert result.items
     assert "阿澈" in result.items[0].content
+
+
+def test_reset_scope_does_not_touch_global_memories(tmp_path: Path) -> None:
+    """回归：重置会话作用域不得连带清空全局作用域。
+
+    ``retrieval_scopes`` 的语义是「检索并集」（总会附带全局作用域），
+    重置若误用它，一次 ``/sab reset`` 就会删掉全局共享记忆。
+    """
+
+    async def _run() -> tuple[dict, object, object]:
+        stack = await build_stack(tmp_path)
+        session = MemoryScope.for_session("reset-me")
+        global_scope = MemoryScope.global_scope()
+        await stack.memory.remember_text(session, "会话记忆：今天讨论了大扫除安排")
+        await stack.memory.remember_text(global_scope, "全局记忆：用户的名字是阿澈")
+
+        stats = await stack.memory.reset_scope(session)
+        global_left = await stack.memory.recall(global_scope, "阿澈")
+        session_left = await stack.memory.recall(session, "大扫除")
+        await stack.close()
+        return stats, global_left, session_left
+
+    stats, global_left, session_left = asyncio.run(_run())
+    assert stats["active"] == 1
+    assert global_left.items, "全局作用域记忆不得被会话级重置删除"
+    assert "阿澈" in global_left.items[0].content
+    assert not session_left.items
+
+
+def test_forget_removes_index_and_vectors(tmp_path: Path) -> None:
+    """遗忘必须同时清掉 FTS 索引与向量（批量删除路径）。"""
+
+    async def _run() -> tuple[bool, int]:
+        stack = await build_stack(tmp_path, vector_available=True)
+        scope = MemoryScope.for_session("forget-me")
+        memory_id = await stack.memory.remember_text(scope, "用户喜欢在周末爬山放松")
+        await stack.memory.delete([memory_id])
+        found = await stack.memory.recall(scope, "周末爬山")
+        vectors = await stack.vectors.count()
+        await stack.close()
+        return bool(found.items), vectors
+
+    found, vector_count = asyncio.run(_run())
+    assert found is False
+    assert vector_count == 0

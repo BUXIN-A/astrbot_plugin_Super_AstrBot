@@ -32,10 +32,14 @@ def to_event_view(event: Any, *, now: float | None = None) -> EventView:
         now: 用于缺省时间戳注入（便于测试确定性）。
     """
     umo = str(_call(event, "unified_msg_origin", "") or "")
-    is_private = bool(_call(event, "is_private_chat", False))
+    private_flag = _call(event, "is_private_chat", None)
     group_id = str(_call(event, "get_group_id", "") or "")
-    # 部分适配器在私聊下也可能返回空 group_id，这里以 is_private_chat 为准。
-    is_group = (not is_private) and bool(umo) or bool(group_id)
+    # 优先以 is_private_chat 为准：部分适配器在私聊下也会返回空 group_id，
+    # 若反过来用 umo/group_id 推断，在 API 缺失时会把私聊误判成群聊。
+    if isinstance(private_flag, bool):
+        is_group = not private_flag
+    else:
+        is_group = bool(group_id)
 
     timestamp = getattr(event, "created_at", None)
     if not isinstance(timestamp, (int, float)) or timestamp <= 0:

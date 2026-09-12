@@ -32,6 +32,16 @@ from .models import (
 )
 from .retriever import HybridRetriever, RetrievalResult
 
+_BUFFER_CLEANUP_EVERY = 20
+"""每写入 N 条缓冲才执行一次「裁剪 + 过期清理」。
+
+每条消息都清理会造成写放大（两条 DELETE，其中一条还带子查询）；
+按条数节流后由每日维护任务兜底，缓冲不会失控。
+"""
+
+_MAX_TRACKED_SCOPES = 512
+"""缓冲写入计数器的作用域上限，超出即整体重置，避免长跑后字典无限膨胀。"""
+
 
 class MemoryService:
     """记忆领域唯一对外入口。"""
@@ -56,6 +66,7 @@ class MemoryService:
         self._injector = injector
         self._embedding = embedding
         self._logger = logger
+        self._buffer_writes: dict[str, int] = {}
 
     @property
     def config(self) -> MemoryConfig:
@@ -129,10 +140,21 @@ class MemoryService:
             index=False,
             with_vector=False,
         )
-        # 控量：缓冲只保留最近 N 条，避免无限增长。
-        await self._lifecycle.trim_buffer([scope])
-        await self._lifecycle.purge_buffer([scope], now=moment)
+        await self._maybe_cleanup_buffer(scope, now=moment)
         return memory_id
+
+    async def _maybe_cleanup_buffer(self, scope: MemoryScope, *, now: float) -> None:
+        """按写入条数节流地裁剪与清理缓冲（见 ``_BUFFER_CLEANUP_EVERY``）。"""
+        if len(self._buffer_writes) > _MAX_TRACKED_SCOPES:
+            self._buffer_writes.clear()
+        key = scope.key
+        writes = self._buffer_writes.get(key, 0) + 1
+        if writes < _BUFFER_CLEANUP_EVERY:
+            self._buffer_writes[key] = writes
+            return
+        self._buffer_writes[key] = 0
+        await self._lifecycle.trim_buffer([scope])
+        await self._lifecycle.purge_buffer([scope], now=now)
 
     async def buffer_material(self, scope: MemoryScope, *, limit: int = 50) -> list[MemoryItem]:
         """取出待反思的对话缓冲（跨「当前作用域 + 全局」）。"""
@@ -211,6 +233,11 @@ class MemoryService:
     # 查询与统计
     # ------------------------------------------------------------------ #
 
+    async def get_memory(self, memory_id: int) -> MemoryItem | None:
+        """按 ID 取一条记忆（面板详情用）。"""
+        record = await self._memories.get(memory_id)
+        return None if record is None else MemoryItem.from_row(record)
+
     async def list_memories(
         self,
         scope: MemoryScope,
@@ -271,6 +298,10 @@ class MemoryService:
     async def list_all_journals(self, *, offset: int = 0, limit: int = 20) -> list[dict[str, Any]]:
         return await self._journals.list_all_page(offset=offset, limit=limit)
 
+    async def count_all_journals(self) -> int:
+        """周记总数（跨作用域，面板统计用）。"""
+        return await self._journals.count_all()
+
     async def stats_all(self) -> dict[str, Any]:
         """全局统计（面板总览用）。"""
         return {
@@ -305,8 +336,14 @@ class MemoryService:
         return await self._lifecycle.reindex(scopes)
 
     async def reset_scope(self, scope: MemoryScope) -> dict[str, int]:
-        """清空某作用域的记忆（含正式记忆与对话缓冲），全局作用域不在此列。"""
-        scopes = retrieval_scopes(scope)
+        """清空某作用域的记忆（含正式记忆与对话缓冲）。
+
+        只作用于传入的这一个作用域：全局作用域必须在显式传入
+        ``MemoryScope.global_scope()`` 时才会被清空。
+        注意不能用 ``retrieval_scopes(scope)`` —— 它的语义是「检索时并集」，
+        总会附带全局作用域，会让一次会话级重置连带删掉全局共享记忆。
+        """
+        scopes = (scope,)
         forgotten = 0
         buffered = 0
 

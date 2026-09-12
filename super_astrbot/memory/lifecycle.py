@@ -164,9 +164,9 @@ class MemoryLifecycle:
             return 0
         moment = now if now is not None else time.time()
         count = await self._memories.update_status_bulk(ids, status, at=moment)
-        for memory_id in ids:
-            await self._memories.delete_index(memory_id)
-            await self._vectors.delete(memory_id)
+        # 索引与向量批量删除：逐条删除会产生 2N 次 SQL。
+        await self._memories.delete_index_many(ids)
+        await self._vectors.delete_many(ids)
         return count
 
     async def purge_buffer(self, scopes: Sequence[MemoryScope], *, now: float | None = None) -> int:

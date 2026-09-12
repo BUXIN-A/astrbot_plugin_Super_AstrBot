@@ -15,8 +15,6 @@ from .repositories import (
     ReflectionRepository,
     ReviewRepository,
     VectorRepository,
-    coerce_tags,
-    decode_tags,
     row_to_dict,
 )
 
@@ -33,6 +31,4 @@ __all__ = [
     "ReflectionRepository",
     "ReviewRepository",
     "row_to_dict",
-    "decode_tags",
-    "coerce_tags",
 ]

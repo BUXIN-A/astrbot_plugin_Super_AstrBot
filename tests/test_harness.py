@@ -73,6 +73,24 @@ def test_to_event_view_private_chat_and_admin() -> None:
     assert view.is_admin is True
 
 
+def test_to_event_view_private_flag_takes_precedence() -> None:
+    """私聊判定以 is_private_chat 为准，不被残留的 group_id 覆盖。"""
+    view = to_event_view(FakeEvent(is_private_chat=True, get_group_id="12345"))
+    assert view.is_group is False
+    assert view.is_private is True
+
+
+def test_to_event_view_group_id_fallback_when_private_api_missing() -> None:
+    """缺失 is_private_chat 时退化为按 group_id 推断，而不是把私聊判成群聊。"""
+    event = FakeEvent()
+    del event._data["is_private_chat"]
+    assert to_event_view(event).is_group is True
+
+    private = FakeEvent(is_private_chat=True, get_group_id="")
+    del private._data["is_private_chat"]
+    assert to_event_view(private).is_group is False
+
+
 def test_to_event_view_tolerates_broken_attributes() -> None:
     """单个可选 API 抛异常不应导致整个视图构造失败。"""
 

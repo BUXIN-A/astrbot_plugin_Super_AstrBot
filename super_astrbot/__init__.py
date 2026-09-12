@@ -6,7 +6,7 @@
 - ``harness/``   AstrBot 适配层，**唯一**允许 ``import astrbot.*`` 的位置
 - ``loop/``      循环控制：任务作用域、调度器、并发门闸、成本预算
 - ``storage/``   持久层：连接、迁移、原子写、仓储
-- 其余为业务域：``memory`` / ``journal`` / ``learning`` / ``context`` / ``commands`` / ``web``
+- 其余为业务域：``memory`` / ``journal`` / ``learning`` / ``commands`` / ``web``
 
 除 ``harness`` 外，任何模块都不应直接导入 AstrBot 框架符号。
 """
