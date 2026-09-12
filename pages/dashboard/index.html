@@ -24,6 +24,7 @@
         <button class="nav-item" data-page="recall" data-i18n="nav.recall">检索</button>
         <button class="nav-item" data-page="journals" data-i18n="nav.journals">周记</button>
         <button class="nav-item" data-page="reviews" data-i18n="nav.reviews">待审</button>
+        <button class="nav-item" data-page="persona" data-i18n="nav.persona">学习</button>
         <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
       </nav>
 
@@ -148,9 +149,39 @@
         <!-- 待审 -->
         <section class="page" id="page-reviews">
           <div class="card">
-            <h2 data-i18n="reviews.title">待审记忆</h2>
+            <h2 data-i18n="reviews.title">待审记录</h2>
             <p class="muted" id="rv-hint"></p>
             <div class="table-wrap" id="rv-table"></div>
+          </div>
+        </section>
+
+        <!-- 拟人化学习 -->
+        <section class="page" id="page-persona">
+          <div class="card">
+            <h2 data-i18n="persona.title">拟人化学习</h2>
+            <p class="muted" data-i18n="persona.hint">
+              风格样本、群内用语与好感度都在这里查看；未经批准的学习结果不会影响对话。
+            </p>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="persona.umo">会话 UMO（可选）</span>
+                <input type="text" id="pn-umo" placeholder="aiocqhttp:GroupMessage:10086" />
+              </label>
+              <button class="btn" id="pn-query" data-i18n="action.query">查询</button>
+            </div>
+            <div class="muted" id="pn-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="persona.styles">表达样本</h2>
+            <div class="table-wrap" id="pn-style"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="persona.jargons">群内用语</h2>
+            <div class="table-wrap" id="pn-jargon"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="persona.affinity">好感度</h2>
+            <div class="table-wrap" id="pn-affinity"></div>
           </div>
         </section>
 

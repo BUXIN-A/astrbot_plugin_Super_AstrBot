@@ -47,6 +47,7 @@ from .memory import (
     MemoryService,
     VectorRetriever,
 )
+from .persona import PersonaConfig, PersonaService, summarize_reviews
 from .proactive import (
     TRACK_DAILY,
     TRACK_IDLE,
@@ -56,15 +57,18 @@ from .proactive import (
 )
 from .spec.capabilities import explain_disabled, resolve_capabilities
 from .spec.errors import StorageError, safe_detail
-from .spec.scopes import MemoryScope, ScopeType
+from .spec.scopes import MemoryScope, ScopeType, retrieval_scopes
 from .storage import (
     CURRENT_VERSION,
+    AffinityRepository,
     Database,
+    JargonRepository,
     JournalRepository,
     MemoryRepository,
     ReflectionRepository,
     ReviewRepository,
     SqliteStateStore,
+    StyleRepository,
     VectorRepository,
 )
 from .support import truncate
@@ -92,6 +96,16 @@ _JOB_PROACTIVE_DAILY = "proactive-daily"
 _JOB_PROACTIVE_IDLE = "proactive-idle"
 _PROACTIVE_JOB_TIMEOUT = 300.0
 """主动交互任务超时（秒）：逐个会话生成 + 发送，给足余量但不无限占用。"""
+
+_JOB_JARGON_SCAN = "persona-jargon-scan"
+_JARGON_JOB_TIMEOUT = 300.0
+"""黑话扫描任务超时（秒）：一次批量推断 + 若干次写入。"""
+
+_STYLE_PAIR_TTL = 300.0
+"""风格配对的有效期（秒）：用户消息与 Bot 回复超过该间隔就不再配对成样本。"""
+
+_STYLE_PAIR_CACHE = 200
+"""风格配对缓存的最大会话数，防止长期运行后无限增长。"""
 
 
 class SuperAstrBotApp:
@@ -131,11 +145,15 @@ class SuperAstrBotApp:
         self._context_config: ContextConfig | None = None
         self._group_config: GroupConfig | None = None
         self._proactive_config: ProactiveConfig | None = None
+        self._persona_config: PersonaConfig | None = None
 
         self._memories: MemoryRepository | None = None
         self._journals_repo: JournalRepository | None = None
         self._reflections_repo: ReflectionRepository | None = None
         self._reviews_repo: ReviewRepository | None = None
+        self._style_repo: StyleRepository | None = None
+        self._jargon_repo: JargonRepository | None = None
+        self._affinity_repo: AffinityRepository | None = None
 
         self._memory_service: MemoryService | None = None
         self._journal_service: JournalService | None = None
@@ -143,8 +161,12 @@ class SuperAstrBotApp:
         self._context_governor: ContextGovernor | None = None
         self._group_service: GroupChatService | None = None
         self._proactive_service: ProactiveService | None = None
+        self._persona_service: PersonaService | None = None
         self._group_gate: Any | None = None
         """当前注入给 harness 的门控闭包（卸载时按对象身份清除，避免误清新实例）。"""
+
+        self._style_pairs: dict[str, tuple[str, float]] = {}
+        """会话最近一条用户消息（umo → 文本/时间），用于与 Bot 回复配对成风格样本。"""
 
         self._effective_capabilities: dict[str, bool] = {}
         self._retriever: Any | None = None
@@ -198,11 +220,24 @@ class SuperAstrBotApp:
         return self._proactive_service
 
     @property
+    def persona_service(self) -> PersonaService | None:
+        return self._persona_service
+
+    @property
+    def persona_config(self) -> PersonaConfig | None:
+        return self._persona_config
+
+    @property
     def host(self) -> Any:
         return self._harness.host if self._harness is not None else None
 
     def _enabled(self, key: str) -> bool:
         return bool(self._effective_capabilities.get(key, False))
+
+    def _persona_any(self) -> bool:
+        return any(
+            self._enabled(key) for key in ("persona.style", "persona.jargon", "persona.affinity")
+        )
 
     # ------------------------------------------------------------------ #
     # 生命周期
@@ -258,6 +293,14 @@ class SuperAstrBotApp:
                 self._warn("收敛后台任务失败：%s", safe_detail(exc))
             self._scope = None
 
+        if self._persona_service is not None:
+            # 候选词计数保存在内存里，卸载前必须落盘，否则重载即归零。
+            try:
+                await self._persona_service.flush()
+            except Exception as exc:  # noqa: BLE001
+                self._warn("拟人化学习进度落盘失败：%s", safe_detail(exc))
+            self._persona_service = None
+
         if self._db is not None:
             try:
                 await self._db.close()
@@ -281,6 +324,7 @@ class SuperAstrBotApp:
         self._context_config = ContextConfig.from_mapping(self._config)
         self._group_config = GroupConfig.from_mapping(self._config)
         self._proactive_config = ProactiveConfig.from_mapping(self._config)
+        self._persona_config = PersonaConfig.from_mapping(self._config)
         self._sync_derived_configs()
 
     def _probe_runtime_overrides(self) -> dict[str, bool]:
@@ -341,6 +385,10 @@ class SuperAstrBotApp:
             self._group_config.enabled = self._enabled("group.enabled")
         if self._proactive_config is not None:
             self._proactive_config.enabled = self._enabled("proactive.enabled")
+        if self._persona_config is not None:
+            self._persona_config.style.enabled = self._enabled("persona.style")
+            self._persona_config.jargon.enabled = self._enabled("persona.jargon")
+            self._persona_config.affinity.enabled = self._enabled("persona.affinity")
         self._sync_group_gate()
 
     def _sync_group_gate(self) -> None:
@@ -390,10 +438,35 @@ class SuperAstrBotApp:
         """按能力开关启停定时任务。"""
         if self._scheduler is None:
             return
-        self._scheduler.set_enabled("memory-maintenance", self._enabled("memory.enabled"))
+        self._scheduler.set_enabled(
+            "memory-maintenance",
+            self._enabled("memory.enabled") or self._enabled("persona.style"),
+        )
         self._scheduler.set_enabled("reflection-scan", self._enabled("reflection.enabled"))
         self._scheduler.set_enabled("weekly-insight", self._enabled("journal.weekly_reflection"))
         self._sync_proactive_jobs()
+        self._sync_persona_jobs()
+
+    def _sync_persona_jobs(self) -> None:
+        """增删黑话扫描任务（支持热切换）。"""
+        scheduler = self._scheduler
+        config = self._persona_config
+        if scheduler is None or config is None or self._persona_service is None:
+            return
+
+        interval = max(600.0, float(config.jargon.scan_interval_minutes) * 60.0)
+        job = scheduler.get(_JOB_JARGON_SCAN)
+        if not self._enabled("persona.jargon"):
+            scheduler.remove(_JOB_JARGON_SCAN)
+        elif job is None or job.interval != interval:
+            scheduler.every(
+                interval,
+                self._job_jargon_scan,
+                key=_JOB_JARGON_SCAN,
+                timeout=_JARGON_JOB_TIMEOUT,
+            )
+        else:
+            scheduler.set_enabled(_JOB_JARGON_SCAN, True)
 
     def _sync_proactive_jobs(self) -> None:
         """增删主动交互的两条轨道（支持热切换）。
@@ -597,8 +670,12 @@ class SuperAstrBotApp:
         return False
 
     async def _setup_storage(self) -> bool:
-        if not self._enabled("memory.enabled") and not self._enabled("journal.enabled"):
-            self._info("记忆与周记均未启用，跳过持久层初始化。")
+        if (
+            not self._enabled("memory.enabled")
+            and not self._enabled("journal.enabled")
+            and not self._persona_any()
+        ):
+            self._info("记忆、周记与拟人化学习均未启用，跳过持久层初始化。")
             return False
 
         try:
@@ -625,6 +702,9 @@ class SuperAstrBotApp:
         self._journals_repo = JournalRepository(db)
         self._reflections_repo = ReflectionRepository(db)
         self._reviews_repo = ReviewRepository(db)
+        self._style_repo = StyleRepository(db)
+        self._jargon_repo = JargonRepository(db)
+        self._affinity_repo = AffinityRepository(db)
         self._info("数据库就绪（schema v%s，FTS=%s）", CURRENT_VERSION, db.fts_available)
         return True
 
@@ -757,6 +837,22 @@ class SuperAstrBotApp:
             store=self._state_store,
             logger=self._logger,
         )
+
+        assert self._persona_config is not None
+        assert self._style_repo is not None and self._jargon_repo is not None
+        assert self._affinity_repo is not None and self._reviews_repo is not None
+        self._persona_service = PersonaService(
+            config=self._persona_config,
+            patterns=self._style_repo,
+            jargons=self._jargon_repo,
+            affinities=self._affinity_repo,
+            reviews=self._reviews_repo,
+            llm=self._harness.llm,
+            injector=self._harness.persona_injector,
+            store=self._state_store,
+            clock=self._harness.host.now,
+            logger=self._logger,
+        )
         self._sync_group_gate()
 
     async def _start_background(self) -> None:
@@ -802,12 +898,15 @@ class SuperAstrBotApp:
         # 5) 主动交互双轨（能力开启时才注册）
         self._sync_proactive_jobs()
 
+        # 6) 黑话扫描（能力开启时才注册）
+        self._sync_persona_jobs()
+
         await self._scheduler.start()
         self._info(
             "后台调度已启动：%s", "、".join(job["key"] for job in self._scheduler.snapshot())
         )
 
-        # 6) 配置页动态下拉：把真实的嵌入模型列表注入到 schema
+        # 7) 配置页动态下拉：把真实的嵌入模型列表注入到 schema
         if self._enabled("memory.enabled"):
             self._scope.spawn(self._schema_sync_loop(), name="schema-sync")
 
@@ -930,8 +1029,11 @@ class SuperAstrBotApp:
             return
 
         self._note_activity(view)
+        self._remember_user_text(view)
+        self._observe_persona(view)
         await self._inject_memory(view, request)
         await self._govern_context(view, request)
+        await self._inject_persona(view, request)
 
     async def _inject_memory(self, view: EventView, request: Any) -> None:
         """召回并注入长期记忆；失败只降级。"""
@@ -984,6 +1086,68 @@ class SuperAstrBotApp:
         elif result.applied:
             self._debug("上下文治理：%s", result.summary())
 
+    # ------------------------------------------------------------------ #
+    # 拟人化学习
+    # ------------------------------------------------------------------ #
+
+    def _remember_user_text(self, view: EventView) -> None:
+        """记住最近一条用户消息，供 Bot 回复送达后配对成风格样本。"""
+        if self._persona_service is None or not self._enabled("persona.style"):
+            return
+        text = view.text.strip()
+        if not text:
+            return
+        self._style_pairs[view.umo] = (text, view.timestamp or time.time())
+        if len(self._style_pairs) > _STYLE_PAIR_CACHE:
+            self._style_pairs.pop(next(iter(self._style_pairs)), None)
+
+    def _observe_persona(self, view: EventView) -> None:
+        """黑话候选统计与好感度更新都放到后台，不阻塞对话主链路。"""
+        service = self._persona_service
+        if service is None or self._scope is None or not self._persona_any():
+            return
+        text = view.text
+
+        async def _task() -> None:
+            try:
+                await service.observe_user(view, text)
+            except Exception as exc:  # noqa: BLE001 - 学习失败不影响对话
+                self._warn("拟人化学习观测失败：%s", safe_detail(exc))
+
+        self._scope.spawn(_task(), name="persona-observe")
+
+    async def _inject_persona(self, view: EventView, request: Any) -> None:
+        """把风格示例 / 黑话含义 / 关系语气写成本次请求的临时内容块。"""
+        service = self._persona_service
+        if service is None or not self._persona_any():
+            return
+        try:
+            detail = await service.inject(request, view)
+        except Exception as exc:  # noqa: BLE001 - 注入失败不影响对话
+            self._warn("拟人化学习注入失败：%s", safe_detail(exc))
+            return
+        if detail:
+            self._debug("拟人化学习注入：%s", detail)
+
+    async def _learn_style(self, view: EventView, reply_text: str) -> None:
+        """把「用户上一条消息 → 本次回复」配对成风格样本。"""
+        service = self._persona_service
+        if service is None:
+            return
+        pair = self._style_pairs.pop(view.umo, None)
+        if pair is None:
+            return
+        user_text, recorded_at = pair
+        if time.time() - recorded_at > _STYLE_PAIR_TTL:
+            return
+        try:
+            outcome = await service.learn_style(view, user_text=user_text, reply_text=reply_text)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("风格学习失败：%s", safe_detail(exc))
+            return
+        if outcome.stored or outcome.pending:
+            self._debug("风格学习（%s）：%s", view.umo, outcome.reason)
+
     async def on_group_message(self, event: Any) -> None:
         """群消息钩子：读空气决定本次是否需要 Bot 参与。
 
@@ -1021,10 +1185,13 @@ class SuperAstrBotApp:
         from .harness.astrbot_event import extract_result_text
 
         text = extract_result_text(event)
-        self._note_activity(view, reply_text=text.strip())
-        if not self._enabled("memory.capture") or not text.strip():
+        reply = text.strip()
+        self._note_activity(view, reply_text=reply)
+        if self._enabled("persona.style") and reply:
+            await self._learn_style(view, reply)
+        if not self._enabled("memory.capture") or not reply:
             return
-        self._queue_buffer(view, f"助手：{truncate(text.strip(), 500)}")
+        self._queue_buffer(view, f"助手：{truncate(reply, 500)}")
 
     def _note_activity(self, view: EventView, *, reply_text: str = "") -> None:
         """记录会话活动（供主动交互判断静默）与 Bot 发言（供群聊话题延续）。"""
@@ -1076,10 +1243,12 @@ class SuperAstrBotApp:
     # ------------------------------------------------------------------ #
 
     async def _job_maintenance(self) -> None:
-        if self._memory_service is None:
-            return
-        async with self._gate.write("__maintenance__") if self._gate else _NullGate():
-            stats = await self._memory_service.maintain()
+        stats: dict[str, Any] = {}
+        if self._memory_service is not None and self._enabled("memory.enabled"):
+            async with self._gate.write("__maintenance__") if self._gate else _NullGate():
+                stats = await self._memory_service.maintain()
+        if self._persona_service is not None and self._enabled("persona.style"):
+            stats["persona"] = await self._persona_service.maintain()
         self._info("每日维护完成：%s", stats)
 
     async def _job_reflection_scan(self) -> None:
@@ -1155,6 +1324,63 @@ class SuperAstrBotApp:
         if sent:
             self._info("主动交互（%s）：成功发送 %s 个会话", kind, len(sent))
 
+    async def _job_jargon_scan(self) -> None:
+        """黑话扫描：逐个「有候选词统计」的会话推断词义。"""
+        service = self._persona_service
+        if service is None or not self._enabled("persona.jargon"):
+            return
+        for scope in service.jargon.tracked_scopes():
+            try:
+                if self._gate is not None:
+                    async with self._gate.write(f"jargon:{scope.key}"):
+                        outcome = await service.scan_jargon(scope)
+                else:
+                    outcome = await service.scan_jargon(scope)
+            except Exception as exc:  # noqa: BLE001 - 单会话失败不影响其它会话
+                self._warn("黑话扫描异常（%s）：%s", scope.key, safe_detail(exc))
+                continue
+            if outcome.ran:
+                self._info("黑话扫描（%s）：%s", scope.key, outcome.summary())
+
+    # ------------------------------------------------------------------ #
+    # 待审队列（统一入口）
+    # ------------------------------------------------------------------ #
+
+    async def pending_reviews(self, scope: MemoryScope, *, limit: int = 20) -> list[dict[str, Any]]:
+        """读取待审队列（含反思与拟人化学习两类来源）。"""
+        if self._reviews_repo is None:
+            return []
+        rows = await self._reviews_repo.list_pending(retrieval_scopes(scope), limit=limit)
+        return summarize_reviews(rows)
+
+    async def pending_reviews_all(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """跨作用域读取待审队列（面板默认视角）。"""
+        if self._reviews_repo is None:
+            return []
+        rows = await self._reviews_repo.list_all_pending(limit=limit)
+        return summarize_reviews(rows)
+
+    async def approve_review(self, review_id: int) -> tuple[bool, str]:
+        """审批一条待审记录：拟人化学习来源由本域落地，其余交给反思域。"""
+        service = self._persona_service
+        if service is not None:
+            handled, message = await service.approve(review_id)
+            if handled:
+                return True, message
+        reflection = self._reflection_service
+        if reflection is None:
+            return False, ""
+        memory_id = await reflection.approve(review_id)
+        if memory_id is None:
+            return False, ""
+        return True, f"已写入记忆 #{memory_id}"
+
+    async def reject_review(self, review_id: int) -> bool:
+        """驳回一条待审记录（来源无关：只改状态，不落地）。"""
+        if self._reviews_repo is None:
+            return False
+        return await self._reviews_repo.set_status(review_id, "rejected", at=time.time())
+
     # ------------------------------------------------------------------ #
     # 对外状态
     # ------------------------------------------------------------------ #
@@ -1178,6 +1404,18 @@ class SuperAstrBotApp:
         proactive = (
             self._proactive_service.snapshot() if self._proactive_service is not None else {}
         )
+        persona: dict[str, Any] = {}
+        if self._persona_service is not None:
+            persona = self._persona_service.snapshot()
+            try:
+                counts = await self._persona_service.stats()
+                persona["counts"] = {
+                    "style": counts.style,
+                    "jargon": counts.jargon,
+                    "affinity": counts.affinity,
+                }
+            except Exception as exc:  # noqa: BLE001
+                persona["counts"] = {"error": safe_detail(exc)}
         if umo:
             if self._group_service is not None:
                 group = {**group, "session": self._group_service.session_snapshot(umo)}
@@ -1185,6 +1423,11 @@ class SuperAstrBotApp:
                 proactive = {
                     **proactive,
                     "session": await self._proactive_service.session_snapshot(umo),
+                }
+            if self._persona_service is not None:
+                persona = {
+                    **persona,
+                    "session": await self._persona_service.session_counts(umo),
                 }
         return {
             "ready": self._ready,
@@ -1202,6 +1445,7 @@ class SuperAstrBotApp:
             ),
             "group": group,
             "proactive": proactive,
+            "persona": persona,
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,
             "database": str(self._db.path) if self._db is not None else "",
             "fts": bool(self._db.fts_available) if self._db is not None else False,

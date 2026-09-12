@@ -470,6 +470,150 @@
       }
     }
   },
+  "persona": {
+    "description": "拟人化学习",
+    "type": "object",
+    "hint": "从对话中学习表达风格、群内用语与社交好感度，并在回复时作为参考注入（默认全部关闭）",
+    "items": {
+      "style": {
+        "description": "启用风格模仿",
+        "type": "bool",
+        "default": false,
+        "hint": "把「用户提问 → Bot 回答」配对成表达样本，遇到相似场景时作为 few-shot 示例注入。开启后即时生效"
+      },
+      "style_approval_required": {
+        "description": "风格样本需人工审批",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后新学到的样本进入待审队列，用 /sab approve 批准后才生效（推荐）"
+      },
+      "style_max_patterns": {
+        "description": "每会话最多保留样本数",
+        "type": "int",
+        "default": 200,
+        "slider": {"min": 10, "max": 2000, "step": 10}
+      },
+      "style_top_k": {
+        "description": "单次注入的样本条数",
+        "type": "int",
+        "default": 3,
+        "slider": {"min": 1, "max": 10, "step": 1}
+      },
+      "style_min_similarity": {
+        "description": "样本相似度门槛",
+        "type": "float",
+        "default": 0.12,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.02},
+        "hint": "当前消息与样本场景的词袋相似度低于该值就不注入"
+      },
+      "style_max_injected_chars": {
+        "description": "风格注入字符上限",
+        "type": "int",
+        "default": 600,
+        "slider": {"min": 100, "max": 4000, "step": 100}
+      },
+      "style_half_life_days": {
+        "description": "样本权重衰减半衰期（天）",
+        "type": "float",
+        "default": 30.0,
+        "slider": {"min": 1.0, "max": 365.0, "step": 1.0}
+      },
+      "jargon": {
+        "description": "启用群内用语理解",
+        "type": "bool",
+        "default": false,
+        "hint": "先统计高频候选词，再用模型推断词义；仅在对话中出现该词时注入含义用于理解"
+      },
+      "jargon_approval_required": {
+        "description": "群内用语需人工审批",
+        "type": "bool",
+        "default": true,
+        "hint": "模型推断的词义可能出错，建议保持开启"
+      },
+      "jargon_min_frequency": {
+        "description": "成为候选词所需的最少出现次数",
+        "type": "int",
+        "default": 3,
+        "slider": {"min": 2, "max": 50, "step": 1}
+      },
+      "jargon_candidate_limit": {
+        "description": "单次推断的候选词数量上限",
+        "type": "int",
+        "default": 8,
+        "slider": {"min": 1, "max": 30, "step": 1},
+        "hint": "一次模型调用批量处理，数量越大成本越高"
+      },
+      "jargon_scan_interval_minutes": {
+        "description": "候选词扫描间隔（分钟）",
+        "type": "int",
+        "default": 360,
+        "slider": {"min": 10, "max": 10080, "step": 10}
+      },
+      "jargon_max_jargons": {
+        "description": "每会话最多收录词条数",
+        "type": "int",
+        "default": 200,
+        "slider": {"min": 10, "max": 2000, "step": 10}
+      },
+      "jargon_max_injected_chars": {
+        "description": "群内用语注入字符上限",
+        "type": "int",
+        "default": 300,
+        "slider": {"min": 50, "max": 2000, "step": 50}
+      },
+      "jargon_provider_id": {
+        "description": "词义推断所用模型（建议用便宜的小模型）",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "留空则使用当前会话默认模型"
+      },
+      "affinity": {
+        "description": "启用社交好感度",
+        "type": "bool",
+        "default": false,
+        "hint": "按交互类型累积对每个用户的好感度，并按档位调整语气"
+      },
+      "affinity_initial_score": {
+        "description": "初始好感度",
+        "type": "float",
+        "default": 0.5,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "hint": "也是长期不交流时回归的基线值"
+      },
+      "affinity_half_life_days": {
+        "description": "好感度衰减半衰期（天）",
+        "type": "float",
+        "default": 14.0,
+        "slider": {"min": 1.0, "max": 365.0, "step": 1.0}
+      },
+      "affinity_daily_delta_cap": {
+        "description": "单次交互最大变化幅度",
+        "type": "float",
+        "default": 0.3,
+        "slider": {"min": 0.05, "max": 1.0, "step": 0.05}
+      },
+      "affinity_use_llm": {
+        "description": "规则冲突时用模型兜底判定",
+        "type": "bool",
+        "default": true,
+        "hint": "只有关键词同时命中正向与负向时才调用模型，日常几乎不产生额外调用"
+      },
+      "affinity_provider_id": {
+        "description": "好感度判定所用模型",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "留空则使用当前会话默认模型"
+      },
+      "affinity_inject_enabled": {
+        "description": "把关系状态注入提示词",
+        "type": "bool",
+        "default": true,
+        "hint": "关闭后只累积数值，不影响 Bot 语气"
+      }
+    }
+  },
   "runtime": {
     "description": "运行与性能",
     "type": "object",

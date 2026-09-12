@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Awaitable, Callable
 
 from astrbot.api.web import error_response, json_response, request
@@ -40,8 +39,9 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("memory", _memory_detail(app), ["GET"], "单条记忆详情"),
         ("search", _search(app), ["POST"], "混合检索记忆"),
         ("journals", _journals(app), ["GET"], "周记列表"),
-        ("reviews", _reviews(app), ["GET"], "待审记忆队列"),
-        ("review-action", _review_action(app), ["POST"], "审批记忆"),
+        ("reviews", _reviews(app), ["GET"], "待审队列"),
+        ("review-action", _review_action(app), ["POST"], "审批待审记录"),
+        ("persona", _persona(app), ["GET"], "拟人化学习数据（风格 / 黑话 / 好感度）"),
         ("maintenance", _maintenance(app), ["POST"], "维护操作（重建索引）"),
     ]
     for prefix in (f"/{PLUGIN_NAME}", f"/{PLUGIN_NAME_LOWER}"):
@@ -363,46 +363,25 @@ def _journals(app: Any) -> Handler:
 # --------------------------------------------------------------------------- #
 
 
-def _review_items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        try:
-            payload = json.loads(row.get("payload") or "{}")
-        except (TypeError, ValueError):
-            payload = {}
-        items.append(
-            {
-                "id": row.get("id"),
-                "origin": row.get("origin"),
-                "scope": f"{row.get('scope_type')}:{row.get('scope_id')}",
-                "created_at": row.get("created_at"),
-                "content": payload.get("content"),
-                "kind": payload.get("kind"),
-                "importance": payload.get("importance"),
-            }
-        )
-    return items
-
-
 def _reviews(app: Any) -> Handler:
     async def handler() -> Any:
-        reflection = app.reflection
-        if reflection is None:
-            return _not_ready()
-        umo = _str_param("umo")
+        umo = _str_param("umo").strip()
         limit = _int_param("limit", 20, low=1, high=100)
         try:
-            scope = MemoryScope.for_session(umo) if umo else MemoryScope.global_scope()
-            rows = await reflection.pending_reviews(scope, limit=limit)
+            if umo:
+                rows = await app.pending_reviews(MemoryScope.for_session(umo), limit=limit)
+            else:
+                rows = await app.pending_reviews_all(limit=limit)
         except Exception as exc:  # noqa: BLE001
             return error_response(f"读取待审队列失败：{exc}")
 
-        items = _review_items(rows)
+        origins = sorted({str(row.get("origin") or "") for row in rows})
         return _ok(
             {
-                "items": items,
-                "total": len(items),
-                "approval_required": bool(reflection.config.approval_required),
+                "items": rows,
+                "total": len(rows),
+                "origins": origins,
+                "umo": umo,
             }
         )
 
@@ -411,9 +390,6 @@ def _reviews(app: Any) -> Handler:
 
 def _review_action(app: Any) -> Handler:
     async def handler() -> Any:
-        reflection = app.reflection
-        if reflection is None:
-            return _not_ready()
         payload = await request.json(default={}) or {}
         try:
             review_id = int(payload.get("id"))
@@ -425,16 +401,107 @@ def _review_action(app: Any) -> Handler:
 
         try:
             if action == "approve":
-                memory_id = await reflection.approve(review_id)
-                if memory_id is None:
+                handled, message = await app.approve_review(review_id)
+                if not handled:
                     return error_response("该记录不存在或已处理", status_code=404)
-                return _ok({"memory_id": memory_id})
-            ok = await reflection.reject(review_id)
-            if not ok:
+                return _ok({"message": message})
+            rejected = await app.reject_review(review_id)
+            if not rejected:
                 return error_response("该记录不存在或已处理", status_code=404)
             return _ok({"rejected": True})
         except Exception as exc:  # noqa: BLE001
             return error_response(f"处理失败：{exc}")
+
+    return handler
+
+
+# --------------------------------------------------------------------------- #
+# 拟人化学习
+# --------------------------------------------------------------------------- #
+
+
+def _persona(app: Any) -> Handler:
+    async def handler() -> Any:
+        service = app.persona_service
+        if service is None:
+            return _not_ready()
+
+        limit = _int_param("limit", 20, low=1, high=100)
+        umo = _str_param("umo").strip()
+        try:
+            snapshot = service.snapshot()
+            counts = await service.stats()
+            if umo:
+                scope = MemoryScope.for_session(umo)
+                styles = await service.style_patterns(scope, limit=limit)
+                jargons = await service.jargon_entries(scope, limit=limit)
+                affinity = await service.affinity_rows(scope, limit=limit)
+                pending = len(await app.pending_reviews(scope, limit=100))
+            else:
+                styles = await service.all_style_patterns(limit=limit)
+                jargons = await service.all_jargons(limit=limit)
+                affinity = await service.all_affinity(limit=limit)
+                pending = len(await app.pending_reviews_all(limit=100))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取学习数据失败：{exc}")
+
+        style = snapshot.get("style") or {}
+        jargon = snapshot.get("jargon") or {}
+        affin = snapshot.get("affinity") or {}
+        return _ok(
+            {
+                "umo": umo,
+                "enabled": {
+                    "style": bool(style.get("enabled")),
+                    "jargon": bool(jargon.get("enabled")),
+                    "affinity": bool(affin.get("enabled")),
+                },
+                "approval_required": {
+                    "style": bool(style.get("approval_required")),
+                    "jargon": bool(jargon.get("approval_required")),
+                },
+                "counts": {
+                    "style": counts.style,
+                    "jargon": counts.jargon,
+                    "affinity": counts.affinity,
+                },
+                "pending": pending,
+                "style": [
+                    {
+                        "id": row.get("id"),
+                        "scope": f"{row.get('scope_type')}:{row.get('scope_id')}",
+                        "situation": row.get("situation"),
+                        "expression": row.get("expression"),
+                        "weight": round(float(row.get("weight") or 0.0), 4),
+                        "hits": row.get("hits"),
+                        "created_at": row.get("created_at"),
+                    }
+                    for row in styles
+                ],
+                "jargon": [
+                    {
+                        "id": row.get("id"),
+                        "scope": f"{row.get('scope_type')}:{row.get('scope_id')}",
+                        "term": row.get("term"),
+                        "meaning": row.get("meaning"),
+                        "confidence": round(float(row.get("confidence") or 0.0), 4),
+                        "evidence": row.get("evidence"),
+                    }
+                    for row in jargons
+                ],
+                "affinity": [
+                    {
+                        "scope": f"{row.get('scope_type')}:{row.get('scope_id')}",
+                        "target_id": row.get("target_id"),
+                        "score": round(float(row.get("score") or 0.0), 4),
+                        "mood": row.get("mood"),
+                        "interactions": row.get("interactions"),
+                        "last_interaction": row.get("last_interaction"),
+                    }
+                    for row in affinity
+                ],
+            }
+        )
 
     return handler
 

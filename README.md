@@ -24,6 +24,9 @@
 | 上下文治理 | **可选（默认关闭）**：请求级控制送入模型的内容规模——先占位压缩早期工具结果与图片，必要时把更早历史压成摘要；**不改写对话历史**（见下文「上下文治理」） |
 | 群聊语义 | **可选（默认关闭）**：读空气——按注意力得分决定是否在群聊里主动接话，配合冷却与每小时配额；短时间内的连续消息会合并成一次请求（见下文「群聊语义」） |
 | 主动交互 | **可选（默认关闭）**：双轨调度（每天固定时间 / 会话静默过久）基于记忆素材生成一条消息主动发出；受安静时段、每日上限与手动暂停约束（见下文「主动交互」） |
+| 风格模仿 | **可选（默认关闭）**：把「用户提问 → Bot 回答」配对成表达样本（不调用模型），遇到相似场景时作为 few-shot 示例注入（见下文「拟人化学习」） |
+| 群内用语理解 | **可选（默认关闭）**：先统计高频候选词，再用模型推断词义；对话中出现该词时注入含义，并明确要求**不要复读**（见下文「拟人化学习」） |
+| 社交好感度 | **可选（默认关闭）**：按交互类型累积对每个用户的好感度并随时间回归基线，按关系档位调整语气（见下文「拟人化学习」） |
 
 ### 为什么这样设计
 
@@ -71,9 +74,10 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 | `/sab remember <内容>` | 手动写入一条长期记忆 |
 | `/sab journal <内容> [#标签]` | 写一条周记 |
 | `/sab journals` | 查看最近周记 |
-| `/sab review` | 查看待审记忆（需开启审批模式） |
-| `/sab approve <编号>` / `/sab reject <编号>` | 批准 / 驳回待审记忆 |
-| `/sab reset confirm` | 清空当前作用域的记忆与缓冲（不可逆） |
+| `/sab review` | 查看待审记录（反思产出与拟人化学习结果都在这里） |
+| `/sab approve <编号>` / `/sab reject <编号>` | 批准 / 驳回待审记录 |
+| `/sab persona [类型]` | 查看拟人化学习概况；类型可选 `style` / `jargon` / `affinity` 看明细 |
+| `/sab reset confirm` | 清空当前作用域的记忆、缓冲与学习结果（不可逆） |
 | `/sab reindex` | 重建 FTS / 向量索引 |
 | `/sab quiet [on\|off]` | 暂停 / 恢复本会话的主动消息（免打扰）；不带参数则切换 |
 
@@ -87,7 +91,7 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 
 ## 控制台（插件页面）
 
-在 AstrBot 插件详情页 → **Pages** → `dashboard` 打开，共七个分区：
+在 AstrBot 插件详情页 → **Pages** → `dashboard` 打开，共八个分区：
 
 | 分区 | 内容 |
 |---|---|
@@ -95,7 +99,8 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 | 记忆 | 按状态、类型、关键词筛选 + 分页；点击任意一行查看完整内容与元数据 |
 | 检索 | 可选填写会话 UMO；展示命中数、检索路、耗时与**打分明细**（调参用） |
 | 周记 | 浏览周记（标签、情绪、时间） |
-| 待审 | 审批反思产出：批准写入长期记忆，驳回则丢弃 |
+| 待审 | 审批反思产出与拟人化学习结果：批准才会生效，驳回则丢弃 |
+| 学习 | 表达样本 / 群内用语 / 好感度三张表，可按会话 UMO 过滤 |
 | 功能 | 图形化开关，逐项开启/关闭插件能力；即改即生效（总开关需重载） |
 | 系统 | 框架版本与符号诊断、调度任务、调用预算、嵌入模型提供商、重建检索索引 |
 
@@ -121,6 +126,7 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 - **上下文治理**：请求级 token 上限、保留最近消息条数、最少消息数、摘要专用模型（默认关闭）
 - **群聊语义**：插话阈值、冷却、每小时配额、合并窗口、Bot 称呼词、群名单（默认关闭）
 - **主动交互**：目标会话、计划轨时间、空闲轨阈值、免打扰时段、每日上限、取材条数（默认关闭）
+- **拟人化学习**：风格样本（容量/条数/相似度/审批）、群内用语（频次门槛/扫描周期/审批/推断模型）、好感度（基线/衰减/幅度上限/兜底判定）（默认全关）
 - **运行与性能**：LLM 超时、辅助调用并发与每日上限、停止感知轮询间隔、向量扫描上限
 
 > 排障时先开启「调试日志」，会用 `DEBUG` 级别输出检索路命中、注入字符数、注入方式等细节。
@@ -266,6 +272,37 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 
 ---
 
+## 拟人化学习（可选）
+
+**默认全部关闭**，三项子能力互相独立。共同点是「在对话中学习 → 交给审查队列把关 → 请求时注入」，
+因此学习结果**不会**在未经批准的情况下改变 Bot 的说话方式。
+
+| 子能力 | 学什么 | 怎么学 | 注入什么 |
+|---|---|---|---|
+| 风格模仿 | 表达样本（场景 → 表达） | 把「用户上一条消息 → Bot 本次回复」直接配对，**不调用模型** | 相似场景的 few-shot 示例 |
+| 群内用语 | 群里的词条与含义 | 先按词频筛候选（零成本），再**一次批量调用**推断词义 | 命中词的含义 + 「不要复读」的负向指令 |
+| 社交好感度 | 与每个人的关系数值 | 关键词规则表判定；只有正负冲突时才请模型裁决 | 按档位的语气指引 |
+
+**审查制**：`style_approval_required` / `jargon_approval_required` 默认开启，学习结果先进待审队列。
+用 `/sab review` 查看，`/sab approve <编号>` 批准后才会写入生效表；面板「待审」分区同样可以操作。
+
+**查看学习结果**：
+
+- `/sab persona` 查看概况（三块是否开启、各自条数、待审数量）；
+- `/sab persona style` / `jargon` / `affinity` 查看本会话明细；
+- 面板「学习」分区可留空 UMO 看全部，或填 UMO 只看某个会话。
+
+**数值与衰减**（防止长期运行后风格跑偏）：
+
+- 表达样本按半衰期（默认 30 天）衰减，低于权重下限归档；每会话容量上限默认 200，按权重淘汰；
+- 群内用语仅保留已批准词条，候选计数持久化，重载不会从头累积；
+- 好感度向基线（默认 0.5）回归，半衰期默认 14 天；常规关系档（0.4–0.6）**不注入**任何语气指引。
+
+> 建议顺序：先只开「风格模仿」，用 `/sab persona style` 观察几天样本质量；
+> 确认可用后再逐步开「群内用语」（需要一个群积累足够语料）与「好感度」。
+
+---
+
 ## 排障（面向服务器部署）
 
 插件设计为「**任何异常都不打断正常对话**」，因此问题通常表现为**能力静默降级**而不是报错。排查顺序：
@@ -335,11 +372,12 @@ main.py                 装配层：注册钩子 / 指令 / Web API（薄）
     ├── context/        上下文治理域（请求级压缩 / 摘要水位线）
     ├── group/          群聊语义域（注意力评分 / 冷却配额 / 并发合并）
     ├── proactive/      主动交互域（双轨调度 / 竞态保护 / 免打扰）
+    ├── persona/        拟人化学习域（风格样本 / 群内用语 / 好感度）
     ├── commands/       指令逻辑（不依赖 AstrBot）
     └── web/            面板后端适配
 ```
 
-依赖方向自上而下单向：`memory/journal/learning/context/group/proactive` → `loop` → `storage` → `harness`。
+依赖方向自上而下单向：`memory/journal/learning/context/group/proactive/persona` → `loop` → `storage` → `harness`。
 框架版本变动只需改 `harness/` 与 `main.py`。完整规格见 [SPEC.md](SPEC.md)。
 
 ---
@@ -358,7 +396,8 @@ python -m ruff format .
 测试覆盖：能力依赖解析、迁移幂等、FTS 与降级、事务回滚、可恢复写日志、RRF 融合与加权、
 去重、端到端召回、缓冲隔离、全局作用域可见性、注入与清理、任务作用域/代次令牌/超时、
 调度幂等与跨重载、预算限流、并发门闸、反思解析与闭环、审批流程、指令权限与流程、
-token 估算与上下文治理、群聊注意力评分与并发合并、主动交互守卫与竞态，
+token 估算与上下文治理、群聊注意力评分与并发合并、主动交互守卫与竞态、
+拟人化学习（样本过滤/选择/衰减、候选统计与推断、规则与模型兜底判定、审批分流），
 以及**应用容器整体集成**（启动 → 注入 → 采集 → 状态 → 卸载）。
 
 > 本地 AstrBot 源码仅用于阅读框架 API（`astrbot/core/**`），实际运行验证在服务器上进行。
@@ -382,7 +421,7 @@ token 估算与上下文治理、群聊注意力评分与并发合并、主动�
 - [astrbot_plugin_livingmemory](https://github.com/lxfight-s-Astrbot-Plugins/astrbot_plugin_livingmemory) — 混合检索、RRF 融合、记忆生命周期、可恢复写日志
 - [astrbot_plugin_memory_beyond](https://github.com/AlanBacker/astrbot_plugin_memory_beyond) — 注入不污染历史、摘要思路、零依赖取向
 - [astrbot_plugin_group_chat_plus](https://github.com/Him666233/astrbot_plugin_group_chat_plus) — 判断型 AI 的推理协议与结果归一化解析
-- [astrbot_plugin_self_learning](https://github.com/NickCharlie/astrbot_plugin_self_learning) — 审批制写入、成本控制、工程韧性
+- [astrbot_plugin_self_learning](https://github.com/NickCharlie/astrbot_plugin_self_learning) — 审批制写入、成本控制、工程韧性；表达模式邻接对抽取与衰减、统计预筛、好感度数值模型
 - [astrbot_plugin_proactive_chat](https://github.com/Pancakes-Labs/astrbot_plugin_proactive_chat) — 双轨调度与幂等
 - [astrbot_plugin_livingmemory_ext](https://github.com/yulimfish/astrbot_plugin_livingmemory_ext) — 幂等定时任务、跨插件只读协作
 - [astrbot_plugin_AstrNa](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_AstrNa)（MIT）— 群聊上下文保护、群消息并发串行、系统提示词段不可压缩等思路
@@ -402,13 +441,15 @@ Copyright (C) 2026 BUXIN-A。
 
 ## 待办
 
-- [ ] 在服务器上验证：控制台七个分区的数据加载、功能开关的切换效果、向量路启用后的检索效果、指令冲突列表中不再出现本插件
+- [ ] 在服务器上验证：控制台八个分区的数据加载、功能开关的切换效果、向量路启用后的检索效果、指令冲突列表中不再出现本插件
 - [ ] 在服务器上验证 Agent 记忆工具：开启后模型能正确调用 `sab_memory_search` / `sab_memory_write`，且非管理员无法通过工具写入
 - [ ] 在服务器上验证上下文治理：长会话下确实触发占位压缩 / 摘要，且保留区原文不变、历史未被改写
 - [ ] 在服务器上验证群聊语义：能力关闭时群聊行为与未开启前完全一致；开启后只在够格的消息上插话，
       冷却与每小时配额生效，被 @ 时始终立即回复
 - [ ] 在服务器上验证主动交互：目标会话能收到主动消息，安静时段 / 每日上限 / `/sab quiet` 均能拦住发送
+- [ ] 在服务器上验证拟人化学习：三项关闭时对话行为与未开启前一致；开启后样本/词条先入待审队列，
+      批准后才会注入；`/sab persona` 与面板「学习」分区能看到明细，好感度常规档位不产生语气注入
 
 ## 后续规划
 
-- P5 拟人化学习：风格 few-shot、群组黑话、好感度（审查制）
+- 暂未规划新阶段；P0–P5 已全部完成（详见 [SPEC.md](SPEC.md) 第 17 节「迭代路线」）

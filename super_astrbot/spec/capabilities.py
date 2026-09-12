@@ -186,6 +186,39 @@ CAPABILITIES: tuple[Capability, ...] = (
             "受安静时段、每日上限与手动暂停约束；默认关闭。"
         ),
     ),
+    Capability(
+        key="persona.style",
+        title="风格模仿",
+        domain="persona",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "从「用户提问 → Bot 回答」邻接对中零成本学习表达方式，"
+            "遇到相似场景时作为 few-shot 示例注入。学习结果默认需审批；默认关闭。"
+        ),
+    ),
+    Capability(
+        key="persona.jargon",
+        title="群内用语理解",
+        domain="persona",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "先按词频筛出候选，再用模型推断词义；仅在对话中出现该词时注入含义"
+            "（明确要求不复读）。学习结果默认需审批；默认关闭。"
+        ),
+    ),
+    Capability(
+        key="persona.affinity",
+        title="社交好感度",
+        domain="persona",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "按交互类型累积对每个用户的好感度，随时间回归基线，"
+            "并按档位给出语气指引。规则优先、模型兜底；默认关闭。"
+        ),
+    ),
 )
 
 _BY_KEY: dict[str, Capability] = {item.key: item for item in CAPABILITIES}

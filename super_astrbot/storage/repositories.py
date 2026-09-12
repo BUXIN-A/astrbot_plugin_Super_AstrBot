@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import struct
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from ..spec.scopes import MemoryScope
 from .db import Database
@@ -747,3 +747,339 @@ class ReviewRepository:
                 default=0,
             )
         )
+
+    async def list_all_pending(self, *, limit: int) -> list[dict[str, Any]]:
+        """跨作用域读取待审队列（面板默认视角）。"""
+        rows = await self._db.query(
+            "SELECT * FROM pending_reviews WHERE status='pending'"
+            " ORDER BY created_at ASC, id ASC LIMIT ?",
+            (limit,),
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def count_all_pending(self) -> int:
+        return int(
+            await self._db.scalar(
+                "SELECT COUNT(*) FROM pending_reviews WHERE status='pending'", default=0
+            )
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 拟人化学习
+# --------------------------------------------------------------------------- #
+
+
+class StyleRepository:
+    """``style_patterns`` 表访问（user→bot 邻接对抽出的表达模式）。"""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def add(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        situation: str,
+        expression: str,
+        weight: float,
+        source: str,
+        created_at: float,
+    ) -> int | None:
+        """插入一条表达模式；同作用域内完全重复的模式返回 ``None``。"""
+        result = await self._db.execute(
+            "INSERT OR IGNORE INTO style_patterns(scope_type, scope_id, situation, expression,"
+            " weight, hits, source, created_at, updated_at, status)"
+            " VALUES (?,?,?,?,?,0,?,?,?, 'active')",
+            (
+                scope_type,
+                scope_id,
+                situation,
+                expression,
+                float(weight),
+                source,
+                created_at,
+                created_at,
+            ),
+        )
+        # OR IGNORE 命中唯一索引时不会写入，此时 lastrowid 不可信，必须看 rowcount。
+        if not int(result.rowcount or 0):
+            return None
+        return int(result.lastrowid or 0) or None
+
+    async def get(self, pattern_id: int) -> dict[str, Any] | None:
+        row = await self._db.query_one("SELECT * FROM style_patterns WHERE id=?", (pattern_id,))
+        return None if row is None else row_to_dict(row)
+
+    async def list_active(
+        self, scopes: Sequence[MemoryScope], *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        where, params = _scope_where(scopes)
+        rows = await self._db.query(
+            f"SELECT * FROM style_patterns WHERE status='active' AND ({where})"
+            " ORDER BY weight DESC, id DESC LIMIT ?",
+            [*params, limit],
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def list_page(
+        self, scopes: Sequence[MemoryScope], *, offset: int, limit: int
+    ) -> list[dict[str, Any]]:
+        where, params = _scope_where(scopes)
+        rows = await self._db.query(
+            f"SELECT * FROM style_patterns WHERE status='active' AND ({where})"
+            " ORDER BY weight DESC, id DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def list_all_page(self, *, offset: int, limit: int) -> list[dict[str, Any]]:
+        rows = await self._db.query(
+            "SELECT * FROM style_patterns WHERE status='active'"
+            " ORDER BY weight DESC, id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def update_usage(
+        self,
+        pattern_ids: Sequence[int],
+        *,
+        weights: Mapping[int, float] | None = None,
+        at: float,
+    ) -> None:
+        """注入命中后累计 hits；``weights`` 中给出的模式同时刷新权重。"""
+        for pattern_id in pattern_ids:
+            await self._db.execute(
+                "UPDATE style_patterns SET hits=hits+1, weight=COALESCE(?, weight),"
+                " updated_at=? WHERE id=?",
+                ((weights or {}).get(pattern_id), at, pattern_id),
+            )
+
+    async def apply_decay(self, *, factor: float, floor: float, at: float) -> int:
+        """整体按 ``factor`` 衰减，返回被归档（权重低于 ``floor``）的条数。"""
+        await self._db.execute(
+            "UPDATE style_patterns SET weight=weight*?, updated_at=? WHERE status='active'",
+            (float(factor), at),
+        )
+        archived = await self._db.execute(
+            "UPDATE style_patterns SET status='archived', updated_at=? WHERE status='active'"
+            " AND weight<?",
+            (at, float(floor)),
+        )
+        return int(archived.rowcount or 0)
+
+    async def trim(self, scopes: Sequence[MemoryScope], *, keep: int, at: float) -> int:
+        """只保留权重最高的 ``keep`` 条，其余归档（容量控制）。"""
+        if keep <= 0:
+            return 0
+        where, params = _scope_where(scopes)
+        result = await self._db.execute(
+            f"UPDATE style_patterns SET status='archived', updated_at=? WHERE status='active'"
+            f" AND ({where}) AND id NOT IN ("
+            f" SELECT id FROM style_patterns WHERE status='active' AND ({where})"
+            f" ORDER BY weight DESC, id DESC LIMIT ?)",
+            [at, *params, *params, keep],
+        )
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    async def delete(self, pattern_id: int) -> bool:
+        cursor = await self._db.execute("DELETE FROM style_patterns WHERE id=?", (pattern_id,))
+        return bool(getattr(cursor, "rowcount", 0))
+
+    async def clear_scopes(self, scopes: Sequence[MemoryScope]) -> int:
+        where, params = _scope_where(scopes)
+        cursor = await self._db.execute(f"DELETE FROM style_patterns WHERE ({where})", params)
+        return int(getattr(cursor, "rowcount", 0) or 0)
+
+    async def count(self, scopes: Sequence[MemoryScope]) -> int:
+        where, params = _scope_where(scopes)
+        return int(
+            await self._db.scalar(
+                f"SELECT COUNT(*) FROM style_patterns WHERE status='active' AND ({where})",
+                params,
+                default=0,
+            )
+        )
+
+    async def all_scopes(self) -> list[tuple[str, str]]:
+        """列出存在表达模式的作用域（每日容量淘汰需要逐作用域处理）。"""
+        rows = await self._db.query(
+            "SELECT DISTINCT scope_type, scope_id FROM style_patterns WHERE status='active'"
+        )
+        return [(str(row["scope_type"]), str(row["scope_id"])) for row in rows]
+
+    async def count_all(self) -> int:
+        return int(
+            await self._db.scalar(
+                "SELECT COUNT(*) FROM style_patterns WHERE status='active'", default=0
+            )
+        )
+
+
+class JargonRepository:
+    """``jargons`` 表访问（群组黑话词条）。"""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def upsert(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        term: str,
+        meaning: str,
+        confidence: float,
+        samples: Sequence[str],
+        created_at: float,
+        last_seen_at: float,
+    ) -> int:
+        """新增或更新词条：同词重复学习时累加证据数并刷新含义。"""
+        cursor = await self._db.execute(
+            "INSERT INTO jargons(scope_type, scope_id, term, meaning, confidence, evidence,"
+            " samples, created_at, updated_at, last_seen_at, status)"
+            " VALUES (?,?,?,?,?,1,?,?,?,?, 'active')"
+            " ON CONFLICT(scope_type, scope_id, term) DO UPDATE SET"
+            " meaning=excluded.meaning, confidence=excluded.confidence,"
+            " evidence=jargons.evidence+1, samples=excluded.samples,"
+            " updated_at=excluded.updated_at, last_seen_at=excluded.last_seen_at,"
+            " status='active'",
+            (
+                scope_type,
+                scope_id,
+                term,
+                meaning,
+                float(confidence),
+                json.dumps(list(samples), ensure_ascii=False),
+                created_at,
+                created_at,
+                last_seen_at,
+            ),
+        )
+        return int(cursor.lastrowid or 0)
+
+    async def list_active(
+        self, scopes: Sequence[MemoryScope], *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        where, params = _scope_where(scopes)
+        rows = await self._db.query(
+            f"SELECT * FROM jargons WHERE status='active' AND ({where})"
+            " ORDER BY confidence DESC, evidence DESC, id DESC LIMIT ?",
+            [*params, limit],
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def existing_terms(self, scopes: Sequence[MemoryScope]) -> set[str]:
+        where, params = _scope_where(scopes)
+        rows = await self._db.query(f"SELECT term FROM jargons WHERE ({where})", params)
+        return {str(row["term"]) for row in rows}
+
+    async def delete(self, jargon_id: int) -> bool:
+        cursor = await self._db.execute("DELETE FROM jargons WHERE id=?", (jargon_id,))
+        return bool(getattr(cursor, "rowcount", 0))
+
+    async def clear_scopes(self, scopes: Sequence[MemoryScope]) -> int:
+        where, params = _scope_where(scopes)
+        cursor = await self._db.execute(f"DELETE FROM jargons WHERE ({where})", params)
+        return int(getattr(cursor, "rowcount", 0) or 0)
+
+    async def list_all_page(self, *, offset: int, limit: int) -> list[dict[str, Any]]:
+        rows = await self._db.query(
+            "SELECT * FROM jargons WHERE status='active'"
+            " ORDER BY confidence DESC, evidence DESC, id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def count(self, scopes: Sequence[MemoryScope]) -> int:
+        where, params = _scope_where(scopes)
+        return int(
+            await self._db.scalar(
+                f"SELECT COUNT(*) FROM jargons WHERE status='active' AND ({where})",
+                params,
+                default=0,
+            )
+        )
+
+    async def count_all(self) -> int:
+        return int(
+            await self._db.scalar("SELECT COUNT(*) FROM jargons WHERE status='active'", default=0)
+        )
+
+
+class AffinityRepository:
+    """``affinity_state`` 表访问（按会话 + 对象累积的好感度）。"""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def get(self, scope_type: str, scope_id: str, target_id: str) -> dict[str, Any] | None:
+        row = await self._db.query_one(
+            "SELECT * FROM affinity_state WHERE scope_type=? AND scope_id=? AND target_id=?",
+            (scope_type, scope_id, target_id),
+        )
+        return None if row is None else row_to_dict(row)
+
+    async def upsert(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        target_id: str,
+        score: float,
+        mood: str,
+        interactions: int,
+        last_interaction: float,
+        updated_at: float,
+    ) -> None:
+        await self._db.execute(
+            "INSERT INTO affinity_state(scope_type, scope_id, target_id, score, mood,"
+            " interactions, last_interaction, updated_at) VALUES (?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(scope_type, scope_id, target_id) DO UPDATE SET"
+            " score=excluded.score, mood=excluded.mood, interactions=excluded.interactions,"
+            " last_interaction=excluded.last_interaction, updated_at=excluded.updated_at",
+            (
+                scope_type,
+                scope_id,
+                target_id,
+                float(score),
+                mood,
+                int(interactions),
+                float(last_interaction),
+                updated_at,
+            ),
+        )
+
+    async def list_by_scope(
+        self, scope_type: str, scope_id: str, *, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        rows = await self._db.query(
+            "SELECT * FROM affinity_state WHERE scope_type=? AND scope_id=?"
+            " ORDER BY score DESC, interactions DESC LIMIT ?",
+            (scope_type, scope_id, limit),
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def list_all_page(self, *, offset: int, limit: int) -> list[dict[str, Any]]:
+        rows = await self._db.query(
+            "SELECT * FROM affinity_state ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def delete(self, scope_type: str, scope_id: str, target_id: str) -> bool:
+        cursor = await self._db.execute(
+            "DELETE FROM affinity_state WHERE scope_type=? AND scope_id=? AND target_id=?",
+            (scope_type, scope_id, target_id),
+        )
+        return bool(getattr(cursor, "rowcount", 0))
+
+    async def clear_scopes(self, scopes: Sequence[MemoryScope]) -> int:
+        where, params = _scope_where(scopes)
+        cursor = await self._db.execute(f"DELETE FROM affinity_state WHERE ({where})", params)
+        return int(getattr(cursor, "rowcount", 0) or 0)
+
+    async def count_all(self) -> int:
+        return int(await self._db.scalar("SELECT COUNT(*) FROM affinity_state", default=0))

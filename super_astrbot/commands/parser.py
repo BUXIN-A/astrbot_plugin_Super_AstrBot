@@ -41,6 +41,9 @@ _ACTION_ALIASES: dict[str, str] = {
     "重建": "reindex",
     "安静": "quiet",
     "免打扰": "quiet",
+    "学习": "persona",
+    "拟人化": "persona",
+    "人格": "persona",
 }
 
 

@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any, Sequence
 
@@ -27,8 +26,9 @@ HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）�
 /sab journal <内容> [#标签]  写一条周记（现实记忆）
 /sab journals        查看最近周记
 /sab review          查看待审记忆
-/sab approve <编号>   批准一条待审记忆
-/sab reject <编号>    驳回一条待审记忆
+/sab approve <编号>   批准一条待审记录
+/sab reject <编号>    驳回一条待审记录
+/sab persona [类型]   查看拟人化学习概况；类型可选 style / jargon / affinity
 /sab reset confirm   清空当前会话的记忆与缓冲（不可逆）
 /sab reindex         重建检索索引
 /sab quiet [on|off]  暂停/恢复本会话的主动消息（免打扰）
@@ -265,25 +265,16 @@ class CommandService:
         return "\n".join(lines)
 
     async def review_list(self, view: EventView) -> str:
-        reflection = self._app.reflection
-        if reflection is None:
-            return self._not_ready()
-        if not reflection.config.approval_required:
-            return "当前未开启「反思结果需人工审批」，反思产出会直接写入记忆。"
         try:
-            rows = await reflection.pending_reviews(self._scope(view), limit=10)
+            rows = await self._app.pending_reviews(self._scope(view), limit=10)
         except Exception as exc:  # noqa: BLE001
             return f"读取待审队列失败：{safe_detail(exc)}"
         if not rows:
             return "待审队列为空。"
-        lines = ["待审记忆："]
+        lines = ["待审记录："]
         for row in rows:
-            try:
-                payload = json.loads(row.get("payload") or "{}")
-            except (TypeError, ValueError):
-                payload = {}
             lines.append(
-                f"- #{row.get('id')} [{payload.get('kind', 'insight')}] {str(payload.get('content') or '')[:120]}"
+                f"- #{row.get('id')} [{row.get('origin')}] {str(row.get('summary') or '')[:120]}"
             )
         lines.append("使用 /sab approve <编号> 或 /sab reject <编号> 处理。")
         return "\n".join(lines)
@@ -295,20 +286,17 @@ class CommandService:
         return await self._review_action(view, review_id, approve=False)
 
     async def _review_action(self, view: EventView, raw_id: str, *, approve: bool) -> str:
-        reflection = self._app.reflection
-        if reflection is None:
-            return self._not_ready()
         try:
             review_id = int(str(raw_id).strip())
         except (TypeError, ValueError):
             return "请提供有效的待审编号，例如 /sab approve 3"
         try:
             if approve:
-                memory_id = await reflection.approve(review_id)
-                if memory_id is None:
+                handled, message = await self._app.approve_review(review_id)
+                if not handled:
                     return f"#{review_id} 不存在或已处理。"
-                return f"已批准 #{review_id}，写入记忆 #{memory_id}。"
-            rejected = await reflection.reject(review_id)
+                return f"已批准 #{review_id}：{message}"
+            rejected = await self._app.reject_review(review_id)
             if not rejected:
                 return f"#{review_id} 不存在或已处理。"
             return f"已驳回 #{review_id}。"
@@ -317,17 +305,35 @@ class CommandService:
 
     async def reset(self, view: EventView, confirm: str) -> str:
         memory = self._app.memory
-        if memory is None:
+        service = self._app.persona_service
+        if memory is None and service is None:
             return self._not_ready()
         if (confirm or "").strip().lower() not in {"confirm", "确认"}:
             return "该操作不可逆。确认请执行：/sab reset confirm"
-        try:
-            stats = await memory.reset_scope(self._scope(view))
-        except Exception as exc:  # noqa: BLE001
-            return f"重置失败：{safe_detail(exc)}"
+
+        scope = self._scope(view)
+        counts = {"active": 0, "buffered": 0}
+        if memory is not None:
+            try:
+                counts = await memory.reset_scope(scope)
+            except Exception as exc:  # noqa: BLE001
+                return f"重置失败：{safe_detail(exc)}"
+
+        extra = ""
+        if service is not None:
+            try:
+                cleared = await service.clear(scope)
+            except Exception as exc:  # noqa: BLE001
+                extra = f"（拟人化学习清理失败：{safe_detail(exc)}）"
+            else:
+                extra = (
+                    f"，风格样本 {cleared.get('style', 0)} 条、"
+                    f"群内用语 {cleared.get('jargon', 0)} 条、"
+                    f"好感度记录 {cleared.get('affinity', 0)} 条"
+                )
         return (
-            f"已清空当前作用域：正式记忆 {stats.get('active', 0)} 条，"
-            f"对话缓冲 {stats.get('buffered', 0)} 条。"
+            f"已清空当前作用域：正式记忆 {counts.get('active', 0)} 条，"
+            f"对话缓冲 {counts.get('buffered', 0)} 条{extra}。"
         )
 
     async def reindex(self, view: EventView) -> str:
@@ -370,6 +376,93 @@ class CommandService:
         )
 
     # ------------------------------------------------------------------ #
+    # 拟人化学习
+    # ------------------------------------------------------------------ #
+
+    async def persona(self, view: EventView, arg: str) -> str:
+        """查看拟人化学习概况；带类型参数时展示对应明细。"""
+        service = self._app.persona_service
+        if service is None:
+            return self._not_ready()
+
+        scope = self._scope(view)
+        token = (arg or "").strip().lower()
+        try:
+            if token in {"style", "风格"}:
+                return await self._persona_styles(service, scope)
+            if token in {"jargon", "黑话", "用语"}:
+                return await self._persona_jargons(service, scope)
+            if token in {"affinity", "好感", "好感度"}:
+                return await self._persona_affinity(service, scope)
+            return await self._persona_overview(service, view, scope)
+        except Exception as exc:  # noqa: BLE001
+            return f"读取学习结果失败：{safe_detail(exc)}"
+
+    async def _persona_overview(self, service: Any, view: EventView, scope: MemoryScope) -> str:
+        snapshot = service.snapshot()
+        counts = await service.stats()
+        session = await service.session_counts(view.umo)
+        pending = await self._app.pending_reviews(scope, limit=100)
+        style = snapshot.get("style") or {}
+        jargon = snapshot.get("jargon") or {}
+        affinity = snapshot.get("affinity") or {}
+        return "\n".join(
+            [
+                "拟人化学习",
+                f"- 风格模仿：{self._state(style)}，样本 {counts.style} 条"
+                f"（本会话 {session.get('style', 0)} 条）"
+                + ("，需审批" if style.get("approval_required") else ""),
+                f"- 群内用语：{self._state(jargon)}，词条 {counts.jargon} 条"
+                f"（本会话 {session.get('jargon', 0)} 条）"
+                + ("，需审批" if jargon.get("approval_required") else ""),
+                f"- 社交好感度：{self._state(affinity)}，记录 {counts.affinity} 条",
+                f"- 待审记录：{len(pending)} 条（用 /sab review 查看）",
+                "明细：/sab persona style｜jargon｜affinity",
+            ]
+        )
+
+    async def _persona_styles(self, service: Any, scope: MemoryScope) -> str:
+        rows = await service.style_patterns(scope, limit=10)
+        if not rows:
+            return "本会话还没有学到表达样本。"
+        lines = ["表达样本（按权重排序）："]
+        for row in rows:
+            lines.append(
+                f"- #{row.get('id')} [w={float(row.get('weight') or 0):.2f}] "
+                f"{str(row.get('situation') or '')[:50]} → {str(row.get('expression') or '')[:80]}"
+            )
+        return "\n".join(lines)
+
+    async def _persona_jargons(self, service: Any, scope: MemoryScope) -> str:
+        rows = await service.jargon_entries(scope, limit=10)
+        if not rows:
+            return "本会话还没有收录群内用语。"
+        lines = ["群内用语："]
+        for row in rows:
+            lines.append(
+                f"- #{row.get('id')} 「{row.get('term')}」："
+                f"{str(row.get('meaning') or '')[:60]}"
+                f"（置信 {float(row.get('confidence') or 0):.2f}，证据 {row.get('evidence', 0)}）"
+            )
+        return "\n".join(lines)
+
+    async def _persona_affinity(self, service: Any, scope: MemoryScope) -> str:
+        rows = await service.affinity_rows(scope, limit=10)
+        if not rows:
+            return "本会话还没有好感度记录。"
+        lines = ["本会话好感度："]
+        for row in rows:
+            lines.append(
+                f"- {row.get('target_id')}：{float(row.get('score') or 0):.2f}"
+                f"（{row.get('mood')}，交互 {row.get('interactions', 0)} 次）"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _state(snapshot: dict[str, Any]) -> str:
+        return "开启" if snapshot.get("enabled") else "关闭"
+
+    # ------------------------------------------------------------------ #
     # 统一入口
     # ------------------------------------------------------------------ #
 
@@ -395,6 +488,7 @@ class CommandService:
             "reset": lambda: self.reset(view, args[0] if args else ""),
             "reindex": lambda: self.reindex(view),
             "quiet": lambda: self.quiet(view, args[0] if args else ""),
+            "persona": lambda: self.persona(view, args[0] if args else ""),
         }
         handler = handlers.get(action)
         if handler is None:

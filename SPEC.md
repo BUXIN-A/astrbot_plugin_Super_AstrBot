@@ -42,6 +42,7 @@
     │    memory   长期记忆与检索        journal   周记 / 现实记忆
     │    learning 反思式自我学习        context   请求级上下文治理
     │    group    群聊语义（读空气）     proactive 主动交互（双轨调度）
+    │    persona  拟人化学习（风格/黑话/好感度）
     │    commands 指令门面              web       面板 API
     │
 ┌───▼──────────────────────────────────────────────────────────┐
@@ -86,6 +87,9 @@
 | `context.governance` | 上下文治理 | **off** | `basic.enabled` | ✅ | 请求级 token 治理：占位压缩 + 历史摘要（见第 10 节） |
 | `group.enabled` | 群聊语义 | **off** | `basic.enabled` | ✅ | 读空气插话 + 冷却配额 + 并发合并（见第 11 节） |
 | `proactive.enabled` | 主动交互 | **off** | `basic.enabled` | ✅ | 双轨调度主动消息 + 免打扰（见第 12 节） |
+| `persona.style` | 拟人化学习 | **off** | `basic.enabled` | ✅ | 风格模仿：邻接对样本 + few-shot 注入（见第 13 节） |
+| `persona.jargon` | 拟人化学习 | **off** | `basic.enabled` | ✅ | 群内用语：统计预筛 + 词义推断 + 理解注入（见第 13 节） |
+| `persona.affinity` | 拟人化学习 | **off** | `basic.enabled` | ✅ | 社交好感度：规则判定 + 模型兜底 + 语气指引（见第 13 节） |
 
 **依赖解析规则**：某能力的前置不满足时，该能力视为关闭，并记录一条 `DegradedReason`（只告警一次）。
 
@@ -151,18 +155,18 @@ class MemoryToolBackend(Protocol):
 class GroupSignals:
     # 群消息的额外信号（读空气决策输入，见第 11 节）
     self_id: str = ""
-    mentioned: bool = False   # 被 @ 或引用了 Bot 的消息
-    wake: bool = False        # 框架已判定应唤醒（wake 前缀 / @ / 引用）
+    mentioned: bool = False  # 被 @ 或引用了 Bot 的消息
+    wake: bool = False  # 框架已判定应唤醒（wake 前缀 / @ / 引用）
 
 
 @dataclass(frozen=True)
 class GroupDecision:
     # 群消息处理决策，由业务域给出、由 harness 落地到事件对象
-    action: str = "reply"     # interject | reply | silent
+    action: str = "reply"  # interject | reply | silent
     reason: str = ""
     attention: float = 0.0
-    text: str = ""            # 插话时写回事件的消息文本（并发合并结果）
-    merged: int = 0           # 本次合并的消息条数
+    text: str = ""  # 插话时写回事件的消息文本（并发合并结果）
+    merged: int = 0  # 本次合并的消息条数
 ```
 
 ### 4.2 事件视图（`harness/protocols.py: EventView`）
@@ -560,15 +564,110 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 
 ---
 
-## 13. 可观测性与运维
+## 13. 拟人化学习规格
+
+对应路线 P5。目标：让 Bot 逐步获得**说话方式**、**群内用语理解**与**关系感**，
+同时把「学习结果可能出错」的风险控制在审查队列之内。
+
+### 13.1 三块能力与共同链路
+
+| 子能力 | 学什么 | 学的方式 | 注入什么 |
+|---|---|---|---|
+| 风格模仿（`persona.style`） | 表达模式（场景 → 表达） | 邻接对直接配对，**零模型调用** | 相似场景的 few-shot 示例 |
+| 群内用语（`persona.jargon`） | 群内词条及其含义 | 词频统计预筛 + 一次批量推断 | 命中词的含义（禁止复读） |
+| 社交好感度（`persona.affinity`） | 每个对象的关系数值 | 关键词规则表，冲突时才调模型 | 按档位的语气指引 |
+
+共同链路：**对话中学习 → 有错可拦（审查队列）→ 请求前注入**。
+三者各自独立开关，互不依赖；全部默认关闭。
+
+### 13.2 风格模仿
+
+1. **配对**：`after_message_sent` 时取出该会话最近一条用户消息（内存态，TTL 300s 内有效），
+   与本次回复组成 `situation` / `expression`。用户消息带命令前缀、过短，或回复过短/过长时丢弃。
+2. **落地**：`approval_required`（默认 true）为真时写入 `pending_reviews`（`origin='style'`），
+   否则直接写 `style_patterns`；同一作用域内完全相同的样本由唯一索引挡住，不重复计入。
+3. **选择**：对当前消息与所有 `active` 样本的 `situation` 做词袋 Jaccard 相似度，
+   低于 `min_similarity` 的丢弃，其余按「相似度 → 权重」排序取 top-k。
+4. **加权**：命中即 `hits+1`，权重增加固定增量并封顶；每日按 `half_life_days` 衰减，
+   低于 `weight_floor` 归档；每作用域超过 `max_patterns` 时按权重淘汰。
+5. **注入**：渲染为带边界与「只模仿语气、不要照抄内容」声明的示例块，总字符不超 `max_injected_chars`。
+
+### 13.3 群内用语
+
+1. **候选统计（零成本）**：用户消息分词后累加词频，只保留长度在 `min_chars`–`max_chars`、
+   非纯数字的词；每作用域内存条目有上限，超出按词频淘汰。计数与例句写入状态存储
+   （`persona:jargon:counts:<scope>`），**插件卸载前落盘**，因此重载不会让累积归零。
+2. **扫描**：定时任务（`scan_interval_minutes`）逐会话挑出词频 ≥ `min_frequency` 的候选，
+   排除已收录、已在待审队列的词，取前 `candidate_limit` 个，**一次批量调用**推断词义。
+3. **落地**：`approval_required`（默认 true）为真时入 `pending_reviews`（`origin='jargon'`），
+   否则直接写 `jargons`（同词重复学习时累加证据数并刷新含义）。
+4. **消费即移除**：本次送入推断的候选词无论判定结果如何都从计数中删除，
+   避免一个通用词被反复送去推断、反复消耗调用。
+5. **注入**：当前消息命中已收录词条时注入含义，并附**负向指令**（只用于理解、不要复述、
+   不要主动使用），防止黑话被扩散；单次最多 `inject_max` 条、字符数不超 `max_injected_chars`。
+
+### 13.4 社交好感度
+
+1. **规则优先**：10 类交互（praise / thanks / care / apology / joke / greet / question /
+   criticism / conflict / insult / neutral）由关键词规则表判定；以问号结尾按提问处理。
+2. **模型兜底**：仅当规则同时命中正向与负向类型时（例：「你可真厉害，就是会添乱」）才调用模型裁决；
+   模型不可用、解析失败或置信度不足时**不改变分数**（宁可不动，也不要误判）。
+3. **数值模型**：`score ∈ [min_score, max_score]`；单次变化幅度受 `daily_delta_cap` 约束；
+   长期静默时按 `decay_half_life_days` 向 `initial_score` 回归；只按「会话 + 对象」独立累积，
+   **不做跨用户总量再分配**。
+4. **触发器**：用户消息在后台任务中更新（含兜底调用），不阻塞对话主链路；注入读取的是当前表值。
+5. **注入档位**：≥0.75 亲近、0.6–0.75 熟悉、**0.4–0.6 不注入**、0.25–0.4 保持礼貌、
+   <0.25 克制；`inject_enabled` 为假时只累积不注入。
+
+### 13.5 审查制
+
+- 统一复用 `pending_reviews`，以 `origin` 区分来源（`style` / `jargon` / `reflection`）；
+- 审批由**来源域**落地（写各自的表），落地成功后把记录置为 `approved`，避免重复出现在队列中；
+- 非本域来源（反思）返回未处理，交由 `learning` 域处理，命令与面板都走同一入口；
+- 审查开关可按子能力配置：`style_approval_required` / `jargon_approval_required`，默认均为 true。
+
+### 13.6 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `persona.style` | **false** | 风格模仿开关 |
+| `persona.style_approval_required` | true | 样本是否先进待审队列 |
+| `persona.style_max_patterns` | 200 | 每作用域样本容量 |
+| `persona.style_top_k` / `style_min_similarity` | 3 / 0.12 | 单次注入条数与相似度门槛 |
+| `persona.style_max_injected_chars` / `style_half_life_days` | 600 / 30 | 注入字符预算与衰减半衰期 |
+| `persona.jargon` | **false** | 群内用语开关 |
+| `persona.jargon_approval_required` | true | 词条是否先进待审队列 |
+| `persona.jargon_min_frequency` / `jargon_candidate_limit` | 3 / 8 | 候选门槛与单批上限 |
+| `persona.jargon_scan_interval_minutes` | 360 | 扫描周期 |
+| `persona.jargon_max_jargons` / `jargon_max_injected_chars` | 200 / 300 | 词条上限与注入预算 |
+| `persona.jargon_provider_id` | 空 | 推断所用模型（建议用便宜的小模型） |
+| `persona.affinity` | **false** | 好感度开关 |
+| `persona.affinity_initial_score` / `affinity_half_life_days` | 0.5 / 14 | 基线与衰减半衰期 |
+| `persona.affinity_daily_delta_cap` | 0.3 | 单次交互最大变化 |
+| `persona.affinity_use_llm` / `affinity_provider_id` | true / 空 | 兜底判定与所用模型 |
+| `persona.affinity_inject_enabled` | true | 是否注入语气指引 |
+
+### 13.7 硬性约束
+
+1. **默认关闭且关闭即零副作用**：能力关闭时不注册调度、不学习、不注入，对话行为与未安装一致；
+2. **未批准不生效**：审查开关为真时，学习结果只进队列，绝不提前影响对话；
+3. **零成本路径不许调模型**：邻接对抽取、候选统计、无冲突的规则判定都必须不产生模型调用；
+4. **兜底失败不改分数**：模型不可用或输出不可解析时保持原值，并只记一条调试日志；
+5. **注入块独立**：使用独立的边界标记，注入前只清理自己的旧块，不覆盖记忆注入；
+6. **不写对话历史**：注入走临时内容块，学习结果的载体是插件自己的表，不污染对话历史；
+7. **单点失败不外溢**：学习、注入、扫描任一环节异常都只降级并记日志，不影响对话与其它任务。
+
+---
+
+## 14. 可观测性与运维
 
 - 日志统一经 `Host.log()`；关键路径分级，`debug_log` 开启才输出检索打分细节。
 - 命令采用**单一顶层入口** `sab`（别名 `superastrbot`），子命令由
   `commands/parser.py` 自行解析：`status`、`search`、`why`、`remember`、`journal`、
-  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`quiet`、`help`。
+  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`quiet`、`persona`、`help`。
   之所以不注册多条顶层/子指令：AstrBot 的指令冲突检测以指令「完整名」为键，
   注册项越少撞名概率越低，也不依赖框架的参数推导行为。
-- 面板（`pages/dashboard`）七个分区：总览、记忆、检索、周记、待审、功能、系统。
+- 面板（`pages/dashboard`）八个分区：总览、记忆、检索、周记、待审、学习、功能、系统。
   前端**只经 `window.AstrBotPluginPage` bridge 请求**，不使用 `fetch`（插件页位于
   无 `allow-same-origin` 的 sandbox iframe，直连请求必然失败）；入口脚本必须
   `type="module"`，确保在 AstrBot 注入 bridge 之后执行。
@@ -588,13 +687,17 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
   （`/sab status` 走这条）额外附带**本会话**的近一小时插话次数、冷却剩余、今日主动消息条数、
   暂停状态与静默时长。主动交互的两条轨道以 `proactive-daily` / `proactive-idle` 注册到
   `Scheduler`，因此面板「系统 → 后台任务」会连同下次执行时间一起展示。
+- 拟人化学习经 `status()` 的 `persona` 字段暴露（三块子能力的开关、审批要求与累计条数）；
+  `/sab persona` 与面板「学习」分区按会话展示表达样本、群内用语与好感度明细，
+  待审数量与「待审」分区共用同一份数据。黑话扫描任务以 `persona-jargon-scan` 注册到
+  `Scheduler`，同样出现在后台任务列表里。
 - 群消息 handler 只在能力开启时才参与唤醒判定；能力开启但框架缺少 `custom_filter` 符号时，
   启动日志给出一次明确告警（该能力降级为不可用，其余功能不受影响）。
 - 所有敏感值（除内容外）只回状态不回原文；面板默认只读优先。
 
 ---
 
-## 14. 借鉴来源与合规
+## 15. 借鉴来源与合规
 
 本插件的设计思路来源于仓库上一级 `docs/Super_AstrBot_项目学习分析文档.md` 所分析的开源项目，**仅借鉴设计思路与公开 API 用法，不复制其源码**。若后续引入任何第三方代码或资源，必须：
 
@@ -612,10 +715,13 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | 幂等定时任务 | livingmemory_ext | `loop/scheduler.py` |
 | 群聊唤醒抑制 / 群消息并发处理 | AstrNa（`group_wake_suppression`、`group_sender_concurrency`） | `group/`（仅借鉴「保护系统提示词段」「同会话串行」思路，未复制代码，且以 filter 门控替代其 monkey-patch） |
 | 主动消息的时间轨/空闲轨调度 | proactive_chat | `proactive/`（仅借鉴双轨触发与免打扰思路） |
+| 表达模式邻接对抽取 + 时间衰减 + 容量控制 | self_learning | `persona/style.py`（零 LLM 的 user→bot 配对、指数衰减与权重淘汰） |
+| 统计预筛 + 模型语义判定降本 | self_learning | `persona/jargon.py`（词频先行、批量推断，不复制其三步对比法） |
+| 审查制写入 + 好感度数值模型 | self_learning | `persona/service.py` + `persona/affinity.py`（复用 `pending_reviews`；不做跨用户总量再分配） |
 
 ---
 
-## 15. 验收标准（MVP）
+## 16. 验收标准（MVP）
 
 1. 插件可在 AstrBot ≥ 4.24.2 正常加载、卸载、重载，无残留任务与残留 handler。
 2. 未配置 Embedding Provider 时插件正常可用（自动降级），配置后自动启用向量路。
@@ -631,13 +737,18 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
    受冷却与每小时配额约束，被 @ / 引用时始终正常回复；开启合并时同一会话的一波消息只回答一次。
 10. 主动交互：关闭时不产生任何发送；开启后仅在目标会话、非安静时段、静默足够久且未超每日上限时，
     基于素材生成并发送一条消息；生成期间会话转为活跃即放弃本次发送，失败不重试。
-11. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等、
-    Agent 工具、token 估算与上下文治理、群聊决策与合并、主动交互守卫与竞态。
-12. `ruff check .` 与 `ruff format .` 通过。
+11. 拟人化学习：三项子能力关闭时零副作用。风格样本由邻接对直接抽取（**不调用模型**）；
+    黑话先统计后推断，且**未收录的词不会反复送入推断**；好感度常规关系不注入语气，
+    规则冲突且模型不可用时分数保持不变；审查开关为真时，未批准的样本不进入生效表；
+    注入使用独立边界标记，不覆盖记忆注入、不写入对话历史。
+12. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等、
+    Agent 工具、token 估算与上下文治理、群聊决策与合并、主动交互守卫与竞态、
+    拟人化学习（样本过滤/选择与衰减、候选统计与推断、规则与兜底判定、审批分流）。
+13. `ruff check .` 与 `ruff format .` 通过。
 
 ---
 
-## 16. 迭代路线
+## 17. 迭代路线
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -650,9 +761,9 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | P2 | 上下文治理（token 估算 / 工具与图片历史占位 / 摘要水位线） | ✅ 已完成（v0.5.0） |
 | P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | ✅ 已完成（v0.6.0） |
 | P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | ✅ 已完成（v0.6.0） |
-| P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | 规划 |
+| P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | ✅ 已完成（v0.7.0） |
 
-**验收结果**：`pytest tests -q` 200 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+**验收结果**：`pytest tests -q` 233 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
 `node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换、
-向量路启用、Agent 工具调用、上下文治理触发效果、群聊插话分寸与主动消息发送时机仍待服务器实测
-（本地无运行实例）。
+向量路启用、Agent 工具调用、上下文治理触发效果、群聊插话分寸、主动消息发送时机，
+以及拟人化学习的学习质量与审查流程仍待服务器实测（本地无运行实例）。

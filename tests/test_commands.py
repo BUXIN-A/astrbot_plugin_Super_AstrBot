@@ -22,6 +22,7 @@ class FakeApp:
         self.journal = stack.journal  # type: ignore[attr-defined]
         self.reflection = reflection
         self.memory_config = stack.config  # type: ignore[attr-defined]
+        self.persona_service = None
         self.ready = True
         self.host = object()
 
@@ -37,6 +38,15 @@ class FakeApp:
             "fts": True,
             "pending_tasks": 0,
         }
+
+    async def pending_reviews(self, scope: object, *, limit: int = 20) -> list[dict[str, object]]:
+        return []
+
+    async def approve_review(self, review_id: int) -> tuple[bool, str]:
+        return False, ""
+
+    async def reject_review(self, review_id: int) -> bool:
+        return False
 
 
 def _view(
@@ -182,17 +192,32 @@ def test_unknown_action_returns_help(tmp_path: Path) -> None:
     assert "Super_AstrBot 指令" in text
 
 
-def test_review_hint_when_approval_disabled(tmp_path: Path) -> None:
-    async def _run() -> str:
+def test_review_lists_pending_records_from_any_origin(tmp_path: Path) -> None:
+    """待审队列统一展示反思与拟人化学习两类来源。"""
+
+    class _WithItems(FakeApp):
+        async def pending_reviews(self, scope: object, *, limit: int = 20):
+            return [
+                {
+                    "id": 1,
+                    "origin": "style",
+                    "scope": "session:aiocqhttp:FriendMessage:1",
+                    "created_at": 0.0,
+                    "summary": "风格样本：你好 → 你好呀",
+                }
+            ]
+
+    async def _run() -> tuple[str, str]:
         stack = await build_stack(tmp_path)
+        service = CommandService(app=FakeApp(stack), config=ADMIN_CONFIG)
+        empty = await service.dispatch("review", _view(), [])
 
-        class _Reflection:
-            class config:  # noqa: N801 - 模拟配置对象
-                approval_required = False
-
-        service = CommandService(app=FakeApp(stack, reflection=_Reflection()), config=ADMIN_CONFIG)
-        text = await service.dispatch("review", _view(), [])
+        service2 = CommandService(app=_WithItems(stack), config=ADMIN_CONFIG)
+        listed = await service2.dispatch("review", _view(), [])
         await stack.close()
-        return text
+        return empty, listed
 
-    assert "未开启" in asyncio.run(_run())
+    empty, listed = asyncio.run(_run())
+    assert "待审队列为空" in empty
+    assert "风格样本" in listed
+    assert "/sab approve" in listed

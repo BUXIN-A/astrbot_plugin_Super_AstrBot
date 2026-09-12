@@ -143,6 +143,65 @@ MIGRATIONS: tuple[Migration, ...] = (
             """,
         ),
     ),
+    Migration(
+        version=2,
+        description="拟人化学习：表达模式、群组黑话、社交好感度",
+        statements=(
+            # ---------------- 表达模式（风格 few-shot） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS style_patterns (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type TEXT    NOT NULL,
+                scope_id   TEXT    NOT NULL,
+                situation  TEXT    NOT NULL,
+                expression TEXT    NOT NULL,
+                weight     REAL    NOT NULL DEFAULT 1.0,
+                hits       INTEGER NOT NULL DEFAULT 0,
+                source     TEXT    NOT NULL DEFAULT 'pair',
+                created_at REAL    NOT NULL,
+                updated_at REAL    NOT NULL,
+                status     TEXT    NOT NULL DEFAULT 'active'
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_style_scope ON style_patterns(scope_type, scope_id, status)",
+            # 同一作用域内「同样的问题、同样的回答」只留一条，避免重复样本挤占容量。
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_style_unique ON style_patterns(scope_type, scope_id, situation, expression)",
+            # ---------------- 群组黑话 ----------------
+            """
+            CREATE TABLE IF NOT EXISTS jargons (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type   TEXT    NOT NULL,
+                scope_id     TEXT    NOT NULL,
+                term         TEXT    NOT NULL,
+                meaning      TEXT    NOT NULL DEFAULT '',
+                confidence   REAL    NOT NULL DEFAULT 0.6,
+                evidence     INTEGER NOT NULL DEFAULT 1,
+                samples      TEXT    NOT NULL DEFAULT '[]',
+                created_at   REAL    NOT NULL,
+                updated_at   REAL    NOT NULL,
+                last_seen_at REAL    NOT NULL DEFAULT 0,
+                status       TEXT    NOT NULL DEFAULT 'active'
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_jargon_term ON jargons(scope_type, scope_id, term)",
+            "CREATE INDEX IF NOT EXISTS idx_jargon_scope ON jargons(scope_type, scope_id, status)",
+            # ---------------- 好感度（社交建模） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS affinity_state (
+                scope_type       TEXT    NOT NULL,
+                scope_id         TEXT    NOT NULL,
+                target_id        TEXT    NOT NULL,
+                score            REAL    NOT NULL DEFAULT 0.5,
+                mood             TEXT    NOT NULL DEFAULT 'neutral',
+                interactions     INTEGER NOT NULL DEFAULT 0,
+                last_interaction REAL    NOT NULL DEFAULT 0,
+                updated_at       REAL    NOT NULL,
+                PRIMARY KEY (scope_type, scope_id, target_id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_affinity_scope ON affinity_state(scope_type, scope_id)",
+        ),
+    ),
 )
 """迁移列表。当前 schema 版本 = 最后一项的 version。"""
 

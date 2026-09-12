@@ -21,6 +21,7 @@ const LOCAL_I18N = {
     "nav.recall": "检索",
     "nav.journals": "周记",
     "nav.reviews": "待审",
+    "nav.persona": "学习",
     "nav.system": "系统",
     "features.title": "功能开关",
     "features.hint": "开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。",
@@ -38,6 +39,7 @@ const LOCAL_I18N = {
     "domain.context": "上下文治理",
     "domain.group": "群聊语义",
     "domain.proactive": "主动交互",
+    "domain.persona": "拟人化学习",
     "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
@@ -71,8 +73,15 @@ const LOCAL_I18N = {
     "recall.limit": "条数",
     "recall.hint": "不填 UMO 时按关键词跨作用域匹配；填写后走混合检索并展示打分构成。",
     "journals.title": "周记（现实记忆）",
-    "reviews.title": "待审记忆",
-    "reviews.disabled": "当前未开启「反思结果需人工审批」，反思产出会直接写入记忆。",
+    "persona.title": "拟人化学习",
+    "persona.hint": "风格样本、群内用语与好感度都在这里查看；未经批准的学习结果不会影响对话。",
+    "persona.umo": "会话 UMO（可选）",
+    "persona.styles": "表达样本",
+    "persona.jargons": "群内用语",
+    "persona.affinity": "好感度",
+    "persona.approval": "需审批",
+    "reviews.title": "待审记录",
+    "reviews.disabled": "待审队列包含反思产出与拟人化学习结果，批准后才会生效。",
     "system.framework": "框架与环境",
     "system.jobs": "后台任务",
     "system.budget": "辅助调用预算",
@@ -93,6 +102,7 @@ const LOCAL_I18N = {
     "nav.recall": "Recall",
     "nav.journals": "Journal",
     "nav.reviews": "Reviews",
+    "nav.persona": "Learning",
     "nav.system": "System",
     "features.title": "Feature toggles",
     "features.hint": "Toggles are written to the plugin config and applied immediately; items marked \"reload\" take effect after reloading the plugin.",
@@ -110,6 +120,7 @@ const LOCAL_I18N = {
     "domain.context": "Context control",
     "domain.group": "Group semantics",
     "domain.proactive": "Proactive chat",
+    "domain.persona": "Persona learning",
     "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
@@ -143,8 +154,15 @@ const LOCAL_I18N = {
     "recall.limit": "Limit",
     "recall.hint": "Without UMO it matches keywords across all scopes; with UMO it runs hybrid retrieval with score breakdown.",
     "journals.title": "Journal (real-life memory)",
-    "reviews.title": "Pending memories",
-    "reviews.disabled": "Manual approval is disabled; reflection results are written directly into memory.",
+    "persona.title": "Persona learning",
+    "persona.hint": "Style samples, group jargon and affinity are listed here; unapproved learnings never affect replies.",
+    "persona.umo": "Session UMO (optional)",
+    "persona.styles": "Style samples",
+    "persona.jargons": "Group jargon",
+    "persona.affinity": "Affinity",
+    "persona.approval": "Needs review",
+    "reviews.title": "Pending reviews",
+    "reviews.disabled": "The queue holds reflection results and persona learnings; they take effect only after approval.",
     "system.framework": "Framework",
     "system.jobs": "Scheduled jobs",
     "system.budget": "LLM budget",
@@ -456,6 +474,7 @@ const DOMAIN_TITLES = {
   context: "domain.context",
   group: "domain.group",
   proactive: "domain.proactive",
+  persona: "domain.persona",
 };
 
 function featureStatusPill(item) {
@@ -694,9 +713,8 @@ async function loadReviews() {
   const hint = $("rv-hint");
   try {
     const result = await apiGet("reviews", { limit: 50 });
-    hint.textContent = result.approval_required
-      ? "审批模式已开启：批准后写入长期记忆，驳回则丢弃。"
-      : t("reviews.disabled");
+    const origins = (result.origins || []).join("、") || "—";
+    hint.textContent = `${t("reviews.disabled")}（来源：${origins}）`;
 
     const items = result.items || [];
     if (items.length === 0) {
@@ -707,9 +725,9 @@ async function loadReviews() {
       target,
       [
         { title: "#", key: "id", className: "num" },
-        { title: "内容", className: "content", render: (row) => esc(row.content) },
-        { title: "类型", render: (row) => kindPill(row.kind || "insight") },
+        { title: "内容", className: "content", render: (row) => esc(row.summary || "") },
         { title: "来源", key: "origin" },
+        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
         { title: "时间", className: "num", render: (row) => esc(fmtTime(row.created_at)) },
         {
           title: "操作",
@@ -734,12 +752,82 @@ async function handleReviewAction(id, action, button) {
   button.disabled = true;
   try {
     await apiPost("review-action", { id: Number(id), action });
-    toast(action === "approve" ? "已批准，写入长期记忆" : "已驳回", "ok");
+    toast(action === "approve" ? "已批准" : "已驳回", "ok");
     await loadReviews();
     state.overview = null;
   } catch (error) {
     toast(error.message || String(error), "err");
     button.disabled = false;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：拟人化学习                                                        */
+/* ---------------------------------------------------------------------- */
+
+async function loadPersona() {
+  const target = $("pn-style");
+  const meta = $("pn-meta");
+  const umo = $("pn-umo").value.trim();
+  try {
+    const result = await apiGet("persona", { umo, limit: 30 });
+    const counts = result.counts || {};
+    const enabled = result.enabled || {};
+    const flag = (value) => (value ? "开" : "关");
+    meta.textContent =
+      `表达样本 ${counts.style ?? 0} 条（${flag(enabled.style)}）｜` +
+      `群内用语 ${counts.jargon ?? 0} 条（${flag(enabled.jargon)}）｜` +
+      `好感度 ${counts.affinity ?? 0} 条（${flag(enabled.affinity)}）｜` +
+      `待审 ${result.pending ?? 0} 条`;
+
+    renderTable(
+      $("pn-style"),
+      [
+        { title: "#", key: "id", className: "num" },
+        { title: "场景", className: "content", render: (row) => esc(row.situation || "") },
+        { title: "表达", className: "content", render: (row) => esc(row.expression || "") },
+        { title: "权重", className: "num", render: (row) => esc(num(row.weight)) },
+        { title: "命中", className: "num", key: "hits" },
+        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+      ],
+      result.style || [],
+      { emptyText: "还没有学到表达样本" }
+    );
+
+    renderTable(
+      $("pn-jargon"),
+      [
+        { title: "#", key: "id", className: "num" },
+        { title: "词语", render: (row) => esc(row.term || "") },
+        { title: "含义", className: "content", render: (row) => esc(row.meaning || "") },
+        { title: "置信度", className: "num", render: (row) => esc(num(row.confidence)) },
+        { title: "证据", className: "num", key: "evidence" },
+        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+      ],
+      result.jargon || [],
+      { emptyText: "还没有收录群内用语" }
+    );
+
+    renderTable(
+      $("pn-affinity"),
+      [
+        { title: "对象", render: (row) => esc(row.target_id || "") },
+        { title: "好感度", className: "num", render: (row) => esc(num(row.score)) },
+        { title: "情绪", render: (row) => esc(row.mood || "—") },
+        { title: "交互", className: "num", key: "interactions" },
+        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+        {
+          title: "最近交互",
+          className: "num",
+          render: (row) => esc(row.last_interaction ? fmtTime(row.last_interaction) : "—"),
+        },
+      ],
+      result.affinity || [],
+      { emptyText: "还没有好感度记录" }
+    );
+  } catch (error) {
+    meta.textContent = "";
+    renderError(target, error);
   }
 }
 
@@ -878,6 +966,7 @@ const PAGE_TITLES = {
   recall: "nav.recall",
   journals: "nav.journals",
   reviews: "nav.reviews",
+  persona: "nav.persona",
   system: "nav.system",
 };
 
@@ -887,6 +976,7 @@ const LOADERS = {
   memories: () => loadMemories(),
   journals: () => loadJournals(),
   reviews: () => loadReviews(),
+  persona: () => loadPersona(),
   system: () => loadSystem(true),
 };
 
@@ -995,6 +1085,12 @@ function bindEvents() {
   $("jr-next").addEventListener("click", () => {
     state.journals.offset += state.journals.limit;
     loadJournals();
+  });
+
+  // 拟人化学习
+  $("pn-query").addEventListener("click", loadPersona);
+  $("pn-umo").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loadPersona();
   });
 
   // 维护

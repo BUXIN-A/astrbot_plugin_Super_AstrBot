@@ -23,6 +23,8 @@ from .astrbot_host import AstrBotHost
 from .astrbot_llm import (
     MEMORY_BLOCK_END,
     MEMORY_BLOCK_START,
+    PERSONA_BLOCK_END,
+    PERSONA_BLOCK_START,
     AstrBotEmbeddingGateway,
     AstrBotInjector,
     AstrBotLlmGateway,
@@ -64,6 +66,8 @@ __all__ = [
     "AstrBotInjector",
     "MEMORY_BLOCK_START",
     "MEMORY_BLOCK_END",
+    "PERSONA_BLOCK_START",
+    "PERSONA_BLOCK_END",
     "MEMORY_SEARCH_TOOL",
     "MEMORY_WRITE_TOOL",
     "MEMORY_TOOL_NAMES",
@@ -108,6 +112,8 @@ class Harness:
     llm: AstrBotLlmGateway
     embedding: AstrBotEmbeddingGateway
     injector: AstrBotInjector
+    persona_injector: AstrBotInjector
+    """拟人化学习专用注入器：使用独立边界标记，与记忆注入互不覆盖。"""
 
     def describe(self) -> str:
         """一行描述，用于启动日志。"""
@@ -136,4 +142,13 @@ def create_harness(
     llm = AstrBotLlmGateway(context, host, timeout=llm_timeout, budget=budget)
     embedding = AstrBotEmbeddingGateway(context, host, provider_id=embedding_provider_id)
     injector = AstrBotInjector(host)
-    return Harness(host=host, llm=llm, embedding=embedding, injector=injector)
+    persona_injector = AstrBotInjector(
+        host, block_start=PERSONA_BLOCK_START, block_end=PERSONA_BLOCK_END
+    )
+    return Harness(
+        host=host,
+        llm=llm,
+        embedding=embedding,
+        injector=injector,
+        persona_injector=persona_injector,
+    )
