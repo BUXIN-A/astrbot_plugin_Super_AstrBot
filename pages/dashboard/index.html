@@ -28,6 +28,7 @@
         <button class="nav-item" data-page="persona" data-i18n="nav.persona">学习</button>
         <button class="nav-item" data-page="graph" data-i18n="nav.graph">图谱</button>
         <button class="nav-item" data-page="monitor" data-i18n="nav.monitor">监控</button>
+        <button class="nav-item" data-page="prompts" data-i18n="nav.prompts">提示词</button>
         <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
       </nav>
 
@@ -278,6 +279,20 @@
           <div class="card">
             <h2 data-i18n="monitor.review">自动审核</h2>
             <div class="kv-grid" id="mt-review"></div>
+          </div>
+        </section>
+
+        <!-- 提示词 -->
+        <section class="page" id="page-prompts">
+          <div class="card">
+            <h2 data-i18n="prompts.title">提示词定制</h2>
+            <p class="muted" data-i18n="prompts.hint">
+              文本框已填好内置提示词，可直接修改；自定义模板必须保留标注的必填占位符，否则保存会被拒绝。「重置为默认」恢复内置内容。
+            </p>
+            <div class="muted" id="pm-meta"></div>
+          </div>
+          <div class="card">
+            <div class="prompt-list" id="pm-list"></div>
           </div>
         </section>
 

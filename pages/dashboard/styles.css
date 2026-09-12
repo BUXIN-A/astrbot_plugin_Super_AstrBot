@@ -292,6 +292,47 @@ td.actions .btn { padding: 3px 8px; font-size: 12px; margin-right: 4px; }
 .feature-item .desc { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
 .feature-item .blocked { color: var(--warn); font-size: 11px; margin-top: 3px; }
 
+/* ---------------- 提示词定制 ---------------- */
+
+.prompt-list { display: flex; flex-direction: column; gap: 10px; }
+.prompt-group { margin-top: 4px; font-weight: 600; }
+
+.prompt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--panel-2);
+}
+.prompt-item .name {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.prompt-item .key { color: var(--text-dim); font-size: 11px; }
+.prompt-item .desc { color: var(--text-dim); font-size: 12px; }
+
+.prompt-text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.prompt-text:focus { outline: none; border-color: var(--accent); }
+
 /* 纯 CSS 开关：不依赖任何图标库或内联 SVG */
 .switch { position: relative; flex: none; width: 40px; height: 22px; }
 .switch input {

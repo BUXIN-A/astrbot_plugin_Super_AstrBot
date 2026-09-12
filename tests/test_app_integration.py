@@ -8,12 +8,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from types import SimpleNamespace
 
 from super_astrbot.app import SuperAstrBotApp
 from super_astrbot.harness.astrbot_llm import MEMORY_BLOCK_START
+from super_astrbot.learning.prompts import build_reflection_prompt
 from super_astrbot.spec.scopes import MemoryScope
 
 PLUGIN_NAME = "astrbot_plugin_Super_AstrBot"
@@ -482,3 +484,53 @@ def test_refresh_capabilities_enables_vector_after_provider_appears(tmp_path: Pa
     assert after_caps["memory.vector_enabled"] is True, "探测应能恢复，不得永久缓存失败结果"
     assert "vector" in after_routes
     assert "keyword" in after_routes
+
+
+def test_prompt_customization_roundtrip(tmp_path: Path) -> None:
+    """面板提示词定制：内置默认回填 → 保存即时生效 → 校验占位符 → 重置恢复。"""
+
+    async def _run() -> tuple[dict, dict, str, dict, dict, dict, dict, dict]:
+        app = SuperAstrBotApp(star=FakeStar(), context=FakeContext(), config={}, data_dir=tmp_path)
+        await app.start()
+        try:
+
+            def item() -> dict:
+                return {row["key"]: row for row in app.prompt_catalog()}["reflection_template"]
+
+            initial = item()
+            saved = await app.set_prompt(
+                "reflection_template", "素材：{transcript}｜上限：{max_facts}"
+            )
+            effective = build_reflection_prompt(
+                "一段对话", max_facts=3, overrides=app.reflection_config.prompts
+            )
+            after_save = item()
+            rejected = await app.set_prompt("reflection_template", "缺少占位符")
+            persisted = json.loads((tmp_path / "prompts.json").read_text(encoding="utf-8"))
+            reset = await app.reset_prompt("reflection_template")
+            after_reset = item()
+        finally:
+            await app.shutdown()
+        return initial, saved, effective, after_save, rejected, persisted, reset, after_reset
+
+    initial, saved, effective, after_save, rejected, persisted, reset, after_reset = asyncio.run(
+        _run()
+    )
+
+    # 未自定义时面板看到的就是内置默认文本，可直接在此基础上修改。
+    assert initial["custom"] is False
+    assert initial["value"] == initial["default"]
+    assert initial["required"] == ["transcript", "max_facts"]
+
+    assert saved["ok"] is True
+    assert effective == "素材：一段对话｜上限：3", "保存后必须立刻生效"
+    assert after_save["custom"] is True
+
+    assert rejected["ok"] is False
+    assert "占位符" in rejected["message"]
+    assert persisted == {"reflection_template": "素材：{transcript}｜上限：{max_facts}"}
+
+    assert reset["ok"] is True
+    assert after_reset["custom"] is False
+    assert after_reset["value"] == after_reset["default"]
+    assert json.loads((tmp_path / "prompts.json").read_text(encoding="utf-8")) == {}

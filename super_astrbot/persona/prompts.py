@@ -11,7 +11,7 @@ import json
 import re
 from typing import Any, Sequence
 
-from ..support import PromptOverrides, render, truncate
+from ..support import PromptOverrides, PromptSpec, render, truncate
 
 PROMPT_JARGON_SYSTEM = "jargon_system"
 PROMPT_JARGON_TEMPLATE = "jargon_template"
@@ -97,8 +97,40 @@ JARGON_BLOCK_HEADER = (
 AFFINITY_BLOCK_HEADER = "[SuperAstrBot 社交参考 · 以下是你与对方的关系状态，用于把握语气]"
 
 
+PROMPT_SPECS: tuple[PromptSpec, ...] = (
+    PromptSpec(
+        key=PROMPT_JARGON_SYSTEM,
+        title="群内用语推断系统提示词",
+        group="拟人化学习",
+        default=JARGON_SYSTEM,
+        hint="约束判定标准（普通词一律判否）；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_JARGON_TEMPLATE,
+        title="群内用语推断模板",
+        group="拟人化学习",
+        default=_JARGON_TEMPLATE,
+        required=_JARGON_REQUIRED,
+    ),
+    PromptSpec(
+        key=PROMPT_AFFINITY_SYSTEM,
+        title="好感度判定系统提示词",
+        group="拟人化学习",
+        default=AFFINITY_SYSTEM,
+        hint="类型取值需与内置一致（praise/thanks/…/neutral）；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_AFFINITY_TEMPLATE,
+        title="好感度判定模板",
+        group="拟人化学习",
+        default=_AFFINITY_TEMPLATE,
+        required=_AFFINITY_REQUIRED,
+    ),
+)
+
+
 def jargon_system(overrides: PromptOverrides | None = None) -> str:
-    """黑话推断系统提示词：配置优先、内置兜底。"""
+    """黑话推断系统提示词：页面优先、内置兜底。"""
     if overrides is None:
         return JARGON_SYSTEM
     return overrides.get(PROMPT_JARGON_SYSTEM, JARGON_SYSTEM)

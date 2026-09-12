@@ -12,12 +12,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..support import PromptOverrides, render, truncate
+from ..support import PromptOverrides, PromptSpec, render, truncate
 
 SYSTEM = (
     "你是一个严格的内容审核助手。你只判断一条待写入长期记忆/表达样本/群内用语的内容是否合格，"
     "只输出 JSON，不要任何解释。"
 )
+
+PROMPT_AUTO_REVIEW_SYSTEM = "auto_review_system"
+PROMPT_AUTO_REVIEW_TEMPLATE = "auto_review_template"
 
 TEMPLATE = """请判断下面这条「{origin}」学习内容是否适合被写入长期数据。
 
@@ -39,6 +42,24 @@ TEMPLATE = """请判断下面这条「{origin}」学习内容是否适合被写�
 _ALLOWED_VERDICTS = frozenset({"approve", "reject", "unsure"})
 _MAX_REASON = 200
 
+PROMPT_SPECS: tuple[PromptSpec, ...] = (
+    PromptSpec(
+        key=PROMPT_AUTO_REVIEW_SYSTEM,
+        title="自动审核系统提示词",
+        group="自动审核",
+        default=SYSTEM,
+        hint="仅在开启「模型兜底」时使用；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_AUTO_REVIEW_TEMPLATE,
+        title="自动审核模板",
+        group="自动审核",
+        default=TEMPLATE,
+        required=("origin", "content", "max_chars"),
+        hint="JSON 示例中的花括号需写成双花括号 {{ }}。",
+    ),
+)
+
 
 def build_prompt(
     origin: str,
@@ -50,7 +71,7 @@ def build_prompt(
     """构造审核提示词；用户模板缺占位符时自动回退内置模板。"""
     overrides = overrides or PromptOverrides()
     template = overrides.get(
-        "auto_review_template",
+        PROMPT_AUTO_REVIEW_TEMPLATE,
         TEMPLATE,
         required=("origin", "content", "max_chars"),
     )
@@ -60,7 +81,7 @@ def build_prompt(
 def system_prompt(overrides: PromptOverrides | None = None) -> str:
     """取系统提示词（允许用户覆盖）。"""
     overrides = overrides or PromptOverrides()
-    return overrides.get("auto_review_system", SYSTEM)
+    return overrides.get(PROMPT_AUTO_REVIEW_SYSTEM, SYSTEM)
 
 
 def _strip_fences(text: str) -> str:

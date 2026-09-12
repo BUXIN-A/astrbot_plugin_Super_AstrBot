@@ -10,10 +10,16 @@ from super_astrbot.harness.protocols import EventView
 from super_astrbot.learning.prompts import build_reflection_prompt
 from super_astrbot.maibot import MaiBotConfig, MaiBotService
 from super_astrbot.persona import PersonaConfig, PersonaService
-from super_astrbot.spec.capabilities import CAPABILITIES
+from super_astrbot.spec.capabilities import CAPABILITIES, get_path
 from super_astrbot.spec.scopes import MemoryScope, ScopeType
 from super_astrbot.storage import Database, StyleRepository
-from super_astrbot.support import PromptOverrides, render
+from super_astrbot.support import (
+    PromptOverlay,
+    PromptOverrides,
+    PromptStore,
+    missing_placeholders,
+    render,
+)
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 NOW = 1_700_000_000.0
@@ -67,12 +73,47 @@ def test_journal_admin_only_write_has_no_cross_level_condition() -> None:
     assert "condition" not in schema["journal"]["items"]["admin_only_write"]
 
 
-def test_prompt_schema_fields_are_text() -> None:
+def test_prompts_are_moved_out_of_conf_schema() -> None:
+    # 提示词已迁移到插件页面：配置页不再声明这些键，改由 prompts.json 承载，
+    # 既避免长文本塞进配置页，也避免未声明键在重载时被框架当脏键清理。
     schema = json.loads((PLUGIN_ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
-    items = schema["prompts"]["items"]
-    assert items, "提示词分组不应为空"
-    assert all(item["type"] == "text" for item in items.values())
-    assert all(item["default"] == "" for item in items.values())
+    assert "prompts" not in schema
+
+
+def test_prompt_catalog_defaults_are_self_consistent() -> None:
+    from super_astrbot.prompt_catalog import BY_KEY, PROMPT_SPECS
+
+    assert len(BY_KEY) == len(PROMPT_SPECS), "提示词 key 存在重复"
+    for spec in PROMPT_SPECS:
+        assert spec.default.strip(), f"{spec.key} 缺少内置默认文本"
+        assert not missing_placeholders(spec.default, spec.required), (
+            f"{spec.key} 的内置默认缺少必填占位符 {spec.required}"
+        )
+
+
+def test_prompt_catalog_covers_every_domain_key() -> None:
+    from super_astrbot.prompt_catalog import BY_KEY
+
+    for key in (
+        "reflection_system",
+        "reflection_template",
+        "weekly_system",
+        "weekly_template",
+        "summary_system",
+        "summary_template",
+        "summary_update_template",
+        "proactive_system",
+        "proactive_template",
+        "jargon_system",
+        "jargon_template",
+        "affinity_system",
+        "affinity_template",
+        "graph_system",
+        "graph_template",
+        "auto_review_system",
+        "auto_review_template",
+    ):
+        assert key in BY_KEY, f"面板目录缺少提示词 {key}"
 
 
 # --------------------------------------------------------------------------- #
@@ -116,6 +157,57 @@ def test_render_never_raises() -> None:
     assert render("坏模板 { 未闭合") == "坏模板 { 未闭合"
     assert render("未知 {foo}", bar=1) == "未知 {foo}"
     assert render("{a}-{b}", a=1, b=2) == "1-2"
+
+
+# --------------------------------------------------------------------------- #
+# 提示词持久化与热更新
+# --------------------------------------------------------------------------- #
+
+
+def test_prompt_store_roundtrip(tmp_path: Path) -> None:
+    store = PromptStore(tmp_path / "prompts.json")
+    assert store.available is True
+    assert store.load() == {}
+
+    assert store.save({"reflection_template": "素材：{transcript}｜{max_facts}", "blank": "   "})
+    # 空值不入表：空字符串等价于「使用内置默认」。
+    assert store.load() == {"reflection_template": "素材：{transcript}｜{max_facts}"}
+
+
+def test_prompt_store_tolerates_broken_file(tmp_path: Path) -> None:
+    path = tmp_path / "prompts.json"
+    path.write_text("{ 不是 JSON", encoding="utf-8")
+    assert PromptStore(path).load() == {}
+
+
+def test_prompt_store_without_path_is_readonly() -> None:
+    store = PromptStore(None)
+    assert store.available is False
+    assert store.load() == {}
+    assert store.save({"a": "b"}) is False
+
+
+def test_prompt_overlay_masks_plugin_config_prompts() -> None:
+    # 即使覆盖为空，也必须是覆盖值说了算：否则配置页残留的旧提示词会「复活」。
+    base = {"memory": {"enabled": True}, "prompts": {"reflection_system": "旧值"}}
+    empty = PromptOverlay(base, {})
+    assert get_path(empty, "memory.enabled") is True
+    assert get_path(empty, "prompts.reflection_system", "") == ""
+
+    filled = PromptOverlay(base, {"reflection_system": "新值"})
+    assert filled["prompts"]["reflection_system"] == "新值"
+
+
+def test_prompt_overrides_bind_refreshes_cache() -> None:
+    # 服务持有同一个 PromptOverrides 实例，就地换源必须让新值立刻生效。
+    handle = PromptOverrides({"prompts": {"reflection_template": "A{transcript}{max_facts}"}})
+    assert build_reflection_prompt("x", max_facts=1, overrides=handle) == "Ax1"
+
+    handle.bind({"prompts": {"reflection_template": "B{transcript}{max_facts}"}})
+    assert build_reflection_prompt("x", max_facts=1, overrides=handle) == "Bx1"
+
+    handle.bind(None)
+    assert build_reflection_prompt("x", max_facts=1, overrides=handle) != "Bx1"
 
 
 # --------------------------------------------------------------------------- #

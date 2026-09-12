@@ -4,7 +4,15 @@
 分词与相似度既被索引层（storage）使用，也被检索层（memory）使用。
 """
 
-from .prompts import PROMPT_PREFIX, PromptOverrides, render
+from .prompts import (
+    PROMPT_PREFIX,
+    PromptOverlay,
+    PromptOverrides,
+    PromptSpec,
+    PromptStore,
+    missing_placeholders,
+    render,
+)
 from .text import (
     build_match_query,
     jaccard,
@@ -30,6 +38,10 @@ __all__ = [
     "estimate_message_tokens",
     "estimate_messages_tokens",
     "PROMPT_PREFIX",
+    "PromptOverlay",
     "PromptOverrides",
+    "PromptSpec",
+    "PromptStore",
+    "missing_placeholders",
     "render",
 ]

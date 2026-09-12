@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from ..memory import ALL_KINDS, KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE
-from ..support import PromptOverrides, render, truncate
+from ..support import PromptOverrides, PromptSpec, render, truncate
 
 PROMPT_REFLECTION_SYSTEM = "reflection_system"
 PROMPT_REFLECTION_TEMPLATE = "reflection_template"
@@ -83,8 +83,41 @@ _WEEKLY_TEMPLATE = """以下是用户最近一周的周记（现实生活记录�
 """
 
 
+PROMPT_SPECS: tuple[PromptSpec, ...] = (
+    PromptSpec(
+        key=PROMPT_REFLECTION_SYSTEM,
+        title="反思系统提示词",
+        group="自我学习",
+        default=REFLECTION_SYSTEM,
+        hint="约束模型的角色与红线；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_REFLECTION_TEMPLATE,
+        title="反思模板",
+        group="自我学习",
+        default=_REFLECTION_TEMPLATE,
+        required=_REFLECTION_REQUIRED,
+        hint="JSON 示例中的花括号需写成双花括号 {{ }}。",
+    ),
+    PromptSpec(
+        key=PROMPT_WEEKLY_SYSTEM,
+        title="周度洞察系统提示词",
+        group="自我学习",
+        default=REFLECTION_SYSTEM,
+        hint="留空时沿用反思系统提示词的内置版本。",
+    ),
+    PromptSpec(
+        key=PROMPT_WEEKLY_TEMPLATE,
+        title="周度洞察模板",
+        group="自我学习",
+        default=_WEEKLY_TEMPLATE,
+        required=_WEEKLY_REQUIRED,
+    ),
+)
+
+
 def reflection_system(overrides: PromptOverrides | None = None) -> str:
-    """反思系统提示词：配置优先、内置兜底。"""
+    """反思系统提示词：页面优先、内置兜底。"""
     if overrides is None:
         return REFLECTION_SYSTEM
     return overrides.get(PROMPT_REFLECTION_SYSTEM, REFLECTION_SYSTEM)

@@ -106,7 +106,7 @@ from .storage import (
     StyleRepository,
     VectorRepository,
 )
-from .support import PromptOverrides, truncate
+from .support import PromptOverlay, PromptOverrides, PromptStore, missing_placeholders, truncate
 
 _DB_FILENAME = "super_astrbot.db"
 _SKIP_CAPTURE_PREFIXES = ("/", "!", "#", ".")
@@ -222,6 +222,13 @@ class SuperAstrBotApp:
 
         self._effective_capabilities: dict[str, bool] = {}
         self._retriever: Any | None = None
+
+        self._prompt_store: PromptStore | None = None
+        self._prompt_values: dict[str, str] = {}
+        """页面保存的提示词覆盖（``{key: 文本}``，空值不入表即视为用内置默认）。"""
+        self._prompt_handles: list[PromptOverrides] = []
+        """各域配置里共享的覆盖解析器；热更新时就地换源，保证消费方立刻生效。"""
+        self._data_dir: Path | None = None
 
     # ------------------------------------------------------------------ #
     # 属性
@@ -340,6 +347,7 @@ class SuperAstrBotApp:
             return
         self._started = True
 
+        self._prepare_prompts()
         self._build_configs()
         if not self._enabled("basic.enabled"):
             self._info("插件总开关为关闭状态，仅注册命令与面板。")
@@ -428,6 +436,139 @@ class SuperAstrBotApp:
         self._review_config = ReviewConfig.from_mapping(self._config)
         self._maibot_config = MaiBotConfig.from_mapping(self._config)
         self._sync_derived_configs()
+        self._bind_prompt_overrides()
+
+    # ------------------------------------------------------------------ #
+    # 提示词定制（面板）
+    # ------------------------------------------------------------------ #
+
+    def prompt_catalog(self) -> list[dict[str, Any]]:
+        """列出全部可定制提示词及其当前取值，供面板渲染。"""
+        from .prompt_catalog import PROMPT_SPECS
+
+        items: list[dict[str, Any]] = []
+        for spec in PROMPT_SPECS:
+            custom = bool(self._prompt_values.get(spec.key))
+            items.append(
+                {
+                    "key": spec.key,
+                    "title": spec.title,
+                    "group": spec.group,
+                    "hint": spec.hint,
+                    "required": list(spec.required),
+                    "default": spec.default,
+                    # 面板看到的一律是「当前生效值」：未自定义即内置默认。
+                    "value": self._prompt_values.get(spec.key) or spec.default,
+                    "custom": custom,
+                }
+            )
+        return items
+
+    async def set_prompt(self, key: str, value: str) -> dict[str, Any]:
+        """保存一项提示词覆盖；与内置默认一致时等价于重置。"""
+        from .prompt_catalog import BY_KEY
+
+        spec = BY_KEY.get(key)
+        if spec is None:
+            return {"ok": False, "message": f"未知提示词：{key}"}
+
+        text = (value or "").strip()
+        if not text or text == spec.default.strip():
+            return await self.reset_prompt(key, message=f"「{spec.title}」未修改，已使用内置默认")
+
+        missing = missing_placeholders(text, spec.required)
+        if missing:
+            names = "、".join(f"{{{name}}}" for name in missing)
+            return {"ok": False, "message": f"模板缺少必填占位符：{names}"}
+
+        updated = dict(self._prompt_values)
+        updated[key] = text
+        if not await self._persist_prompts(updated):
+            return {"ok": False, "message": "保存失败：提示词文件不可写"}
+        self._prompt_values = updated
+        self._bind_prompt_overrides()
+        return {
+            "ok": True,
+            "key": key,
+            "value": text,
+            "custom": True,
+            "message": f"「{spec.title}」已保存",
+        }
+
+    async def reset_prompt(self, key: str, *, message: str = "") -> dict[str, Any]:
+        """把一项提示词重置为内置默认（删除覆盖）。"""
+        from .prompt_catalog import BY_KEY
+
+        spec = BY_KEY.get(key)
+        if spec is None:
+            return {"ok": False, "message": f"未知提示词：{key}"}
+
+        updated = {k: v for k, v in self._prompt_values.items() if k != key}
+        if updated != self._prompt_values and not await self._persist_prompts(updated):
+            return {"ok": False, "message": "重置失败：提示词文件不可写"}
+        self._prompt_values = updated
+        self._bind_prompt_overrides()
+        return {
+            "ok": True,
+            "key": key,
+            "value": spec.default,
+            "custom": False,
+            "message": message or f"「{spec.title}」已重置为内置默认",
+        }
+
+    def _prepare_prompts(self) -> None:
+        """定位提示词文件并载入覆盖；数据目录不可用时降级为「全部用内置默认」。"""
+        self._data_dir = self._resolve_data_dir()
+        self._prompt_store = PromptStore(
+            None if self._data_dir is None else self._data_dir / PromptStore.FILENAME
+        )
+        self._prompt_values = self._prompt_store.load()
+        if not self._prompt_store.available:
+            self._warn("无法解析数据目录，提示词定制将无法保存。")
+        elif self._prompt_values:
+            self._info("已载入 %s 条自定义提示词。", len(self._prompt_values))
+
+    async def _persist_prompts(self, values: dict[str, str]) -> bool:
+        if self._prompt_store is None:
+            return False
+        try:
+            return await asyncio.to_thread(self._prompt_store.save, values)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("保存提示词失败：%s", safe_detail(exc))
+            return False
+
+    def _bind_prompt_overrides(self) -> None:
+        """把当前覆盖绑定到各域配置的 ``PromptOverrides``（同实例热更新）。"""
+        handles: list[PromptOverrides] = []
+        for config in (
+            self._reflection_config,
+            self._context_config,
+            self._proactive_config,
+            self._persona_config,
+            self._graph_config,
+            self._review_config,
+        ):
+            prompts = getattr(config, "prompts", None)
+            if isinstance(prompts, PromptOverrides):
+                handles.append(prompts)
+        self._prompt_handles = handles
+
+        overlay = PromptOverlay(self._config, self._prompt_values)
+        for handle in handles:
+            handle.bind(overlay)
+
+    def _resolve_data_dir(self) -> Path | None:
+        """解析插件数据目录；失败返回 ``None``（调用方决定降级策略）。"""
+        try:
+            from .harness.astrbot_host import AstrBotHost
+
+            host = AstrBotHost(
+                self._star, self._context, self._config, data_dir=self._data_dir_override
+            )
+            return Path(host.data_dir())
+        except Exception as exc:  # noqa: BLE001
+            self._debug("解析数据目录失败：%s", safe_detail(exc))
+            return None
 
     def _probe_runtime_overrides(self) -> dict[str, bool]:
         """探测运行环境对能力的支持情况。
@@ -832,16 +973,11 @@ class SuperAstrBotApp:
             self._info("所有依赖持久层的功能均未启用，跳过持久层初始化。")
             return False
 
-        try:
-            from .harness.astrbot_host import AstrBotHost
-
-            host = AstrBotHost(
-                self._star, self._context, self._config, data_dir=self._data_dir_override
-            )
-            data_dir: Path = host.data_dir()
-        except Exception as exc:  # noqa: BLE001
-            self._error("解析数据目录失败，持久化能力不可用：%s", safe_detail(exc))
+        data_dir = self._data_dir or self._resolve_data_dir()
+        if data_dir is None:
+            self._error("解析数据目录失败，持久化能力不可用。")
             return False
+        self._data_dir = data_dir
 
         db = Database(data_dir / _DB_FILENAME, logger=self._logger)
         try:

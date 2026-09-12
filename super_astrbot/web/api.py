@@ -45,6 +45,9 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("persona", _persona(app), ["GET"], "拟人化学习数据（风格 / 黑话 / 好感度）"),
         ("graph", _graph(app), ["GET"], "知识图谱子图（可视化用）"),
         ("monitor", _monitor(app), ["GET"], "运行监控指标与时间序列"),
+        ("prompts", _prompts(app), ["GET"], "提示词定制项与当前值"),
+        ("prompt-save", _prompt_save(app), ["POST"], "保存单条提示词覆盖"),
+        ("prompt-reset", _prompt_reset(app), ["POST"], "重置单条提示词为内置默认"),
         ("maintenance", _maintenance(app), ["POST"], "维护操作（重建索引）"),
     ]
     for prefix in (f"/{PLUGIN_NAME}", f"/{PLUGIN_NAME_LOWER}"):
@@ -633,6 +636,66 @@ def _monitor(app: Any) -> Handler:
                 "graph": graph,
             }
         )
+
+    return handler
+
+
+# --------------------------------------------------------------------------- #
+# 提示词定制
+# --------------------------------------------------------------------------- #
+
+
+def _prompts(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            items = app.prompt_catalog()
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取提示词失败：{exc}")
+
+        groups: list[str] = []
+        for item in items:
+            group = str(item.get("group") or "")
+            if group and group not in groups:
+                groups.append(group)
+        return _ok({"items": items, "groups": groups})
+
+    return handler
+
+
+def _prompt_save(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        key = str(payload.get("key") or "").strip()
+        if not key:
+            return error_response("缺少参数 key")
+        if payload.get("value") is None:
+            return error_response("缺少参数 value")
+
+        try:
+            result = await app.set_prompt(key, str(payload["value"]))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"保存失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "保存失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _prompt_reset(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        key = str(payload.get("key") or "").strip()
+        if not key:
+            return error_response("缺少参数 key")
+
+        try:
+            result = await app.reset_prompt(key)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"重置失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "重置失败"))
+        return _ok(result)
 
     return handler
 

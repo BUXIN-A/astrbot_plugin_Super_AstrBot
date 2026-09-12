@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from ..support import PromptOverrides, render
+from ..support import PromptOverrides, PromptSpec, render
 
 PROMPT_SUMMARY_SYSTEM = "summary_system"
 PROMPT_SUMMARY_TEMPLATE = "summary_template"
@@ -59,8 +59,33 @@ _UPDATE_TEMPLATE = """你已经有一份较早对话的摘要：
 """
 
 
+PROMPT_SPECS: tuple[PromptSpec, ...] = (
+    PromptSpec(
+        key=PROMPT_SUMMARY_SYSTEM,
+        title="上下文摘要系统提示词",
+        group="上下文治理",
+        default=SUMMARY_SYSTEM,
+        hint="只压缩、不新增；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_SUMMARY_TEMPLATE,
+        title="上下文摘要模板（首次摘要）",
+        group="上下文治理",
+        default=_INITIAL_TEMPLATE,
+        required=_INITIAL_REQUIRED,
+    ),
+    PromptSpec(
+        key=PROMPT_SUMMARY_UPDATE_TEMPLATE,
+        title="上下文摘要模板（增量续写）",
+        group="上下文治理",
+        default=_UPDATE_TEMPLATE,
+        required=_UPDATE_REQUIRED,
+    ),
+)
+
+
 def summary_system(overrides: PromptOverrides | None = None) -> str:
-    """摘要系统提示词：配置优先、内置兜底。"""
+    """摘要系统提示词：页面优先、内置兜底。"""
     if overrides is None:
         return SUMMARY_SYSTEM
     return overrides.get(PROMPT_SUMMARY_SYSTEM, SUMMARY_SYSTEM)

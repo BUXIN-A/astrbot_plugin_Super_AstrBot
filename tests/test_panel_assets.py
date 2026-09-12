@@ -31,6 +31,11 @@ ENDPOINTS = (
     "journals",
     "reviews",
     "review-action",
+    "graph",
+    "monitor",
+    "prompts",
+    "prompt-save",
+    "prompt-reset",
     "maintenance",
 )
 

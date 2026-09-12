@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from ..support import PromptOverrides, render
+from ..support import PromptOverrides, PromptSpec, render
 
 PROMPT_PROACTIVE_SYSTEM = "proactive_system"
 PROMPT_PROACTIVE_TEMPLATE = "proactive_template"
@@ -54,6 +54,25 @@ _IDLE_TEMPLATE = """「{target}」已经有一段时间没有说话了，你想�
 _AVOID_TEMPLATE = """
 你上一条主动消息是：「{last}」，本次必须换一个话题或角度，不要重复或近似表达。
 """
+
+
+PROMPT_SPECS: tuple[PromptSpec, ...] = (
+    PromptSpec(
+        key=PROMPT_PROACTIVE_SYSTEM,
+        title="主动消息系统提示词",
+        group="主动交互",
+        default=PROACTIVE_SYSTEM,
+        hint="约束语气与红线（不得暴露「主动/定时」）；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_PROACTIVE_TEMPLATE,
+        title="主动消息模板",
+        group="主动交互",
+        default=_DAILY_TEMPLATE,
+        required=_REQUIRED,
+        hint="内置包含「计划轨」与「空闲轨」两套模板，自定义后两轨共用（占位符一致）。",
+    ),
+)
 
 
 def period_of_day(hour: int) -> str:

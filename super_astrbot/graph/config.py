@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_float, as_int, as_str, get_path
-from ..support import PromptOverrides
+from ..support import PromptOverrides, PromptSpec
 
 PROMPT_GRAPH_SYSTEM = "graph_system"
 """系统提示词在配置中的键名。"""
@@ -45,6 +45,24 @@ DEFAULT_GRAPH_TEMPLATE = """从下面的记忆文本中抽取实体与关系。
 
 EXTRACTOR_MODES = ("deterministic", "llm", "both")
 """允许的抽取模式；非法值一律回退 ``deterministic``。"""
+
+PROMPT_SPECS: tuple[PromptSpec, ...] = (
+    PromptSpec(
+        key=PROMPT_GRAPH_SYSTEM,
+        title="知识图谱抽取系统提示词",
+        group="记忆图谱",
+        default=DEFAULT_GRAPH_SYSTEM,
+        hint="仅在抽取方式包含「模型」时使用；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_GRAPH_TEMPLATE,
+        title="知识图谱抽取模板",
+        group="记忆图谱",
+        default=DEFAULT_GRAPH_TEMPLATE,
+        required=("content", "max_entities", "max_relations"),
+        hint="JSON 示例中的花括号需写成双花括号 {{ }}。",
+    ),
+)
 
 
 @dataclass
@@ -115,6 +133,7 @@ __all__ = [
     "GraphConfig",
     "PROMPT_GRAPH_SYSTEM",
     "PROMPT_GRAPH_TEMPLATE",
+    "PROMPT_SPECS",
     "DEFAULT_GRAPH_SYSTEM",
     "DEFAULT_GRAPH_TEMPLATE",
     "EXTRACTOR_MODES",

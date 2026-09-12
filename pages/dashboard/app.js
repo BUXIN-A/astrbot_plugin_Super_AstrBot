@@ -24,6 +24,7 @@ const LOCAL_I18N = {
     "nav.persona": "学习",
     "nav.graph": "图谱",
     "nav.monitor": "监控",
+    "nav.prompts": "提示词",
     "nav.system": "系统",
     "features.title": "功能开关",
     "features.hint": "开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。",
@@ -112,6 +113,16 @@ const LOCAL_I18N = {
     "monitor.pending": "待处理",
     "monitor.decidedAuto": "自动通过",
     "monitor.retention": "保留天数",
+    "prompts.title": "提示词定制",
+    "prompts.hint":
+      "文本框已填好内置提示词，可直接修改；自定义模板必须保留标注的必填占位符，否则保存会被拒绝。「重置为默认」恢复内置内容。",
+    "prompts.meta": "共 {total} 项，已自定义 {custom} 项；保存后立即生效。",
+    "prompts.empty": "没有可定制的提示词。",
+    "prompts.custom": "已自定义",
+    "prompts.builtin": "内置默认",
+    "prompts.required": "必填占位符",
+    "action.save": "保存",
+    "action.resetDefault": "重置为默认",
     "reviews.title": "待审记录",
     "reviews.disabled": "待审队列包含反思产出与拟人化学习结果，批准后才会生效。",
     "system.framework": "框架与环境",
@@ -137,6 +148,7 @@ const LOCAL_I18N = {
     "nav.persona": "Learning",
     "nav.graph": "Graph",
     "nav.monitor": "Monitor",
+    "nav.prompts": "Prompts",
     "nav.system": "System",
     "features.title": "Feature toggles",
     "features.hint": "Toggles are written to the plugin config and applied immediately; items marked \"reload\" take effect after reloading the plugin.",
@@ -225,6 +237,16 @@ const LOCAL_I18N = {
     "monitor.pending": "Pending",
     "monitor.decidedAuto": "Auto-approved",
     "monitor.retention": "Retention (days)",
+    "prompts.title": "Prompt customization",
+    "prompts.hint":
+      "Each box is pre-filled with the built-in prompt. Custom templates must keep every required placeholder or the save is rejected. \"Reset to default\" restores the built-in text.",
+    "prompts.meta": "{total} items, {custom} customized; changes take effect immediately.",
+    "prompts.empty": "No customizable prompts.",
+    "prompts.custom": "Customized",
+    "prompts.builtin": "Built-in",
+    "prompts.required": "Required placeholders",
+    "action.save": "Save",
+    "action.resetDefault": "Reset to default",
     "reviews.title": "Pending reviews",
     "reviews.disabled": "The queue holds reflection results and persona learnings; they take effect only after approval.",
     "system.framework": "Framework",
@@ -272,6 +294,13 @@ function t(key, fallback) {
     }
   }
   return local;
+}
+
+/** 简单插值：把 {name} 替换为对应值，缺值原样保留。 */
+function tpl(text, values) {
+  return String(text).replace(/\{(\w+)\}/g, (match, name) =>
+    values[name] === undefined ? match : String(values[name])
+  );
 }
 
 /** 完整转义五个字符：只转义部分会留下属性注入（存储型 XSS）风险。 */
@@ -1633,6 +1662,99 @@ async function loadMonitor(isRetry = false) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* 章节：提示词定制                                                        */
+/* ---------------------------------------------------------------------- */
+
+function renderPromptItem(item) {
+  const badge = item.custom
+    ? `<span class="pill on">${esc(t("prompts.custom"))}</span>`
+    : `<span class="pill off">${esc(t("prompts.builtin"))}</span>`;
+  const required = (item.required || []).length
+    ? `<div class="muted">${esc(t("prompts.required"))}：${esc(
+        item.required.map((name) => `{${name}}`).join("、")
+      )}</div>`
+    : "";
+  return `
+    <div class="prompt-item">
+      <div class="name">${esc(item.title)} ${badge}
+        <span class="key">${esc(item.key)}</span></div>
+      ${item.hint ? `<div class="desc">${esc(item.hint)}</div>` : ""}
+      ${required}
+      <textarea class="prompt-text" data-prompt-text="${esc(item.key)}"
+        rows="10" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="btn" data-prompt-save="${esc(item.key)}">${esc(t("action.save"))}</button>
+        <button class="btn ghost" data-prompt-reset="${esc(item.key)}">${esc(
+          t("action.resetDefault")
+        )}</button>
+      </div>
+    </div>`;
+}
+
+async function loadPrompts() {
+  const target = $("pm-list");
+  const meta = $("pm-meta");
+  try {
+    const result = await apiGet("prompts");
+    const items = result.items || [];
+    if (items.length === 0) {
+      target.innerHTML = "";
+      meta.textContent = t("prompts.empty");
+      return;
+    }
+
+    const blocks = [];
+    let group = "";
+    items.forEach((item) => {
+      if (item.group && item.group !== group) {
+        group = item.group;
+        blocks.push(`<div class="muted prompt-group">${esc(group)}</div>`);
+      }
+      blocks.push(renderPromptItem(item));
+    });
+    target.innerHTML = blocks.join("");
+
+    // 默认值可能含 < & 等字符，用 value 赋值而非拼进 HTML 属性，避免转义歧义。
+    items.forEach((item) => {
+      const node = document.querySelector(`[data-prompt-text="${item.key}"]`);
+      if (node) node.value = item.value || "";
+    });
+
+    const custom = items.filter((item) => item.custom).length;
+    meta.textContent = tpl(t("prompts.meta"), { total: items.length, custom });
+  } catch (error) {
+    renderError(target, error);
+    meta.textContent = "";
+  }
+}
+
+async function handlePromptSave(key, button) {
+  const textarea = document.querySelector(`[data-prompt-text="${key}"]`);
+  if (!textarea) return;
+  button.disabled = true;
+  try {
+    const result = await apiPost("prompt-save", { key, value: textarea.value });
+    toast(result.message || t("action.save"), "ok");
+    await loadPrompts();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+    button.disabled = false;
+  }
+}
+
+async function handlePromptReset(key, button) {
+  button.disabled = true;
+  try {
+    const result = await apiPost("prompt-reset", { key });
+    toast(result.message || t("action.resetDefault"), "ok");
+    await loadPrompts();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+    button.disabled = false;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
 /* 路由与事件绑定                                                          */
 /* ---------------------------------------------------------------------- */
 
@@ -1646,6 +1768,7 @@ const PAGE_TITLES = {
   persona: "nav.persona",
   graph: "nav.graph",
   monitor: "nav.monitor",
+  prompts: "nav.prompts",
   system: "nav.system",
 };
 
@@ -1658,6 +1781,7 @@ const LOADERS = {
   persona: () => loadPersona(),
   graph: () => loadGraph(),
   monitor: () => loadMonitor(),
+  prompts: () => loadPrompts(),
   system: () => loadSystem(true),
 };
 
@@ -1825,6 +1949,16 @@ function bindEvents() {
     const reviewNode = event.target.closest("[data-review]");
     if (reviewNode) {
       handleReviewAction(reviewNode.dataset.review, reviewNode.dataset.action, reviewNode);
+      return;
+    }
+    const promptSave = event.target.closest("[data-prompt-save]");
+    if (promptSave) {
+      handlePromptSave(promptSave.dataset.promptSave, promptSave);
+      return;
+    }
+    const promptReset = event.target.closest("[data-prompt-reset]");
+    if (promptReset) {
+      handlePromptReset(promptReset.dataset.promptReset, promptReset);
     }
   });
 
