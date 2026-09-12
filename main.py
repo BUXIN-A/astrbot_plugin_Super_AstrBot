@@ -24,11 +24,26 @@ from astrbot.api.star import Context, Star
 
 from .super_astrbot.app import SuperAstrBotApp
 from .super_astrbot.commands import CommandService, resolve_action, split_command_args
-from .super_astrbot.harness import to_event_view
+from .super_astrbot.harness import (
+    GROUP_FILTER_AVAILABLE,
+    GroupMessageFilter,
+    to_event_view,
+)
 from .super_astrbot.spec.errors import safe_detail
 
 COMMAND_NAME = "sab"
 COMMAND_ALIASES = {"superastrbot"}
+
+_GROUP_HANDLER_READY = (
+    GROUP_FILTER_AVAILABLE
+    and hasattr(filter, "custom_filter")
+    and hasattr(filter, "event_message_type")
+    and hasattr(filter, "EventMessageType")
+)
+"""框架是否支持注册「群消息 handler」。
+
+缺符号时该 handler 不注册：群聊语义能力整体降级为不可用，插件其余部分不受影响。
+"""
 
 
 class SuperAstrBot(Star):
@@ -86,6 +101,21 @@ class SuperAstrBot(Star):
             await self._app.on_after_message_sent(event)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("回复采集钩子异常：%s", safe_detail(exc))
+
+    if _GROUP_HANDLER_READY:
+
+        @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+        @filter.custom_filter(GroupMessageFilter, False)
+        async def _hook_group_message(self, event: AstrMessageEvent) -> None:
+            """群消息钩子：读空气决定是否主动参与群聊。
+
+            门控 filter 只在 ``group.enabled`` 开启时通过；关闭时本 handler 不参与
+            AstrBot 的唤醒判定，因此对群聊行为零影响。
+            """
+            try:
+                await self._app.on_group_message(event)
+            except Exception as exc:  # noqa: BLE001 - 群聊钩子绝不可打断消息链路
+                self.logger.warning("群聊语义钩子异常：%s", safe_detail(exc))
 
     @filter.on_astrbot_loaded()
     async def _hook_astrbot_loaded(self) -> None:

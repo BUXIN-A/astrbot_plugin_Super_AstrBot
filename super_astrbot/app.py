@@ -17,15 +17,21 @@ from typing import Any, Mapping
 
 from . import __version__
 from .context import ContextConfig, ContextGovernor
+from .group import GroupChatService, GroupConfig
 from .harness import (
+    GROUP_FILTER_AVAILABLE,
     MEMORY_TOOL_NAMES,
     Harness,
+    apply_group_decision,
     clear_options,
     compat,
     create_harness,
     inject_string_options,
     register_memory_tools,
+    release_group_gate,
+    set_group_gate,
     to_event_view,
+    to_group_signals,
     unregister_tools,
 )
 from .harness.protocols import EventView
@@ -40,6 +46,13 @@ from .memory import (
     MemoryLifecycle,
     MemoryService,
     VectorRetriever,
+)
+from .proactive import (
+    TRACK_DAILY,
+    TRACK_IDLE,
+    MemoryMaterialSource,
+    ProactiveConfig,
+    ProactiveService,
 )
 from .spec.capabilities import explain_disabled, resolve_capabilities
 from .spec.errors import StorageError, safe_detail
@@ -74,6 +87,11 @@ _SCHEMA_SYNC_INTERVAL = 600.0
 
 _EMBEDDING_FIELD_PATH = ("memory", "embedding_provider_id")
 """需要动态注入选项的配置字段路径。"""
+
+_JOB_PROACTIVE_DAILY = "proactive-daily"
+_JOB_PROACTIVE_IDLE = "proactive-idle"
+_PROACTIVE_JOB_TIMEOUT = 300.0
+"""主动交互任务超时（秒）：逐个会话生成 + 发送，给足余量但不无限占用。"""
 
 
 class SuperAstrBotApp:
@@ -111,6 +129,8 @@ class SuperAstrBotApp:
         self._journal_config: JournalConfig | None = None
         self._reflection_config: ReflectionConfig | None = None
         self._context_config: ContextConfig | None = None
+        self._group_config: GroupConfig | None = None
+        self._proactive_config: ProactiveConfig | None = None
 
         self._memories: MemoryRepository | None = None
         self._journals_repo: JournalRepository | None = None
@@ -121,6 +141,10 @@ class SuperAstrBotApp:
         self._journal_service: JournalService | None = None
         self._reflection_service: ReflectionService | None = None
         self._context_governor: ContextGovernor | None = None
+        self._group_service: GroupChatService | None = None
+        self._proactive_service: ProactiveService | None = None
+        self._group_gate: Any | None = None
+        """当前注入给 harness 的门控闭包（卸载时按对象身份清除，避免误清新实例）。"""
 
         self._effective_capabilities: dict[str, bool] = {}
         self._retriever: Any | None = None
@@ -166,6 +190,14 @@ class SuperAstrBotApp:
         return self._context_config
 
     @property
+    def group_service(self) -> GroupChatService | None:
+        return self._group_service
+
+    @property
+    def proactive_service(self) -> ProactiveService | None:
+        return self._proactive_service
+
+    @property
     def host(self) -> Any:
         return self._harness.host if self._harness is not None else None
 
@@ -206,6 +238,9 @@ class SuperAstrBotApp:
         self._started = False
 
         self._teardown_agent_tools()
+        # 摘掉门控闭包：卸载后不得再被框架的唤醒判定回调到本实例
+        release_group_gate(self._group_gate)
+        self._group_gate = None
 
         if self._scheduler is not None:
             try:
@@ -244,6 +279,8 @@ class SuperAstrBotApp:
         self._journal_config = JournalConfig.from_mapping(self._config)
         self._reflection_config = ReflectionConfig.from_mapping(self._config)
         self._context_config = ContextConfig.from_mapping(self._config)
+        self._group_config = GroupConfig.from_mapping(self._config)
+        self._proactive_config = ProactiveConfig.from_mapping(self._config)
         self._sync_derived_configs()
 
     def _probe_runtime_overrides(self) -> dict[str, bool]:
@@ -300,6 +337,28 @@ class SuperAstrBotApp:
             self._reflection_config.enabled = self._enabled("reflection.enabled")
         if self._context_config is not None:
             self._context_config.enabled = self._enabled("context.governance")
+        if self._group_config is not None:
+            self._group_config.enabled = self._enabled("group.enabled")
+        if self._proactive_config is not None:
+            self._proactive_config.enabled = self._enabled("proactive.enabled")
+        self._sync_group_gate()
+
+    def _sync_group_gate(self) -> None:
+        """把「群聊语义是否生效」注入 harness 的 filter 门控。
+
+        门控必须跟着能力开关走：关闭时群消息 handler 的 filter 不通过，
+        插件就完全不参与 AstrBot 的唤醒判定（等价于没装插件）。
+        """
+
+        def _gate() -> bool:
+            return (
+                self._enabled("group.enabled")
+                and self._group_service is not None
+                and self._group_service.can_activate()
+            )
+
+        self._group_gate = _gate
+        set_group_gate(_gate)
 
     def _sync_retriever_routes(self) -> None:
         """按当前能力开关增删检索路（热切换）。"""
@@ -334,6 +393,51 @@ class SuperAstrBotApp:
         self._scheduler.set_enabled("memory-maintenance", self._enabled("memory.enabled"))
         self._scheduler.set_enabled("reflection-scan", self._enabled("reflection.enabled"))
         self._scheduler.set_enabled("weekly-insight", self._enabled("journal.weekly_reflection"))
+        self._sync_proactive_jobs()
+
+    def _sync_proactive_jobs(self) -> None:
+        """增删主动交互的两条轨道（支持热切换）。
+
+        只在「轨道开关」或「调度参数」变化时重建任务：``Scheduler`` 重建 ``daily``
+        任务会清空 ``last_date``，导致当天重复发送，因此参数未变时保持原任务不动。
+        """
+        scheduler = self._scheduler
+        config = self._proactive_config
+        if scheduler is None or config is None or self._proactive_service is None:
+            return
+
+        active = self._enabled("proactive.enabled")
+
+        daily = scheduler.get(_JOB_PROACTIVE_DAILY)
+        if not active or not config.daily_enabled:
+            scheduler.remove(_JOB_PROACTIVE_DAILY)
+        elif daily is None or (daily.hour, daily.minute) != (
+            config.daily_hour,
+            config.daily_minute,
+        ):
+            scheduler.daily_at(
+                config.daily_hour,
+                config.daily_minute,
+                self._job_proactive_daily,
+                key=_JOB_PROACTIVE_DAILY,
+                timeout=_PROACTIVE_JOB_TIMEOUT,
+            )
+        else:
+            scheduler.set_enabled(_JOB_PROACTIVE_DAILY, True)
+
+        idle = scheduler.get(_JOB_PROACTIVE_IDLE)
+        interval = max(60.0, float(config.idle_check_minutes) * 60.0)
+        if not active or not config.idle_enabled:
+            scheduler.remove(_JOB_PROACTIVE_IDLE)
+        elif idle is None or idle.interval != interval:
+            scheduler.every(
+                interval,
+                self._job_proactive_idle,
+                key=_JOB_PROACTIVE_IDLE,
+                timeout=_PROACTIVE_JOB_TIMEOUT,
+            )
+        else:
+            scheduler.set_enabled(_JOB_PROACTIVE_IDLE, True)
 
     def refresh_capabilities(self) -> dict[str, bool]:
         """重新探测运行时能力并热应用到各子系统。
@@ -641,6 +745,20 @@ class SuperAstrBotApp:
             logger=self._logger,
         )
 
+        assert self._group_config is not None
+        self._group_service = GroupChatService(config=self._group_config)
+
+        assert self._proactive_config is not None
+        self._proactive_service = ProactiveService(
+            config=self._proactive_config,
+            host=self._harness.host,
+            llm=self._harness.llm,
+            materials=MemoryMaterialSource(memory=self._memory_service, logger=self._logger),
+            store=self._state_store,
+            logger=self._logger,
+        )
+        self._sync_group_gate()
+
     async def _start_background(self) -> None:
         assert self._scheduler is not None and self._memory_service is not None
 
@@ -681,12 +799,15 @@ class SuperAstrBotApp:
                 timeout=300.0,
             )
 
+        # 5) 主动交互双轨（能力开启时才注册）
+        self._sync_proactive_jobs()
+
         await self._scheduler.start()
         self._info(
             "后台调度已启动：%s", "、".join(job["key"] for job in self._scheduler.snapshot())
         )
 
-        # 5) 配置页动态下拉：把真实的嵌入模型列表注入到 schema
+        # 6) 配置页动态下拉：把真实的嵌入模型列表注入到 schema
         if self._enabled("memory.enabled"):
             self._scope.spawn(self._schema_sync_loop(), name="schema-sync")
 
@@ -808,6 +929,7 @@ class SuperAstrBotApp:
         if view.stopped or not view.text.strip():
             return
 
+        self._note_activity(view)
         await self._inject_memory(view, request)
         await self._govern_context(view, request)
 
@@ -862,17 +984,54 @@ class SuperAstrBotApp:
         elif result.applied:
             self._debug("上下文治理：%s", result.summary())
 
-    async def on_after_message_sent(self, event: Any) -> None:
-        """消息发送后钩子：把 Bot 回复放入对话缓冲，作为反思原料。"""
-        if not self._ready or not self._enabled("memory.capture"):
+    async def on_group_message(self, event: Any) -> None:
+        """群消息钩子：读空气决定本次是否需要 Bot 参与。
+
+        只有在 ``group.enabled`` 开启时该 handler 才会被激活（见 harness 的 filter 门控），
+        因此能力关闭时本方法不会被调用，插件对群聊完全没有影响。
+        """
+        service = self._group_service
+        if service is None or not self._enabled("group.enabled"):
             return
-        from .harness.astrbot_event import extract_result_text
 
         view = to_event_view(event)
+        signals = to_group_signals(event)
+        try:
+            decision = await service.decide(view, signals)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 决策失败按框架原判定处理
+            self._warn("群聊语义决策异常：%s", safe_detail(exc))
+            return
+
+        if decision.action == "silent":
+            self._debug("群聊静默（%s）：%s", view.umo, decision.reason)
+        elif decision.action == "interject":
+            self._debug(
+                "群聊插话（%s）：%s，合并 %s 条", view.umo, decision.reason, decision.merged
+            )
+        apply_group_decision(event, decision)
+
+    async def on_after_message_sent(self, event: Any) -> None:
+        """消息发送后钩子：记录会话活动，并把 Bot 回复放入对话缓冲。"""
+        if not self._ready:
+            return
+
+        view = to_event_view(event)
+        from .harness.astrbot_event import extract_result_text
+
         text = extract_result_text(event)
-        if not text.strip():
+        self._note_activity(view, reply_text=text.strip())
+        if not self._enabled("memory.capture") or not text.strip():
             return
         self._queue_buffer(view, f"助手：{truncate(text.strip(), 500)}")
+
+    def _note_activity(self, view: EventView, *, reply_text: str = "") -> None:
+        """记录会话活动（供主动交互判断静默）与 Bot 发言（供群聊话题延续）。"""
+        if self._proactive_service is not None:
+            self._proactive_service.note_activity(view.umo)
+        if reply_text and self._group_service is not None:
+            self._group_service.record_bot_reply(view.umo, reply_text)
 
     # ------------------------------------------------------------------ #
     # 记忆采集
@@ -979,12 +1138,32 @@ class SuperAstrBotApp:
                 continue
             self._info("周度洞察（%s）：%s", scope.key, outcome.summary())
 
+    async def _job_proactive_daily(self) -> None:
+        """计划轨：每天固定时间尝试发起一次主动消息。"""
+        await self._run_proactive(TRACK_DAILY)
+
+    async def _job_proactive_idle(self) -> None:
+        """空闲轨：会话静默足够久时尝试发起一次主动消息。"""
+        await self._run_proactive(TRACK_IDLE)
+
+    async def _run_proactive(self, kind: str) -> None:
+        service = self._proactive_service
+        if service is None or not self._enabled("proactive.enabled"):
+            return
+        attempts = await service.run_track(kind)
+        sent = [item for item in attempts if item.sent]
+        if sent:
+            self._info("主动交互（%s）：成功发送 %s 个会话", kind, len(sent))
+
     # ------------------------------------------------------------------ #
     # 对外状态
     # ------------------------------------------------------------------ #
 
-    async def status(self) -> dict[str, Any]:
-        """汇总运行状态，供命令与面板使用。"""
+    async def status(self, *, umo: str = "") -> dict[str, Any]:
+        """汇总运行状态，供命令与面板使用。
+
+        ``umo`` 非空时附带该会话的群聊冷却/配额与主动交互状态（命令侧使用）。
+        """
         memory_stats: dict[str, Any] = {}
         if self._memory_service is not None:
             try:
@@ -995,6 +1174,18 @@ class SuperAstrBotApp:
 
         scheduler = self._scheduler.snapshot() if self._scheduler is not None else []
         budget = self._budget.snapshot() if self._budget is not None else {}
+        group = self._group_service.snapshot() if self._group_service is not None else {}
+        proactive = (
+            self._proactive_service.snapshot() if self._proactive_service is not None else {}
+        )
+        if umo:
+            if self._group_service is not None:
+                group = {**group, "session": self._group_service.session_snapshot(umo)}
+            if self._proactive_service is not None:
+                proactive = {
+                    **proactive,
+                    "session": await self._proactive_service.session_snapshot(umo),
+                }
         return {
             "ready": self._ready,
             "plugin_version": __version__,
@@ -1009,6 +1200,8 @@ class SuperAstrBotApp:
             "context": (
                 self._context_governor.snapshot() if self._context_governor is not None else {}
             ),
+            "group": group,
+            "proactive": proactive,
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,
             "database": str(self._db.path) if self._db is not None else "",
             "fts": bool(self._db.fts_available) if self._db is not None else False,
@@ -1023,6 +1216,11 @@ class SuperAstrBotApp:
         self._info("Super_AstrBot 已就绪；生效能力：%s", "、".join(enabled) or "无")
         for key, reason in self._degraded_reasons:
             self._info("能力未生效：%s（%s）", key, reason)
+        if self._enabled("group.enabled") and not GROUP_FILTER_AVAILABLE:
+            self._warn(
+                "群聊语义已开启，但当前 AstrBot 缺少 custom_filter/EventMessageType 符号，"
+                "该能力不会生效（其余功能不受影响）。"
+            )
 
     def _info(self, message: str, *args: Any) -> None:
         if self._logger is not None:

@@ -25,7 +25,7 @@ class FakeApp:
         self.ready = True
         self.host = object()
 
-    async def status(self) -> dict[str, object]:
+    async def status(self, *, umo: str = "") -> dict[str, object]:
         return {
             "ready": True,
             "capabilities": {"basic.enabled": True, "memory.enabled": True},

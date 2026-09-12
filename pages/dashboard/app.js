@@ -36,6 +36,8 @@ const LOCAL_I18N = {
     "domain.journal": "周记",
     "domain.agent": "Agent 工具",
     "domain.context": "上下文治理",
+    "domain.group": "群聊语义",
+    "domain.proactive": "主动交互",
     "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
@@ -106,6 +108,8 @@ const LOCAL_I18N = {
     "domain.journal": "Journal",
     "domain.agent": "Agent tools",
     "domain.context": "Context control",
+    "domain.group": "Group semantics",
+    "domain.proactive": "Proactive chat",
     "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
@@ -450,6 +454,8 @@ const DOMAIN_TITLES = {
   journal: "domain.journal",
   agent: "domain.agent",
   context: "domain.context",
+  group: "domain.group",
+  proactive: "domain.proactive",
 };
 
 function featureStatusPill(item) {

@@ -31,6 +31,7 @@ HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）�
 /sab reject <编号>    驳回一条待审记忆
 /sab reset confirm   清空当前会话的记忆与缓冲（不可逆）
 /sab reindex         重建检索索引
+/sab quiet [on|off]  暂停/恢复本会话的主动消息（免打扰）
 /sab help            显示本帮助
 
 可视化管理：AstrBot 插件详情页 → Pages → dashboard"""
@@ -72,7 +73,7 @@ class CommandService:
         if self._app.ready is False and self._app.host is None:
             return self._not_ready()
         try:
-            data = await self._app.status()
+            data = await self._app.status(umo=view.umo)
         except Exception as exc:  # noqa: BLE001
             return f"获取状态失败：{safe_detail(exc)}"
 
@@ -129,6 +130,47 @@ class CommandService:
                 lines.append(
                     f"  最近一次：{last.get('original_tokens', 0)}→"
                     f"{last.get('final_tokens', 0)} token（{last.get('reason', '')}）"
+                )
+
+        group = data.get("group") or {}
+        if group:
+            session = group.get("session") or {}
+            detail = ""
+            if session:
+                detail = (
+                    f"，本会话近 1 小时插话 {session.get('hourly', 0)}"
+                    f"/{session.get('hourly_limit', 0)} 次，冷却剩余 "
+                    f"{session.get('cooldown_remaining', 0)}s"
+                )
+            lines.append(
+                f"- 群聊语义：{'开启' if group.get('enabled') else '关闭'}"
+                f"（阈值 {group.get('attention_threshold', 0)}，"
+                f"冷却 {group.get('cooldown_seconds', 0)}s{detail}）"
+            )
+
+        proactive = data.get("proactive") or {}
+        if proactive:
+            tracks = []
+            if proactive.get("daily_enabled"):
+                tracks.append(f"计划轨 {proactive.get('daily_time', '')}")
+            if proactive.get("idle_enabled"):
+                tracks.append(f"空闲轨 {proactive.get('idle_minutes', 0)} 分钟")
+            lines.append(
+                f"- 主动交互：{'开启' if proactive.get('enabled') else '关闭'}"
+                f"（{'、'.join(tracks) or '无轨道'}，免打扰 {proactive.get('quiet_hours', '')}）"
+            )
+            session = proactive.get("session") or {}
+            if session:
+                lines.append(
+                    f"  本会话：{'已暂停' if session.get('paused') else '正常'}，今日已发 "
+                    f"{session.get('sent_today', 0)}/{session.get('daily_max', 0)} 条，"
+                    f"静默 {session.get('idle_minutes', 0)} 分钟"
+                )
+            last_proactive = proactive.get("last") or {}
+            if last_proactive:
+                lines.append(
+                    f"  最近一次：{'已发送' if last_proactive.get('sent') else '未发送'}"
+                    f"（{last_proactive.get('reason', '')}）"
                 )
 
         scheduler = data.get("scheduler") or []
@@ -301,6 +343,32 @@ class CommandService:
             f"向量 {stats.get('vectorized', 0)} 条，跳过 {stats.get('skipped', 0)} 条。"
         )
 
+    async def quiet(self, view: EventView, arg: str) -> str:
+        """暂停/恢复当前会话的主动消息（免打扰）。"""
+        service = self._app.proactive_service
+        if service is None:
+            return self._not_ready()
+
+        token = arg.strip().lower()
+        if token in {"on", "1", "true", "开", "开启", "暂停", "静音"}:
+            paused = True
+        elif token in {"off", "0", "false", "关", "关闭", "恢复"}:
+            paused = False
+        elif not token:
+            paused = not await service.is_paused(view.umo)
+        else:
+            return "用法：/sab quiet [on|off]；不带参数则在暂停与恢复之间切换。"
+
+        try:
+            await service.set_paused(view.umo, paused)
+        except Exception as exc:  # noqa: BLE001
+            return f"设置失败：{safe_detail(exc)}"
+        return (
+            "已暂停本会话的主动消息（再次发送 /sab quiet 可恢复）。"
+            if paused
+            else "已恢复本会话的主动消息。"
+        )
+
     # ------------------------------------------------------------------ #
     # 统一入口
     # ------------------------------------------------------------------ #
@@ -326,6 +394,7 @@ class CommandService:
             "reject": lambda: self.review_reject(view, args[0] if args else ""),
             "reset": lambda: self.reset(view, args[0] if args else ""),
             "reindex": lambda: self.reindex(view),
+            "quiet": lambda: self.quiet(view, args[0] if args else ""),
         }
         handler = handlers.get(action)
         if handler is None:

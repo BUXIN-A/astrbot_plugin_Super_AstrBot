@@ -309,6 +309,167 @@
       }
     }
   },
+  "group": {
+    "description": "群聊语义",
+    "type": "object",
+    "hint": "读空气：按注意力得分决定是否在群聊中主动插话，并合并短时间内的连续消息（默认关闭）",
+    "items": {
+      "enabled": {
+        "description": "启用群聊语义",
+        "type": "bool",
+        "default": false,
+        "hint": "关闭时插件完全不参与群聊的唤醒判定，行为与未安装插件一致；开启后即时生效"
+      },
+      "attention_threshold": {
+        "description": "插话注意力阈值",
+        "type": "float",
+        "default": 0.55,
+        "slider": {"min": 0.05, "max": 1.0, "step": 0.05},
+        "hint": "得分低于该值就不插话；调高更沉默，调低更容易接话。被 @/引用时无视该阈值"
+      },
+      "cooldown_seconds": {
+        "description": "两次插话的最短间隔（秒）",
+        "type": "int",
+        "default": 90,
+        "slider": {"min": 0, "max": 1800, "step": 10}
+      },
+      "max_per_hour": {
+        "description": "每会话每小时最多插话次数",
+        "type": "int",
+        "default": 6,
+        "slider": {"min": 1, "max": 60, "step": 1}
+      },
+      "merge_window_seconds": {
+        "description": "并发合并窗口（秒）",
+        "type": "float",
+        "default": 1.2,
+        "slider": {"min": 0.0, "max": 5.0, "step": 0.2},
+        "hint": "窗口内到达的同一会话消息会合并为一次请求；设为 0 关闭合并"
+      },
+      "merge_max_messages": {
+        "description": "单次最多合并消息条数",
+        "type": "int",
+        "default": 4,
+        "slider": {"min": 1, "max": 20, "step": 1}
+      },
+      "bot_aliases": {
+        "description": "Bot 的称呼词",
+        "type": "list",
+        "default": [],
+        "hint": "被这样叫时视为点名（仅在未被 @ 时作为加分信号），例如 [\"小助手\", \"bot\"]"
+      },
+      "whitelist": {
+        "description": "只在这些人/群主动插话",
+        "type": "list",
+        "default": [],
+        "hint": "填群号或完整会话 UMO；留空表示不限。仅约束主动插话，不影响被 @ 时的回复"
+      },
+      "blacklist": {
+        "description": "这些人/群不主动插话",
+        "type": "list",
+        "default": [],
+        "hint": "优先级高于白名单；同样不影响被 @ 时的回复"
+      }
+    }
+  },
+  "proactive": {
+    "description": "主动交互",
+    "type": "object",
+    "hint": "双轨调度：按固定时间或会话静默时长主动发一条消息，受免打扰约束（默认关闭）",
+    "items": {
+      "enabled": {
+        "description": "启用主动交互",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后即时生效，无需重载；目标会话为空时不会有任何发送"
+      },
+      "targets": {
+        "description": "目标会话（UMO）",
+        "type": "list",
+        "default": [],
+        "hint": "只对这些会话主动发送，不做自动发现。格式 platform:message_type:session_id"
+      },
+      "daily_enabled": {
+        "description": "启用计划轨（每天固定时间）",
+        "type": "bool",
+        "default": true
+      },
+      "daily_time": {
+        "description": "计划轨发送时间（HH:MM）",
+        "type": "string",
+        "default": "10:00",
+        "hint": "服务器本地时间；错过的时间点会在启动后补一次"
+      },
+      "idle_enabled": {
+        "description": "启用空闲轨（静默一段时间后搭话）",
+        "type": "bool",
+        "default": false
+      },
+      "idle_minutes": {
+        "description": "空闲轨触发所需静默时长（分钟）",
+        "type": "int",
+        "default": 180,
+        "slider": {"min": 5, "max": 1440, "step": 5}
+      },
+      "idle_check_minutes": {
+        "description": "空闲轨检查周期（分钟）",
+        "type": "int",
+        "default": 15,
+        "slider": {"min": 1, "max": 180, "step": 1}
+      },
+      "busy_guard_minutes": {
+        "description": "视为「正在聊天」的静默门槛（分钟）",
+        "type": "int",
+        "default": 10,
+        "slider": {"min": 0, "max": 120, "step": 1},
+        "hint": "静默不足该时长就放弃本次发送，避免打断正在进行的对话"
+      },
+      "daily_max": {
+        "description": "每会话每日主动消息上限",
+        "type": "int",
+        "default": 1,
+        "slider": {"min": 1, "max": 24, "step": 1}
+      },
+      "quiet_start": {
+        "description": "免打扰开始时间（0-23 点）",
+        "type": "int",
+        "default": 23,
+        "slider": {"min": 0, "max": 23, "step": 1},
+        "hint": "与结束时间相同表示不启用免打扰；支持跨午夜（如 23 点到 8 点）"
+      },
+      "quiet_end": {
+        "description": "免打扰结束时间（0-23 点）",
+        "type": "int",
+        "default": 8,
+        "slider": {"min": 0, "max": 23, "step": 1}
+      },
+      "max_chars": {
+        "description": "主动消息长度上限",
+        "type": "int",
+        "default": 80,
+        "slider": {"min": 10, "max": 500, "step": 10}
+      },
+      "material_memories": {
+        "description": "取材的长期记忆条数",
+        "type": "int",
+        "default": 8,
+        "slider": {"min": 0, "max": 30, "step": 1}
+      },
+      "material_journals": {
+        "description": "取材的周记条数",
+        "type": "int",
+        "default": 3,
+        "slider": {"min": 0, "max": 20, "step": 1}
+      },
+      "provider_id": {
+        "description": "生成主动消息所用模型",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "留空则使用会话默认模型"
+      }
+    }
+  },
   "runtime": {
     "description": "运行与性能",
     "type": "object",

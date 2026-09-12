@@ -11,6 +11,14 @@ from typing import Any, Mapping
 
 from . import astrbot_compat as compat
 from .astrbot_event import is_event_stopped, to_event_view
+from .astrbot_group import (
+    GROUP_FILTER_AVAILABLE,
+    GroupMessageFilter,
+    apply_group_decision,
+    release_group_gate,
+    set_group_gate,
+    to_group_signals,
+)
 from .astrbot_host import AstrBotHost
 from .astrbot_llm import (
     MEMORY_BLOCK_END,
@@ -24,6 +32,8 @@ from .protocols import (
     ChatMessage,
     EmbeddingGateway,
     EventView,
+    GroupDecision,
+    GroupSignals,
     Host,
     Injector,
     InjectResult,
@@ -63,6 +73,12 @@ __all__ = [
     "unregister_tools",
     "to_event_view",
     "is_event_stopped",
+    "GROUP_FILTER_AVAILABLE",
+    "GroupMessageFilter",
+    "set_group_gate",
+    "release_group_gate",
+    "to_group_signals",
+    "apply_group_decision",
     "compat",
     "inject_string_options",
     "clear_options",
@@ -74,6 +90,8 @@ __all__ = [
     "MemoryToolBackend",
     "LoggerLike",
     "EventView",
+    "GroupSignals",
+    "GroupDecision",
     "ChatMessage",
     "LlmResult",
     "TokenUsage",

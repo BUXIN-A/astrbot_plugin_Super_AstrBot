@@ -164,6 +164,28 @@ CAPABILITIES: tuple[Capability, ...] = (
             "只影响本次请求、不改写对话历史；默认关闭。"
         ),
     ),
+    Capability(
+        key="group.enabled",
+        title="群聊语义",
+        domain="group",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "读空气决策：按注意力得分 + 冷却 + 每小时配额决定是否在群聊中主动插话，"
+            "并把短时间内的连续消息合并为一次请求。关闭时完全不参与唤醒判定。"
+        ),
+    ),
+    Capability(
+        key="proactive.enabled",
+        title="主动交互",
+        domain="proactive",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "双轨调度：按固定时间或会话静默时长，基于记忆素材生成并主动发送一条消息。"
+            "受安静时段、每日上限与手动暂停约束；默认关闭。"
+        ),
+    ),
 )
 
 _BY_KEY: dict[str, Capability] = {item.key: item for item in CAPABILITIES}
@@ -276,6 +298,19 @@ def as_float(
 def as_str(value: Any, default: str = "") -> str:
     """把任意配置值规整为字符串（``None`` 取默认值）。"""
     return default if value is None else str(value)
+
+
+def as_str_tuple(value: Any) -> tuple[str, ...]:
+    """把配置值规整为去空白、去空的字符串元组。
+
+    兼容三种写法：字符串列表（配置页原生）、逗号分隔字符串（手填更省事）、
+    换行分隔字符串；中文逗号一并接受。
+    """
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+    else:
+        items = str(value or "").replace("，", ",").replace("\n", ",").split(",")
+    return tuple(str(item).strip() for item in items if str(item).strip())
 
 
 def resolve_capabilities(

@@ -47,7 +47,13 @@ class FrameworkSymbols:
     MessageType: Any = None
     MessageChain: Any = None
     Plain: Any = None
+    At: Any = None
+    Reply: Any = None
     AstrMessageEvent: Any = None
+
+    # --- 事件过滤器 ---
+    CustomFilter: Any = None
+    EventMessageType: Any = None
 
     # --- LLM / 工具 ---
     ProviderType: Any = None
@@ -75,7 +81,11 @@ def _resolve() -> FrameworkSymbols:
         MessageType=_load("astrbot.api.platform", "MessageType"),
         MessageChain=_load("astrbot.api.event", "MessageChain"),
         Plain=_load("astrbot.api.message_components", "Plain"),
+        At=_load("astrbot.api.message_components", "At"),
+        Reply=_load("astrbot.api.message_components", "Reply"),
         AstrMessageEvent=_load("astrbot.api.event", "AstrMessageEvent"),
+        CustomFilter=_load("astrbot.api.event.filter", "CustomFilter"),
+        EventMessageType=_load("astrbot.api.event.filter", "EventMessageType"),
         ProviderType=_load("astrbot.api.provider", "ProviderType"),
         ProviderRequest=_load("astrbot.api.provider", "ProviderRequest"),
         LLMResponse=_load("astrbot.api.provider", "LLMResponse"),
@@ -124,6 +134,10 @@ _OPTIONAL_SYMBOLS: tuple[str, ...] = (
     "AstrMessageEvent",
     "MessageChain",
     "Plain",
+    "At",
+    "Reply",
+    "CustomFilter",
+    "EventMessageType",
     "FunctionTool",
     "ToolSet",
     "web_request",

@@ -36,13 +36,15 @@
                 │ 组装
 ┌───────────────▼──────────────────────────────────────────────┐
 │ super_astrbot/app.py  （应用容器：生命周期编排、依赖注入）          │
-└───┬────────┬────────┬────────┬────────┬────────┬─────────────┘
-    │        │        │        │        │        │
-┌───▼──┐ ┌───▼──┐ ┌───▼───┐ ┌──▼───┐ ┌──▼───┐ ┌─▼──────┐
-│memory│ │journal│ │learning│ │context│ │commands│ │ web    │  ← 业务域（禁止 import astrbot）
-└───┬──┘ └───┬──┘ └───┬───┘ └──┬───┘ └──┬───┘ └─┬──────┘
-    │        │        │        │        │        │
-┌───▼────────▼────────▼────────▼────────▼────────▼─────────────┐
+└───┬──────────────────────────────────────────────────────────┘
+    │
+    ├─ 业务域（禁止 import astrbot）
+    │    memory   长期记忆与检索        journal   周记 / 现实记忆
+    │    learning 反思式自我学习        context   请求级上下文治理
+    │    group    群聊语义（读空气）     proactive 主动交互（双轨调度）
+    │    commands 指令门面              web       面板 API
+    │
+┌───▼──────────────────────────────────────────────────────────┐
 │ loop/  （循环控制：TaskScope / Scheduler / Gate / Budget）       │
 └───────────────────────────┬──────────────────────────────────┘
                             │
@@ -82,6 +84,8 @@
 | `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
 | `agent.memory_tools` | Agent 工具 | **off** | `memory.enabled` | ❌ | 向模型暴露记忆检索/写入函数工具（见第 9 节） |
 | `context.governance` | 上下文治理 | **off** | `basic.enabled` | ✅ | 请求级 token 治理：占位压缩 + 历史摘要（见第 10 节） |
+| `group.enabled` | 群聊语义 | **off** | `basic.enabled` | ✅ | 读空气插话 + 冷却配额 + 并发合并（见第 11 节） |
+| `proactive.enabled` | 主动交互 | **off** | `basic.enabled` | ✅ | 双轨调度主动消息 + 免打扰（见第 12 节） |
 
 **依赖解析规则**：某能力的前置不满足时，该能力视为关闭，并记录一条 `DegradedReason`（只告警一次）。
 
@@ -141,6 +145,24 @@ class MemoryToolBackend(Protocol):
     async def memory_write(
         self, *, view: EventView, content: str, kind: str = "fact", importance: float = 0.6
     ) -> str: ...
+
+
+@dataclass(frozen=True)
+class GroupSignals:
+    # 群消息的额外信号（读空气决策输入，见第 11 节）
+    self_id: str = ""
+    mentioned: bool = False   # 被 @ 或引用了 Bot 的消息
+    wake: bool = False        # 框架已判定应唤醒（wake 前缀 / @ / 引用）
+
+
+@dataclass(frozen=True)
+class GroupDecision:
+    # 群消息处理决策，由业务域给出、由 harness 落地到事件对象
+    action: str = "reply"     # interject | reply | silent
+    reason: str = ""
+    attention: float = 0.0
+    text: str = ""            # 插话时写回事件的消息文本（并发合并结果）
+    merged: int = 0           # 本次合并的消息条数
 ```
 
 ### 4.2 事件视图（`harness/protocols.py: EventView`）
@@ -377,12 +399,173 @@ AstrBot 的对话历史是用户资产（面板可查看、`/reset` 可管理）
 
 ---
 
-## 11. 可观测性与运维
+## 11. 群聊语义规格
+
+对应路线 P3。目标：让 Bot 在群聊里**有分寸地参与**——该接的话才接，接的时候少而完整。
+
+### 11.1 唤醒边界（为什么必须自定义 filter）
+
+AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot 判定 `is_wake`；
+② **任何插件的 event_filter 通过，也会把该消息标记为已唤醒**；③ 若最终 `is_wake` 为假则
+`event.stop_event()`，消息不再进入后续阶段。而调用 LLM 需要 `is_at_or_wake_command` 为真
+（`ProcessStage`）。
+
+因此本插件注册一个**群消息 handler + 自定义门控 filter**：
+
+- 能力关闭 → filter 返回 `False` ⇒ handler 不被激活、`is_wake` 不受影响，插件对群聊
+  **零副作用**（等价于未安装）；
+- 能力开启 → filter 通过 ⇒ 每条群消息都会进入本插件决策；决定接话时由插件把
+  `is_at_or_wake_command` 置真（与框架自身唤醒同一语义），决定不接时 `event.stop_event()`。
+
+### 11.2 决策链（自上而下短路）
+
+| 顺序 | 条件 | 结果 |
+|---|---|---|
+| 1 | 能力关闭 | 不参与（仅兜底，门控已挡） |
+| 2 | 被直接提及（@ / 引用 / wake 前缀） | `reply`：不改写、不拦截，沿用框架原链路 |
+| 3 | 该会话已有进行中的合并窗口 | `silent`，本条并入窗口 |
+| 4 | 无文本 / 名单外 / 冷却中 / 已达每小时配额 | `silent`（零成本前置检查） |
+| 5 | 注意力得分 < `attention_threshold` | `silent` |
+| 6 | 通过 | `interject`：置唤醒标记，必要时改写为合并后的文本 |
+
+**要点**：白/黑名单与冷却、配额都只约束「主动插话」，**不影响被直接提及时的回复**；
+被 @ 也**不参与合并窗口**，定向提问必须立刻得到响应。
+
+### 11.3 注意力评分（`group/attention.py`，纯函数）
+
+对**合并后的整段文本**评分，输出 `[0, 1]` 与命中信号：
+
+| 信号 | 权重 |
+|---|---|
+| 基础分（群里有对话发生） | +0.15 |
+| 含疑问标记（？、吗、呢、怎么、为什么、哪、多少、谁、求、帮…） | +0.35 |
+| 出现 Bot 称呼词（`bot_aliases`） | +0.40 |
+| 与 Bot 最近 3 条发言的最大词袋重合度 | +0.30 × 重合度 |
+| 长度落在 4–200 字 | +0.10 |
+| 超过 400 字 / 少于 4 字 | −0.15 / −0.20 |
+| 同一发送者 20 秒内 ≥3 条（刷屏） | −0.20 |
+| 无实义内容（无 CJK/ASCII 词元，如纯表情） | 直接 0 |
+
+默认阈值 0.55，即「明确提问」「被称呼」「话题延续」任一即可越过，普通闲聊不会。
+
+### 11.4 冷却与配额
+
+- 每会话 `cooldown_seconds`（默认 90s）内不重复插话；
+- 每会话每小时最多 `max_per_hour`（默认 6）次；
+- 两者都是**内存态**，重启后重置（不写库，避免为限流产生写放大）。
+
+### 11.5 并发合并
+
+用户常把一句话拆成几条发，逐条评分会让它们全部落空，因此：
+
+1. 通过前置检查后，消息**认领**一个 `merge_window_seconds`（默认 1.2s）的窗口
+   （认领发生在任何 `await` 之前，所以并发到达时只有一条能成为 leader）；
+2. 窗口内的后续消息被窗口吸收（并入文本）并静默，不再各自决策；
+3. 窗口结束后**对合并文本评分**，通过则把合并文本写回事件（`message_str`），
+   由框架带着完整语义去调用模型；
+4. 上限：`merge_max_messages` 条、`merge_max_chars` 字符。
+
+延迟代价：开启合并时每次插话至少推迟一个窗口（默认 1.2s）。窗口内的消息**不会丢失**——
+它们要么被合并进这次回复，要么因 leader 判定静默而一起静默。
+
+### 11.6 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `group.enabled` | **false** | 总开关；关闭时不参与唤醒判定 |
+| `group.attention_threshold` | 0.55 | 插话阈值（0.05–1.0） |
+| `group.cooldown_seconds` | 90 | 两次插话最短间隔 |
+| `group.max_per_hour` | 6 | 每会话每小时上限 |
+| `group.merge_window_seconds` | 1.2 | 合并窗口（0 表示关闭） |
+| `group.merge_max_messages` | 4 | 单次最多合并条数 |
+| `group.bot_aliases` | 空 | Bot 的称呼词 |
+| `group.whitelist` / `group.blacklist` | 空 | 名单（群号或 UMO）；黑名单优先 |
+
+### 11.7 硬性约束
+
+1. **关闭即零副作用**：门控 filter 必须跟随能力开关，绝不无条件唤醒群消息；
+2. **不打断定向提问**：被 @ / 引用时永远 `reply`，且不参与合并窗口；
+3. **静默用 `stop_event()`**：让事件不再进入后续 stage，既不调用模型也不发送内容；
+4. **消息不丢失**：窗口内的消息要么被合并，要么随 leader 一起静默，不做「部分回复」；
+5. **不写库**：冷却、配额、话题历史都是内存态，插件不因限流产生新的持久化写入；
+6. **框架缺符号即降级**：缺少 `custom_filter` / `EventMessageType` 时不注册 handler 并告警一次。
+
+---
+
+## 12. 主动交互规格
+
+对应路线 P4。目标：让 Bot 在**不打扰**的前提下，偶尔主动开启一段对话。
+
+### 12.1 双轨调度
+
+| 轨道 | 触发 | 说明 |
+|---|---|---|
+| 计划轨（daily） | `Scheduler.daily_at`，每天 `daily_time` | 当日幂等、跨重载不重复；停机错过的时点启动后补一次 |
+| 空闲轨（idle） | `Scheduler.every(idle_check_minutes)`，会话静默 ≥ `idle_minutes` | 每轮只做判定，不满足则零成本跳过 |
+
+目标会话来自配置项 `proactive.targets`（UMO 列表），**不做自动发现**：主动发消息是
+会打扰人的行为，必须由使用者显式指定对象。
+
+### 12.2 内容生成
+
+1. 素材：该会话作用域内的最近 `material_memories` 条长期记忆、`material_journals` 条周记、
+   最近对话缓冲；**素材为空即跳过**（宁可不发，也不硬编一句问候）；
+2. 生成：调用 LLM（`purpose="proactive"`，可用 `provider_id` 指定便宜的模型），
+   提示词要求口语化、一句话、不超过 `max_chars`、不得自称「主动/定时/系统」、
+   不得编造素材之外的事实，并附上「上一条主动消息」要求换话题；
+3. 清洗：去掉包裹引号与「主动：」之类前缀、压平空白、按 `max_chars` 截断；
+   清洗后为空即放弃本次发送。
+
+### 12.3 竞态保护
+
+1. **同会话互斥**：会话在 `_inflight` 中时直接跳过；
+2. **生成前后各复核一次静默条件**：生成期间用户开始说话 → 放弃本次发送（不硬插话）；
+3. **先占配额再发送**：配额写 KV（`proactive:sent:<umo>:<date>`）后才发送，
+   发送失败也不补发（避免重复打扰）；跨重载幂等；
+4. **全局并发与每日调用预算**交给 `LLMBudget`，本域不做二次限流；
+5. **单个会话失败不影响其它会话**：逐会话串行、逐个兜底。
+
+### 12.4 免打扰
+
+| 机制 | 说明 |
+|---|---|
+| 安静时段 | `quiet_start`–`quiet_end`（本地整点，支持跨午夜；起止相同即不启用） |
+| 每日上限 | 每会话 `daily_max` 条，两条轨道共享 |
+| 忙碌守卫 | 会话静默 < `busy_guard_minutes` 视为「正在聊天」，两条轨道都不打扰 |
+| 手动暂停 | `/sab quiet [on\|off]`，写 KV `proactive:paused:<umo>`，跨重载保持一致 |
+| 无活动记录 | 按「服务启动时刻」估算静默，避免刚重启就打扰 |
+
+### 12.5 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `proactive.enabled` | **false** | 总开关（热切换） |
+| `proactive.targets` | 空 | 目标会话 UMO 列表；为空则不发 |
+| `proactive.daily_enabled` / `daily_time` | on / 10:00 | 计划轨开关与时间 |
+| `proactive.idle_enabled` / `idle_minutes` / `idle_check_minutes` | off / 180 / 15 | 空闲轨开关、静默阈值、检查周期 |
+| `proactive.busy_guard_minutes` | 10 | 「正在聊天」门槛 |
+| `proactive.daily_max` | 1 | 每会话每日上限 |
+| `proactive.quiet_start` / `quiet_end` | 23 / 8 | 免打扰时段 |
+| `proactive.max_chars` | 80 | 主动消息长度上限 |
+| `proactive.material_memories` / `material_journals` | 8 / 3 | 取材条数 |
+| `proactive.provider_id` | 空 | 生成所用模型；空则用会话默认 |
+
+### 12.6 硬性约束
+
+1. **默认关闭且需显式指定目标**：绝不「自动找会话聊天」；
+2. **主动消息不进记忆缓冲**：`Context.send_message` 不触发 `after_message_sent`，
+   因此不会自己喂自己（避免自我强化循环）；
+3. **失败即静默**：素材缺失、生成失败、发送失败都只记一条状态，不重试、不降级成模板；
+4. **任何异常不打断调度**：单会话异常被吞掉，调度器继续跑其它会话。
+
+---
+
+## 13. 可观测性与运维
 
 - 日志统一经 `Host.log()`；关键路径分级，`debug_log` 开启才输出检索打分细节。
 - 命令采用**单一顶层入口** `sab`（别名 `superastrbot`），子命令由
   `commands/parser.py` 自行解析：`status`、`search`、`why`、`remember`、`journal`、
-  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`help`。
+  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`quiet`、`help`。
   之所以不注册多条顶层/子指令：AstrBot 的指令冲突检测以指令「完整名」为键，
   注册项越少撞名概率越低，也不依赖框架的参数推导行为。
 - 面板（`pages/dashboard`）七个分区：总览、记忆、检索、周记、待审、功能、系统。
@@ -401,11 +584,17 @@ AstrBot 的对话历史是用户资产（面板可查看、`/reset` 可管理）
   故嵌入探测**失败不缓存**，并在 `on_astrbot_loaded` 钩子中复检，使向量路自动启用。
 - 上下文治理状态经 `/sab status` 与面板 `status()` 的 `context` 字段暴露：是否开启、token 上限、
   保留条数，以及最近一次的 token 前后值与原因。
+- 群聊语义与主动交互同样经 `status()` 的 `group` / `proactive` 字段暴露；`status(umo=...)`
+  （`/sab status` 走这条）额外附带**本会话**的近一小时插话次数、冷却剩余、今日主动消息条数、
+  暂停状态与静默时长。主动交互的两条轨道以 `proactive-daily` / `proactive-idle` 注册到
+  `Scheduler`，因此面板「系统 → 后台任务」会连同下次执行时间一起展示。
+- 群消息 handler 只在能力开启时才参与唤醒判定；能力开启但框架缺少 `custom_filter` 符号时，
+  启动日志给出一次明确告警（该能力降级为不可用，其余功能不受影响）。
 - 所有敏感值（除内容外）只回状态不回原文；面板默认只读优先。
 
 ---
 
-## 12. 借鉴来源与合规
+## 14. 借鉴来源与合规
 
 本插件的设计思路来源于仓库上一级 `docs/Super_AstrBot_项目学习分析文档.md` 所分析的开源项目，**仅借鉴设计思路与公开 API 用法，不复制其源码**。若后续引入任何第三方代码或资源，必须：
 
@@ -421,10 +610,12 @@ AstrBot 的对话历史是用户资产（面板可查看、`/reset` 可管理）
 | 无 patch 的阈值差退化策略 | memory_beyond | `spec/capabilities.py` 依赖解析 |
 | 可恢复写日志 | livingmemory | `storage/db.py` + `write_ops` |
 | 幂等定时任务 | livingmemory_ext | `loop/scheduler.py` |
+| 群聊唤醒抑制 / 群消息并发处理 | AstrNa（`group_wake_suppression`、`group_sender_concurrency`） | `group/`（仅借鉴「保护系统提示词段」「同会话串行」思路，未复制代码，且以 filter 门控替代其 monkey-patch） |
+| 主动消息的时间轨/空闲轨调度 | proactive_chat | `proactive/`（仅借鉴双轨触发与免打扰思路） |
 
 ---
 
-## 13. 验收标准（MVP）
+## 15. 验收标准（MVP）
 
 1. 插件可在 AstrBot ≥ 4.24.2 正常加载、卸载、重载，无残留任务与残留 handler。
 2. 未配置 Embedding Provider 时插件正常可用（自动降级），配置后自动启用向量路。
@@ -436,13 +627,17 @@ AstrBot 的对话历史是用户资产（面板可查看、`/reset` 可管理）
    默认关闭或框架不支持时不注册工具，插件仍正常就绪。
 8. 上下文治理：开启后仅在本次请求内生效，超阈值时先占位压缩、再摘要；尾部保留区逐字不变，
    摘要失败降级为「仅占位压缩」，**持久化对话历史不被改写**；默认关闭时不干预任何请求。
-9. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等、
-   Agent 工具、token 估算与上下文治理。
-10. `ruff check .` 与 `ruff format .` 通过。
+9. 群聊语义：关闭时不影响任何群消息的唤醒判定（等价未安装）；开启后仅在注意力达标时插话，
+   受冷却与每小时配额约束，被 @ / 引用时始终正常回复；开启合并时同一会话的一波消息只回答一次。
+10. 主动交互：关闭时不产生任何发送；开启后仅在目标会话、非安静时段、静默足够久且未超每日上限时，
+    基于素材生成并发送一条消息；生成期间会话转为活跃即放弃本次发送，失败不重试。
+11. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等、
+    Agent 工具、token 估算与上下文治理、群聊决策与合并、主动交互守卫与竞态。
+12. `ruff check .` 与 `ruff format .` 通过。
 
 ---
 
-## 14. 迭代路线
+## 16. 迭代路线
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -453,10 +648,11 @@ AstrBot 的对话历史是用户资产（面板可查看、`/reset` 可管理）
 | P1.8 | 全量代码审查：作用域越界删除、存储串行化、LIKE 转义、向量作用域扫描、写放大与死代码清理 | ✅ 已完成（v0.3.1） |
 | P1.5 | Agent 函数工具（`sab_memory_search` / `sab_memory_write`） | ✅ 已完成（v0.4.0） |
 | P2 | 上下文治理（token 估算 / 工具与图片历史占位 / 摘要水位线） | ✅ 已完成（v0.5.0） |
-| P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | 规划 |
-| P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | 规划 |
+| P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | ✅ 已完成（v0.6.0） |
+| P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | ✅ 已完成（v0.6.0） |
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | 规划 |
 
-**验收结果**：`pytest tests -q` 159 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+**验收结果**：`pytest tests -q` 200 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
 `node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换、
-向量路启用、Agent 工具调用与上下文治理触发效果仍待服务器实测（本地无运行实例）。
+向量路启用、Agent 工具调用、上下文治理触发效果、群聊插话分寸与主动消息发送时机仍待服务器实测
+（本地无运行实例）。

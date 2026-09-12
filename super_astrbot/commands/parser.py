@@ -39,6 +39,8 @@ _ACTION_ALIASES: dict[str, str] = {
     "驳回": "reject",
     "重置": "reset",
     "重建": "reindex",
+    "安静": "quiet",
+    "免打扰": "quiet",
 }
 
 

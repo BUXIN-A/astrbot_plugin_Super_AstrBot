@@ -270,3 +270,46 @@ class MemoryToolBackend(Protocol):
         importance: float = 0.6,
     ) -> str:
         """写入一条长期记忆；参数不合法或权限不足时返回可读的说明文本。"""
+
+
+# --------------------------------------------------------------------------- #
+# 群聊语义
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class GroupSignals:
+    """群消息的额外信号（「读空气」决策的输入）。
+
+    ``EventView`` 只承载通用字段；被 @、被引用这类判断需要消息段，
+    因此单独抽出，避免让所有调用方都去解析消息链。
+    """
+
+    self_id: str = ""
+    """Bot 自身 ID。"""
+
+    mentioned: bool = False
+    """消息是否 @ 了 Bot、或引用了 Bot 发送的消息。"""
+
+    wake: bool = False
+    """框架是否已判定该消息应唤醒 Bot（wake 前缀 / @ / 引用）。"""
+
+
+@dataclass(frozen=True)
+class GroupDecision:
+    """一次群消息处理决策，由业务域给出、由 harness 落地到事件对象。"""
+
+    action: str = "reply"
+    """``interject``（主动插话）/ ``reply``（按既有链路正常回复）/ ``silent``（静默）。"""
+
+    reason: str = ""
+    """决策原因（日志与状态展示用）。"""
+
+    attention: float = 0.0
+    """注意力得分（0~1），仅用于观测。"""
+
+    text: str = ""
+    """插话时要写回事件的消息文本（并发合并结果）；为空表示不改写原文。"""
+
+    merged: int = 0
+    """本次合并的消息条数（含首条）。"""

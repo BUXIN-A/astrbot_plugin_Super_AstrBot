@@ -2,6 +2,55 @@
 
 本文件记录 Super_AstrBot 的版本变更。版本号以 `metadata.yaml` 为唯一来源。
 
+## [0.6.0] - 未发布
+
+新增「群聊语义」（路线 P3）与「主动交互」（路线 P4）。两者**默认关闭**，且只影响自身行为，
+不改变其它能力。
+
+### 新增
+
+- **群聊语义**（`group.enabled`，默认关闭，可热切换）
+  - 通过「群消息 handler + 自定义门控 filter」实现读空气：能力关闭时 filter 不通过，
+    插件**完全不参与** AstrBot 的唤醒判定（等价于未安装）；开启后才接管群消息决策。
+  - 决策链：被 @ / 引用 / wake 前缀 → 永远正常回复（不拦截、不延迟、不参与合并）；
+    其余消息按「名单 → 冷却 → 每小时配额 → 注意力得分」逐级判定，通过才插话。
+  - 注意力评分（`group/attention.py`，纯函数、零模型调用）：基础分 + 疑问 + 称呼词 +
+    与 Bot 最近发言的话题延续度 + 长度分 − 刷屏/超长/超短惩罚；阈值可配。
+  - 并发合并：认领一个合并窗口（默认 1.2s），窗口内的同会话消息并入文本后**对整段评分**，
+    解决「一句话拆成几条发就永远不够格」的问题；窗口内消息不丢失，只回答一次。
+  - 静默用 `event.stop_event()`；冷却、配额、话题历史均为内存态，不产生额外写库。
+- **主动交互**（`proactive.enabled`，默认关闭，可热切换）
+  - 双轨调度：计划轨（每天 `daily_time`，当日幂等）+ 空闲轨（每 `idle_check_minutes` 检查，
+    会话静默达 `idle_minutes` 才触发）；目标会话必须显式配置（UMO 列表），不做自动发现。
+  - 内容生成：以该会话的长期记忆 / 周记 / 对话缓冲为素材，用 LLM 生成一句话
+    （`purpose="proactive"`，可指定便宜模型）；素材为空则跳过，不降级成模板问候。
+  - 竞态保护：同会话互斥、生成前后各复核一次静默条件、先占配额再发送（失败不补发）、
+    单会话异常不影响其它会话；全局并发与每日预算沿用 `LLMBudget`。
+  - 免打扰：安静时段（支持跨午夜）、每会话每日上限、忙碌门槛、`/sab quiet [on|off]` 手动暂停
+    （写 KV，跨重载保持一致）。
+- **配置与可观测**：新增 `group` / `proactive` 配置分组与面板域分组；`status()` 新增
+  `group` / `proactive` 字段，`/sab status` 额外显示本会话的插话次数、冷却剩余、今日主动条数、
+  暂停状态与静默时长；两条主动轨道以 `proactive-daily` / `proactive-idle` 注册到调度器，
+  自动出现在面板「系统 → 后台任务」。
+- `harness/astrbot_group.py`：新增 `GroupMessageFilter` 门控、`GroupSignals` 信号提取与
+  `apply_group_decision` 决策落地；`GroupSignals` / `GroupDecision` 作为契约加入 `harness/protocols.py`，
+  业务域不接触框架对象。
+
+### 兼容性说明
+
+- 群消息 handler 使用 `filter.custom_filter` + `filter.event_message_type`；框架缺少
+  `CustomFilter` / `EventMessageType` 符号时**不注册**该 handler 并在启动日志告警一次，
+  其余能力不受影响。
+- 新增可选符号 `At` / `Reply` / `CustomFilter` / `EventMessageType`，已纳入 `/sab status`
+  与面板的符号诊断清单。
+
+### 测试
+
+通过用例 200 项（v0.5.0 为 159）。新增 `tests/test_group_chat.py` 21 项（注意力评分、
+名单与配额、冷却、合并窗口与会话隔离、决策落地、`@`/引用识别、门控卸载语义）与
+`tests/test_proactive.py` 20 项（时间解析、安静时段跨午夜、双轨守卫、每日上限、
+暂停持久化、生成期间竞态取消、素材为空、生成失败与发送失败降级、输出清洗）。
+
 ## [0.5.0] - 未发布
 
 新增「上下文治理」（路线 P2）：请求级限制送入模型的内容规模。**默认关闭**。
