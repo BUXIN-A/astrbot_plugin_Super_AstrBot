@@ -2,7 +2,7 @@ name: astrbot_plugin_Super_AstrBot
 display_name: Super_AstrBot 增强中枢
 desc: 面向 AstrBot 的长期记忆与自我学习增强插件。分层自适应检索（FTS + 可选向量 + 可选知识图谱路 + RRF 融合 + 可选重排序精选 top-k）、记忆生命周期、周记现实记忆、反思式自我学习，并内置 Harness 适配层与循环控制机制，保证跨版本与非侵入式增强。可选启用 Agent 记忆函数工具、请求级上下文治理、群聊读空气、主动消息、拟人化学习（风格模仿 / 群内用语 / 好感度，默认进审查队列）、记忆知识图谱（零成本抽取 + 关联召回 + 可视化）、自动审核（规则优先 + 模型兜底）、MaiBot 增强（发送者个性化 + 统一时间衰减）；所有提示词均可自定义，并内置运行监控面板。无需第三方依赖，装上即用；检测不到 Embedding / 重排序提供商时自动降级（纯关键词检索 / 本地词法重排），不打断对话。
 short_desc: 让 Bot 真正记住你和事，并持续自我学习。
-version: 0.9.1
+version: 1.0.0
 author: BUXIN-A
 repo: https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot
 astrbot_version: ">=4.24.2"
