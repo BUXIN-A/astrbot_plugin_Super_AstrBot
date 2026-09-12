@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path
 
 from super_astrbot.harness.protocols import EventView
@@ -65,6 +66,19 @@ def test_context_capability_uses_schema_key() -> None:
     keys = {item.key for item in CAPABILITIES}
     assert "context.enabled" in keys
     assert "context.governance" not in keys
+
+
+def test_enabled_calls_use_declared_capability_keys() -> None:
+    # 回归：注册表键正确、但调用点拼错（app.py 曾写 context.governance），
+    # 会让该能力静默失效。这里扫描全包字面量形式的 ``_enabled("...")``。
+    keys = {item.key for item in CAPABILITIES}
+    offenders: list[str] = []
+    for path in (PLUGIN_ROOT / "super_astrbot").rglob("*.py"):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for key in re.findall(r'_enabled\(\s*"([^"]+)"\s*\)', line):
+                if key not in keys:
+                    offenders.append(f"{path.relative_to(PLUGIN_ROOT)}:{lineno} {key}")
+    assert offenders == [], f"调用了未声明的能力键：{offenders}"
 
 
 def test_journal_admin_only_write_has_no_cross_level_condition() -> None:

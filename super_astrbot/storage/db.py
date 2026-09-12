@@ -158,7 +158,7 @@ class Database:
             return
         try:
             await asyncio.to_thread(conn.close)
-        except sqlite3.Error as exc:  # noqa: BLE001
+        except sqlite3.Error as exc:
             self._warn("关闭数据库失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -202,7 +202,7 @@ class Database:
             except BaseException:
                 try:
                     await tx.execute("ROLLBACK")
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._warn("事务回滚失败：%s", safe_detail(exc))
                 raise
             else:

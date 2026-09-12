@@ -22,7 +22,7 @@ from typing import Any, Sequence
 from ..spec.errors import LlmError, safe_detail
 from ..spec.scopes import MemoryScope, ScopeType
 from ..storage import GraphRepository
-from ..support import tokenize
+from ..support import half_life_factor, tokenize
 from .config import GraphConfig
 from .extractor import (
     build_graph_prompt,
@@ -98,7 +98,7 @@ class GraphService:
 
         try:
             await self._entities.unlink_memory(memory_id)
-        except Exception as exc:  # noqa: BLE001 - 清理失败不阻断重建
+        except Exception as exc:  # 清理失败不阻断重建
             self._debug("清理图谱旧链接失败：%s", safe_detail(exc))
 
         entities, relations, source = await self._extract(text)
@@ -114,7 +114,7 @@ class GraphService:
                 source=source,
                 at=at,
             )
-        except Exception as exc:  # noqa: BLE001 - 单条记忆失败不影响其它记忆
+        except Exception as exc:  # 单条记忆失败不影响其它记忆
             self._warn("图谱落地失败（memory=%s）：%s", memory_id, safe_detail(exc))
             return GraphOutcome(reason="图谱写入失败")
         self._notify(entity_count)
@@ -127,7 +127,7 @@ class GraphService:
             return
         try:
             self._observer(entities)
-        except Exception as exc:  # noqa: BLE001 - 埋点失败不影响索引
+        except Exception as exc:  # 埋点失败不影响索引
             self._debug("图谱观察者回调失败：%s", safe_detail(exc))
 
     async def _extract(
@@ -190,7 +190,7 @@ class GraphService:
         except LlmError as exc:
             self._debug("图谱抽取失败，降级：%s", safe_detail(exc))
             return [], []
-        except Exception as exc:  # noqa: BLE001 - 模型异常不得外溢
+        except Exception as exc:  # 模型异常不得外溢
             self._debug("图谱抽取异常，降级：%s", safe_detail(exc))
             return [], []
 
@@ -310,7 +310,7 @@ class GraphService:
 
         try:
             hits = await self._entities.search_entities(scopes, names, limit=20)
-        except Exception as exc:  # noqa: BLE001 - 检索失败降级为空
+        except Exception as exc:  # 检索失败降级为空
             self._debug("图谱实体检索失败：%s", safe_detail(exc))
             return []
         entity_ids = [int(row.get("id") or 0) for row in hits]
@@ -321,7 +321,7 @@ class GraphService:
         scores: dict[int, float] = {}
         try:
             direct = await self._entities.memories_for_entities(scopes, entity_ids, limit=limit)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._debug("图谱直接命中查询失败：%s", safe_detail(exc))
             direct = []
         _accumulate(scores, direct, factor=_DIRECT_WEIGHT)
@@ -331,7 +331,7 @@ class GraphService:
                 neighbors = await self._entities.related_entities(
                     scopes, entity_ids, limit=self._config.expansion_limit
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._debug("图谱邻居查询失败：%s", safe_detail(exc))
                 neighbors = []
             neighbor_ids = [int(row.get("entity_id") or 0) for row in neighbors]
@@ -341,7 +341,7 @@ class GraphService:
                     expanded = await self._entities.memories_for_entities(
                         scopes, neighbor_ids, limit=limit
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._debug("图谱二跳命中查询失败：%s", safe_detail(exc))
                     expanded = []
                 _accumulate(scores, expanded, factor=self._config.second_hop_weight)
@@ -421,7 +421,7 @@ class GraphService:
             return result
 
         if with_decay:
-            factor = 0.5 ** (1.0 / max(1.0, self._config.half_life_days))
+            factor = half_life_factor(self._config.half_life_days)
             result["decayed"] = await self._entities.apply_decay(
                 factor=factor, floor=self._config.weight_floor, at=at
             )

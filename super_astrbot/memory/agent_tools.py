@@ -74,7 +74,7 @@ class AgentMemoryBackend:
 
         try:
             result = await self._service.recall(scope, text, limit=limit)
-        except Exception as exc:  # noqa: BLE001 - 工具失败不得打断对话
+        except Exception as exc:  # 工具失败不得打断对话
             self._warn("Agent 记忆检索失败：%s", safe_detail(exc))
             return "记忆检索暂时不可用，请直接根据现有信息回答。"
         if not result.items:
@@ -124,7 +124,7 @@ class AgentMemoryBackend:
                 confidence=0.8,
                 source=SOURCE_AGENT,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("Agent 记忆写入失败：%s", safe_detail(exc))
             return "记忆写入失败，请直接回答用户。"
         return f"已写入长期记忆（#{memory_id}）：{truncate(text, 120)}"

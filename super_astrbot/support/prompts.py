@@ -115,10 +115,6 @@ class PromptOverrides:
         self._cache[key] = resolved
         return resolved
 
-    def is_custom(self, key: str, default: str, *, required: Sequence[str] = ()) -> bool:
-        """用户模板是否真的生效（供面板/命令展示来源）。"""
-        return self.get(key, default, required=required) != default
-
 
 class PromptOverlay(Mapping[str, Any]):
     """把提示词覆盖叠加到基础配置：其余键透传，``prompts`` 一律用覆盖值。

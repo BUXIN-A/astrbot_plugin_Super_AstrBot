@@ -8,11 +8,10 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
-from ..support import PromptOverrides, render, tokenize, truncate
+from ..support import PromptOverrides, extract_json, render, tokenize, truncate
 from .config import (
     DEFAULT_GRAPH_SYSTEM,
     DEFAULT_GRAPH_TEMPLATE,
@@ -26,7 +25,6 @@ ENTITY_TYPES = ("person", "place", "org", "event", "concept", "thing")
 MAX_CANONICAL_CHARS = 32
 """规范化名称的最大长度，超出即截断（作为唯一键需可控）。"""
 
-_FENCE_RE = re.compile(r"```[a-zA-Z0-9_-]*")
 _ASCII_RE = re.compile(r"^[\x00-\x7f]+$")
 _EDGE_CHARS = " \t\r\n，。！？、；：,.!?;:\"'“”‘’（）()【】[]{}<>《》·…—～-_/\\|*#@$%^&+="
 _DIGIT_RE = re.compile(r"^\d+$")
@@ -84,7 +82,7 @@ def parse_graph_json(
     max_relations: int,
 ) -> tuple[list[dict], list[dict]]:
     """解析模型产出；任何失败都返回空而不抛异常。"""
-    payload = _extract_json(text)
+    payload = extract_json(text, kind="object")
     if not isinstance(payload, dict):
         return [], []
     entities = _parse_entities(payload.get("entities"), max_entities)
@@ -120,20 +118,6 @@ def graph_system_prompt(overrides: PromptOverrides | None = None) -> str:
     if overrides is None:
         return DEFAULT_GRAPH_SYSTEM
     return overrides.get(PROMPT_GRAPH_SYSTEM, DEFAULT_GRAPH_SYSTEM)
-
-
-def _extract_json(text: str) -> Any:
-    if not text:
-        return None
-    cleaned = _FENCE_RE.sub(" ", text)
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start < 0 or end <= start:
-        return None
-    try:
-        return json.loads(cleaned[start : end + 1])
-    except (TypeError, ValueError):
-        return None
 
 
 def _parse_entities(raw: Any, limit: int) -> list[dict]:

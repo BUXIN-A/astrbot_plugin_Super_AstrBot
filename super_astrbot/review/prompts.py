@@ -9,10 +9,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from ..support import PromptOverrides, PromptSpec, render, truncate
+from ..support import PromptOverrides, PromptSpec, extract_json, render, truncate
 
 SYSTEM = (
     "你是一个严格的内容审核助手。你只判断一条待写入长期记忆/表达样本/群内用语的内容是否合格，"
@@ -84,16 +83,6 @@ def system_prompt(overrides: PromptOverrides | None = None) -> str:
     return overrides.get(PROMPT_AUTO_REVIEW_SYSTEM, SYSTEM)
 
 
-def _strip_fences(text: str) -> str:
-    """去掉 ``` 围栏，只留下可能承载 JSON 的正文。"""
-    body = (text or "").strip()
-    if body.startswith("```"):
-        body = body.split("\n", 1)[1] if "\n" in body else body[3:]
-    if body.rstrip().endswith("```"):
-        body = body.rstrip()[:-3]
-    return body.strip()
-
-
 def _as_confidence(raw: Any) -> float:
     """把任意值规整为 0~1 的置信度；失败回退 0.0。"""
     try:
@@ -109,15 +98,7 @@ def parse_verdict(text: str) -> tuple[str, float, str]:
     任何解析失败都返回 ``("unsure", 0.0, "")`` 而不抛异常——审核链路不能因为
     模型吐了一段坏 JSON 就中断整批扫描。
     """
-    body = _strip_fences(text)
-    start = body.find("{")
-    end = body.rfind("}")
-    if start == -1 or end <= start:
-        return "unsure", 0.0, ""
-    try:
-        parsed = json.loads(body[start : end + 1])
-    except (TypeError, ValueError):
-        return "unsure", 0.0, ""
+    parsed = extract_json(text, kind="object")
     if not isinstance(parsed, dict):
         return "unsure", 0.0, ""
 

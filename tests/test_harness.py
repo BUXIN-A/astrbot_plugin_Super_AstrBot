@@ -5,11 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from super_astrbot.harness import compat
-from super_astrbot.harness.astrbot_event import (
-    extract_result_text,
-    is_event_stopped,
-    to_event_view,
-)
+from super_astrbot.harness.astrbot_event import extract_result_text, to_event_view
 
 
 class FakeEvent:
@@ -146,7 +142,7 @@ def test_extract_result_text_variants() -> None:
     assert extract_result_text(NoMethod()) == ""
 
 
-def test_is_event_stopped() -> None:
-    assert is_event_stopped(FakeEvent(is_stopped=False)) is False
-    assert is_event_stopped(FakeEvent(is_stopped=True)) is True
-    assert is_event_stopped(object()) is False
+def test_stopped_event_is_mapped() -> None:
+    """``/stop`` 后的停止标记必须传到事件视图：循环控制据此停止感知。"""
+    assert to_event_view(FakeEvent(is_stopped=True)).stopped is True
+    assert to_event_view(object()).stopped is False

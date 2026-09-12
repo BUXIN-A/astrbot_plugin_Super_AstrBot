@@ -75,7 +75,7 @@ class CommandService:
             return self._not_ready()
         try:
             data = await self._app.status(umo=view.umo)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"获取状态失败：{safe_detail(exc)}"
 
         caps = data.get("capabilities") or {}
@@ -227,7 +227,7 @@ class CommandService:
             return "用法：/sab search <关键词>"
         try:
             result = await memory.recall(self._scope(view), text)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"检索失败：{safe_detail(exc)}"
         header = f"检索「{text}」：命中 {len(result.items)} 条（{result.route_summary}，{result.elapsed_ms:.0f}ms）"
         summary = result.rerank_summary
@@ -255,7 +255,7 @@ class CommandService:
                 confidence=0.9,
                 source=SOURCE_MANUAL,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"写入失败：{safe_detail(exc)}"
         return f"已记住（记忆 #{memory_id}）：{text}"
 
@@ -278,7 +278,7 @@ class CommandService:
 
         try:
             result = await journal.add(self._scope(view), content, tags=tags)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"写入周记失败：{safe_detail(exc)}"
         if not result:
             return "周记内容为空，未写入。"
@@ -291,7 +291,7 @@ class CommandService:
             return self._not_ready()
         try:
             rows = await journal.list_recent(self._scope(view), limit=max(1, min(20, limit)))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"读取周记失败：{safe_detail(exc)}"
         if not rows:
             return "还没有周记。可用 /sab journal <内容> 记录。"
@@ -305,7 +305,7 @@ class CommandService:
     async def review_list(self, view: EventView) -> str:
         try:
             rows = await self._app.pending_reviews(self._scope(view), limit=10)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"读取待审队列失败：{safe_detail(exc)}"
         if not rows:
             return "待审队列为空。"
@@ -338,7 +338,7 @@ class CommandService:
             if not rejected:
                 return f"#{review_id} 不存在或已处理。"
             return f"已驳回 #{review_id}。"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"处理失败：{safe_detail(exc)}"
 
     async def reset(self, view: EventView, confirm: str) -> str:
@@ -354,14 +354,14 @@ class CommandService:
         if memory is not None:
             try:
                 counts = await memory.reset_scope(scope)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 return f"重置失败：{safe_detail(exc)}"
 
         extra = ""
         if service is not None:
             try:
                 cleared = await service.clear(scope)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 extra = f"（拟人化学习清理失败：{safe_detail(exc)}）"
             else:
                 extra = (
@@ -373,7 +373,7 @@ class CommandService:
         if graph is not None:
             try:
                 removed = await graph.clear(scope)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 extra += f"（图谱清理失败：{safe_detail(exc)}）"
             else:
                 extra += (
@@ -391,7 +391,7 @@ class CommandService:
             return self._not_ready()
         try:
             stats = await memory.reindex(self._scope(view))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"重建索引失败：{safe_detail(exc)}"
         return (
             f"索引重建完成：FTS {stats.get('indexed', 0)} 条，"
@@ -416,7 +416,7 @@ class CommandService:
 
         try:
             await service.set_paused(view.umo, paused)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"设置失败：{safe_detail(exc)}"
         return (
             "已暂停本会话的主动消息（再次发送 /sab quiet 可恢复）。"
@@ -444,7 +444,7 @@ class CommandService:
             if token in {"affinity", "好感", "好感度"}:
                 return await self._persona_affinity(service, scope)
             return await self._persona_overview(service, view, scope)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"读取学习结果失败：{safe_detail(exc)}"
 
     async def graph(self, view: EventView, arg: str) -> str:
@@ -457,7 +457,7 @@ class CommandService:
         try:
             stats = await service.stats()
             data = await service.snapshot(scope=scope, limit_nodes=15, limit_edges=20)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"读取图谱失败：{safe_detail(exc)}"
 
         lines = [
@@ -579,5 +579,5 @@ class CommandService:
             return f"未知子指令：{action}\n\n{HELP_TEXT}"
         try:
             return await handler()
-        except Exception as exc:  # noqa: BLE001 - 命令层必须兜底
+        except Exception as exc:  # 命令层必须兜底
             return f"指令执行失败：{safe_detail(exc)}"

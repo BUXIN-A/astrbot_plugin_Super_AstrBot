@@ -21,6 +21,7 @@ from typing import Any, Callable
 from ..harness.protocols import EventView
 from ..spec.scopes import MemoryScope, ScopeType
 from ..storage import GraphRepository, StyleRepository
+from ..support import half_life_factor
 from .config import MaiBotConfig
 
 
@@ -82,7 +83,7 @@ class MaiBotService:
             return {"skipped": 1}
 
         moment = self._clock() if now is None else now
-        factor = 0.5 ** (1.0 / max(1.0, self._config.half_life_days))
+        factor = half_life_factor(self._config.half_life_days)
         stats: dict[str, Any] = {
             "style_decayed": 0,
             "style_trimmed": 0,

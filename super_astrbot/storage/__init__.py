@@ -10,6 +10,10 @@
 from .db import Database, SqliteStateStore, Transaction
 from .migrations import CURRENT_VERSION, MIGRATIONS, Migration
 from .repositories import (
+    DEFAULT_JOURNAL_SORT,
+    DEFAULT_MEMORY_SORT,
+    JOURNAL_SORT_OPTIONS,
+    MEMORY_SORT_OPTIONS,
     AffinityRepository,
     GraphRepository,
     JargonRepository,
@@ -20,7 +24,10 @@ from .repositories import (
     ReviewRepository,
     StyleRepository,
     VectorRepository,
+    journal_order_clause,
+    memory_order_clause,
     row_to_dict,
+    rows_to_dicts,
 )
 
 __all__ = [
@@ -40,5 +47,12 @@ __all__ = [
     "AffinityRepository",
     "GraphRepository",
     "MetricSeriesRepository",
+    "MEMORY_SORT_OPTIONS",
+    "DEFAULT_MEMORY_SORT",
+    "JOURNAL_SORT_OPTIONS",
+    "DEFAULT_JOURNAL_SORT",
+    "memory_order_clause",
+    "journal_order_clause",
     "row_to_dict",
+    "rows_to_dicts",
 ]

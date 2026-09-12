@@ -20,6 +20,7 @@ from typing import Any, Sequence
 from ..spec.errors import BudgetExhaustedError, LlmError, safe_detail
 from . import astrbot_compat as compat
 from .protocols import (
+    BudgetGuard,
     ChatMessage,
     InjectResult,
     LlmResult,
@@ -77,7 +78,7 @@ class AstrBotLlmGateway:
         host: Any,
         *,
         timeout: float = 45.0,
-        budget: Any | None = None,
+        budget: BudgetGuard | None = None,
         observer: Any | None = None,
     ) -> None:
         self._context = context
@@ -86,15 +87,57 @@ class AstrBotLlmGateway:
         self._budget = budget
         self._observer = observer
         """调用观察者 ``(purpose, ok, duration_ms, usage, blocked)``，用于运行监控埋点。"""
+        self._invalid_ids: set[str] = set()
+        """已告警过的「非对话模型」ID：同一配置只提醒一次，避免日志刷屏。"""
 
     # ------------------------------------------------------------------ #
     # 提供商枚举
     # ------------------------------------------------------------------ #
 
+    def _is_chat_provider(self, candidate: Any) -> bool:
+        """判断候选是否为对话类提供商（``get_provider_by_id`` 会返回任意类型）。"""
+        expected = compat.SYMBOLS.ProviderType
+        if expected is None:
+            return True  # 无法判断类型时信任调用来源
+        meta = _provider_meta(candidate)
+        return meta["type"] in {
+            "chat_completion",
+            str(getattr(expected.CHAT_COMPLETION, "value", "chat_completion")),
+        }
+
+    def valid_provider_id(self, provider_id: str | None) -> str | None:
+        """校验配置的辅助模型 ID 确实指向对话模型，否则返回 ``None`` 要求回退。
+
+        各域允许为反思 / 摘要 / 审核等辅助调用单独指定模型，但用户可能手填一个
+        嵌入或重排序提供商的 ID。若原样交给 ``llm_generate(chat_provider_id=...)``，
+        只会在框架内部报错后被兜底吞掉，表现为「模型配置不生效且无提示」。
+        这里前置校验并把原因写进日志。
+        """
+        if not provider_id:
+            return None
+        getter = getattr(self._context, "get_provider_by_id", None)
+        if not callable(getter):
+            return provider_id  # 框架不提供按 ID 查询时信任配置
+        try:
+            candidate = getter(provider_id)
+        except Exception as exc:  # 查询失败按未知处理
+            self._host.log().debug("按 ID 查询提供商失败：%s", safe_detail(exc))
+            return provider_id
+        if candidate is None or self._is_chat_provider(candidate):
+            return provider_id
+        if provider_id not in self._invalid_ids:
+            self._invalid_ids.add(provider_id)
+            self._host.log().warning(
+                "配置的模型 %s 不是对话模型（type=%s），已回退到会话默认模型。",
+                provider_id,
+                _provider_meta(candidate)["type"] or "unknown",
+            )
+        return None
+
     def list_providers(self) -> list[ProviderInfo]:
         try:
             providers = self._context.get_all_providers() or []
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._host.log().debug("枚举对话提供商失败：%s", safe_detail(exc))
             return []
         result: list[ProviderInfo] = []
@@ -118,7 +161,7 @@ class AstrBotLlmGateway:
                     pid = await getter(session_key)
                     if pid:
                         return str(pid)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._host.log().debug("解析会话模型失败：%s", safe_detail(exc))
         provider = self._get_using_provider(None)
         if provider is not None:
@@ -134,7 +177,7 @@ class AstrBotLlmGateway:
         try:
             # 该方法在类型不符时会抛 ValueError，必须包裹。
             return getter(session_key) if session_key else getter()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._host.log().debug("获取默认对话提供商失败：%s", safe_detail(exc))
             return None
 
@@ -166,7 +209,9 @@ class AstrBotLlmGateway:
             if blocked:
                 raise BudgetExhaustedError(f"辅助调用预算已用尽（purpose={purpose}）")
 
-            resolved_id = provider_id or await self.resolve_provider_id(session_key)
+            resolved_id = self.valid_provider_id(provider_id) or await self.resolve_provider_id(
+                session_key
+            )
             context_dicts = _to_context_dicts(contexts)
 
             try:
@@ -180,7 +225,7 @@ class AstrBotLlmGateway:
                 raise
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:  # noqa: BLE001 - 统一归一化为 LlmError
+            except Exception as exc:  # 统一归一化为 LlmError
                 raise LlmError(f"LLM 调用失败：{safe_detail(exc)}") from exc
 
             text = str(getattr(response, "completion_text", "") or "")
@@ -215,7 +260,7 @@ class AstrBotLlmGateway:
             return
         try:
             self._observer(purpose, ok, max(0.0, (time.time() - started) * 1000.0), usage, blocked)
-        except Exception as exc:  # noqa: BLE001 - 埋点失败不影响调用
+        except Exception as exc:  # 埋点失败不影响调用
             self._host.log().debug("LLM 观察者回调失败：%s", safe_detail(exc))
 
     async def _invoke(
@@ -277,13 +322,15 @@ class AstrBotEmbeddingGateway:
                     self._provider = candidate
                     self._resolved = True
                     return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._host.log().debug("解析 Embedding 提供商失败：%s", safe_detail(exc))
         self._provider = None
         self._resolved = False
 
-    def refresh(self) -> None:
-        """清除缓存并允许重新解析（ProviderManager 就绪后重新探测时调用）。"""
+    def refresh(self, provider_id: str | None = None) -> None:
+        """清除缓存并允许重新解析；``provider_id`` 非空时同时更新首选 ID。"""
+        if provider_id is not None:
+            self._preferred_id = (provider_id or "").strip()
         self._resolved = False
         self._provider = None
 
@@ -341,7 +388,7 @@ class AstrBotEmbeddingGateway:
             return []
         try:
             return list(getter() or [])
-        except Exception as exc:  # noqa: BLE001 - 枚举失败不影响其它路径
+        except Exception as exc:  # 枚举失败不影响其它路径
             self._host.log().debug("枚举已加载的嵌入提供商失败：%s", safe_detail(exc))
             return []
 
@@ -363,7 +410,7 @@ class AstrBotEmbeddingGateway:
         if callable(getter):
             try:
                 return int(getter())
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return 0
         return 0
 
@@ -382,7 +429,7 @@ class AstrBotEmbeddingGateway:
             return None
         try:
             vector = await getter(text)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._host.log().debug("Embedding 调用失败：%s", safe_detail(exc))
             return None
         if not isinstance(vector, (list, tuple)) or not vector:
@@ -451,7 +498,7 @@ class AstrBotInjector:
                 return InjectResult(
                     applied=True, method="extra_user_content", parts=1, chars=len(body)
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._host.log().debug("临时内容块注入失败，尝试回退：%s", safe_detail(exc))
 
         if prefer == "extra_user_content":
@@ -462,7 +509,7 @@ class AstrBotInjector:
             try:
                 target.system_prompt = f"{system_prompt}\n\n{body}" if system_prompt else body
                 return InjectResult(applied=True, method="system_prompt", parts=1, chars=len(body))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 return InjectResult(applied=False, reason=f"系统提示词写入失败：{safe_detail(exc)}")
 
         return InjectResult(applied=False, reason="请求对象不支持注入")
@@ -490,7 +537,7 @@ class AstrBotInjector:
             try:
                 target.system_prompt = (head.rstrip() + tail).strip()
                 removed += 1
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         return removed

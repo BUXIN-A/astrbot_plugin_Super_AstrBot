@@ -57,7 +57,7 @@ class AstrBotHost:
         if star_tools is not None:
             try:
                 resolved = Path(star_tools.get_data_dir(plugin_name))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.log().warning("通过 StarTools 解析数据目录失败：%s", safe_detail(exc))
 
         if resolved is None:
@@ -65,7 +65,7 @@ class AstrBotHost:
                 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
                 resolved = Path(get_astrbot_plugin_data_path()) / plugin_name
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.log().warning("解析 AstrBot 数据目录失败：%s", safe_detail(exc))
 
         if resolved is None:
@@ -98,7 +98,7 @@ class AstrBotHost:
             try:
                 value = await getter(key, default)
                 return default if value is None else value
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.log().debug("KV 读取失败，转用内存兜底：%s", safe_detail(exc))
         return self._kv_fallback.get(key, default)
 
@@ -108,7 +108,7 @@ class AstrBotHost:
             try:
                 await setter(key, value)
                 return
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.log().debug("KV 写入失败，转用内存兜底：%s", safe_detail(exc))
         self._kv_fallback[key] = value
 
@@ -118,7 +118,7 @@ class AstrBotHost:
             try:
                 await remover(key)
                 return
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.log().debug("KV 删除失败：%s", safe_detail(exc))
         self._kv_fallback.pop(key, None)
 
@@ -135,7 +135,7 @@ class AstrBotHost:
                 return False
             result = await self._context.send_message(umo, chain)
             return bool(result)
-        except Exception as exc:  # noqa: BLE001 - 主动发送失败不应影响主流程
+        except Exception as exc:  # 主动发送失败不应影响主流程
             self.log().warning("主动发送消息失败：%s", safe_detail(exc))
             return False
 
@@ -144,12 +144,12 @@ class AstrBotHost:
         if message_chain is not None:
             try:
                 return message_chain().message(text)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         plain = compat.SYMBOLS.Plain
         if plain is not None:
             try:
                 return [plain(text=text)]
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return None
         return None

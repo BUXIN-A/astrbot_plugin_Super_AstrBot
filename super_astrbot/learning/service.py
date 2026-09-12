@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Sequence
@@ -31,7 +30,7 @@ from ..memory import (
 from ..spec.errors import LlmError, safe_detail
 from ..spec.scopes import MemoryScope, retrieval_scopes
 from ..storage import ReflectionRepository, ReviewRepository
-from ..support import truncate
+from ..support import parse_payload, truncate
 from .config import MODE_BOTH, MODE_INTERVAL, MODE_ROUNDS, ReflectionConfig
 from .prompts import (
     REFLECTION_SYSTEM,
@@ -236,7 +235,7 @@ class ReflectionService:
             return None, safe_detail(exc)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 反思失败不得外溢
+        except Exception as exc:  # 反思失败不得外溢
             return None, safe_detail(exc)
 
     async def _store(
@@ -336,10 +335,7 @@ class ReflectionService:
         record = await self._reviews.get(review_id)
         if record is None or str(record.get("status")) != "pending":
             return None
-        try:
-            payload = json.loads(record.get("payload") or "{}")
-        except (TypeError, ValueError):
-            payload = {}
+        payload = parse_payload(record.get("payload")) or {}
         content = str(payload.get("content") or "").strip()
         if not content:
             await self._reviews.set_status(

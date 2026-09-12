@@ -46,6 +46,45 @@ def row_to_dict(row: Any) -> dict[str, Any]:
     return {key: row[key] for key in row.keys()}
 
 
+def rows_to_dicts(rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """批量行转字典。"""
+    return [row_to_dict(row) for row in rows]
+
+
+MEMORY_SORT_OPTIONS: dict[str, str] = {
+    "created_desc": "created_at DESC, id DESC",
+    "created_asc": "created_at ASC, id ASC",
+    "updated_desc": "updated_at DESC, id DESC",
+    "importance_desc": "importance DESC, id DESC",
+    "importance_asc": "importance ASC, id DESC",
+    "access_desc": "access_count DESC, id DESC",
+    "last_access_desc": "last_access_at DESC, id DESC",
+}
+"""记忆列表可选排序：``键`` → ``ORDER BY`` 片段（白名单，避免拼接用户输入）。"""
+
+DEFAULT_MEMORY_SORT = "created_desc"
+
+
+def memory_order_clause(sort: str) -> str:
+    """把排序键翻成 SQL；未知键回退默认。"""
+    return MEMORY_SORT_OPTIONS.get(sort, MEMORY_SORT_OPTIONS[DEFAULT_MEMORY_SORT])
+
+
+JOURNAL_SORT_OPTIONS: dict[str, str] = {
+    "event_desc": "event_time DESC, id DESC",
+    "event_asc": "event_time ASC, id ASC",
+    "created_desc": "created_at DESC, id DESC",
+}
+"""周记列表可选排序。"""
+
+DEFAULT_JOURNAL_SORT = "event_desc"
+
+
+def journal_order_clause(sort: str) -> str:
+    """把周记排序键翻成 SQL；未知键回退默认。"""
+    return JOURNAL_SORT_OPTIONS.get(sort, JOURNAL_SORT_OPTIONS[DEFAULT_JOURNAL_SORT])
+
+
 # --------------------------------------------------------------------------- #
 # 记忆
 # --------------------------------------------------------------------------- #
@@ -326,8 +365,9 @@ class MemoryRepository:
         keyword: str = "",
         status: str = "active",
         kind: str = "",
+        sort: str = DEFAULT_MEMORY_SORT,
     ) -> list[dict[str, Any]]:
-        """跨作用域分页（面板总览用），支持按状态/类型/关键词过滤。"""
+        """跨作用域分页（面板总览用），支持按状态/类型/关键词过滤与排序。"""
         clauses = ["status=?"]
         params: list[Any] = [status]
         if kind:
@@ -339,10 +379,10 @@ class MemoryRepository:
         params.extend([limit, offset])
         rows = await self._db.query(
             f"SELECT * FROM memories WHERE {' AND '.join(clauses)}"
-            " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f" ORDER BY {memory_order_clause(sort)} LIMIT ? OFFSET ?",
             params,
         )
-        return [row_to_dict(row) for row in rows]
+        return rows_to_dicts(rows)
 
     async def count_filtered(
         self, *, status: str = "active", kind: str = "", keyword: str = ""
@@ -626,16 +666,37 @@ class JournalRepository:
         rows = await self._db.query("SELECT DISTINCT scope_type, scope_id FROM journals")
         return [(str(row["scope_type"]), str(row["scope_id"])) for row in rows]
 
-    async def list_all_page(self, *, offset: int, limit: int) -> list[dict[str, Any]]:
-        """跨作用域分页（面板总览用）。"""
+    async def list_all_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        keyword: str = "",
+        sort: str = DEFAULT_JOURNAL_SORT,
+    ) -> list[dict[str, Any]]:
+        """跨作用域分页（面板总览用），支持关键词过滤与排序。"""
+        where, params = self._journal_filter(keyword)
+        params.extend([limit, offset])
         rows = await self._db.query(
-            "SELECT * FROM journals ORDER BY event_time DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM journals WHERE {where}"
+            f" ORDER BY {journal_order_clause(sort)} LIMIT ? OFFSET ?",
+            params,
         )
-        return [row_to_dict(row) for row in rows]
+        return rows_to_dicts(rows)
 
-    async def count_all(self) -> int:
-        return int(await self._db.scalar("SELECT COUNT(*) FROM journals", default=0))
+    async def count_all(self, *, keyword: str = "") -> int:
+        where, params = self._journal_filter(keyword)
+        return int(
+            await self._db.scalar(f"SELECT COUNT(*) FROM journals WHERE {where}", params, default=0)
+        )
+
+    @staticmethod
+    def _journal_filter(keyword: str) -> tuple[str, list[Any]]:
+        """周记关键词过滤：正文与标签任一命中即可。"""
+        if not keyword:
+            return "1", []
+        pattern = _like_pattern(keyword)
+        return "(content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')", [pattern, pattern]
 
 
 # --------------------------------------------------------------------------- #
@@ -716,16 +777,22 @@ class ReviewRepository:
         return int(cursor.lastrowid)
 
     async def list_pending(
-        self, scopes: Sequence[MemoryScope], *, limit: int
+        self,
+        scopes: Sequence[MemoryScope],
+        *,
+        limit: int,
+        offset: int = 0,
+        origin: str = "",
     ) -> list[dict[str, Any]]:
-        where, params = _scope_where(scopes)
+        where, params = self._pending_where(scopes, origin)
+        params.extend([limit, offset])
         # 以 id 作为次级排序键：同一秒创建的记录较多时，仅按 created_at 排序结果不确定。
         rows = await self._db.query(
-            f"SELECT * FROM pending_reviews WHERE status='pending' AND ({where})"
-            " ORDER BY created_at ASC, id ASC LIMIT ?",
-            [*params, limit],
+            f"SELECT * FROM pending_reviews WHERE {where}"
+            " ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+            params,
         )
-        return [row_to_dict(row) for row in rows]
+        return rows_to_dicts(rows)
 
     async def get(self, review_id: int) -> dict[str, Any] | None:
         row = await self._db.query_one("SELECT * FROM pending_reviews WHERE id=?", (review_id,))
@@ -754,24 +821,56 @@ class ReviewRepository:
         )
         return bool(getattr(cursor, "rowcount", 0))
 
-    async def count_pending(self, scopes: Sequence[MemoryScope]) -> int:
-        where, params = _scope_where(scopes)
+    async def count_pending(self, scopes: Sequence[MemoryScope], *, origin: str = "") -> int:
+        where, params = self._pending_where(scopes, origin)
         return int(
             await self._db.scalar(
-                f"SELECT COUNT(*) FROM pending_reviews WHERE status='pending' AND ({where})",
-                params,
-                default=0,
+                f"SELECT COUNT(*) FROM pending_reviews WHERE {where}", params, default=0
             )
         )
 
-    async def list_all_pending(self, *, limit: int) -> list[dict[str, Any]]:
+    async def list_all_pending(
+        self, *, limit: int, offset: int = 0, origin: str = ""
+    ) -> list[dict[str, Any]]:
         """跨作用域读取待审队列（面板默认视角）。"""
+        where, params = self._pending_where((), origin)
+        params.extend([limit, offset])
         rows = await self._db.query(
-            "SELECT * FROM pending_reviews WHERE status='pending'"
-            " ORDER BY created_at ASC, id ASC LIMIT ?",
-            (limit,),
+            f"SELECT * FROM pending_reviews WHERE {where}"
+            " ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+            params,
         )
-        return [row_to_dict(row) for row in rows]
+        return rows_to_dicts(rows)
+
+    async def count_all_pending(self, *, origin: str = "") -> int:
+        """跨作用域待审总数（面板分页需要）。"""
+        where, params = self._pending_where((), origin)
+        return int(
+            await self._db.scalar(
+                f"SELECT COUNT(*) FROM pending_reviews WHERE {where}", params, default=0
+            )
+        )
+
+    @staticmethod
+    def _pending_where(scopes: Sequence[MemoryScope], origin: str) -> tuple[str, list[Any]]:
+        """待审队列的过滤条件：状态 + 作用域（为空表示跨作用域）+ 来源。"""
+        clauses = ["status='pending'"]
+        params: list[Any] = []
+        if scopes:
+            where, scope_params = _scope_where(scopes)
+            clauses.append(f"({where})")
+            params.extend(scope_params)
+        if origin:
+            clauses.append("origin=?")
+            params.append(origin)
+        return " AND ".join(clauses), params
+
+    async def distinct_origins(self) -> list[str]:
+        """待审队列出现过的来源（供面板筛选下拉）。"""
+        rows = await self._db.query(
+            "SELECT DISTINCT origin FROM pending_reviews WHERE status='pending' ORDER BY origin"
+        )
+        return [str(row["origin"]) for row in rows if row["origin"]]
 
     async def list_pending_page(self, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         """跨作用域分页读取待审队列（自动审核按批处理）。"""
@@ -795,13 +894,6 @@ class ReviewRepository:
         return int(
             await self._db.scalar(
                 "SELECT COUNT(*) FROM pending_reviews WHERE status<>'pending'", default=0
-            )
-        )
-
-    async def count_all_pending(self) -> int:
-        return int(
-            await self._db.scalar(
-                "SELECT COUNT(*) FROM pending_reviews WHERE status='pending'", default=0
             )
         )
 

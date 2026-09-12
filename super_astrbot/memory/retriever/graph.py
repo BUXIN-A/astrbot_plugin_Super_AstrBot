@@ -33,7 +33,7 @@ class GraphRetriever:
             return []
         try:
             expanded = await self._service.expand(scopes, query, limit=limit)
-        except Exception as exc:  # noqa: BLE001 - 检索路失败必须降级为空
+        except Exception as exc:  # 检索路失败必须降级为空
             self._debug("图谱检索失败：%s", exc)
             return []
         if not expanded:

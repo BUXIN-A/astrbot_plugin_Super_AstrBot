@@ -131,7 +131,7 @@ def test_scheduler_daily_runs_once_per_day() -> None:
 def test_scheduler_interval_advances_next_run() -> None:
     async def _run() -> tuple[int, float]:
         now = 1000.0
-        clock = lambda: now  # noqa: E731
+        clock = lambda: now
         scope = TaskScope("s")
         scheduler = Scheduler(scope, store=MemoryStateStore(), clock=clock, tick=1.0)
         calls: list[int] = []

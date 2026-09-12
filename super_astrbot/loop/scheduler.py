@@ -172,7 +172,7 @@ class Scheduler:
             self._loop_task.cancel()
             try:
                 await self._loop_task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            except (asyncio.CancelledError, Exception):
                 pass
         self._loop_task = None
 
@@ -186,7 +186,7 @@ class Scheduler:
                 await self._tick_once(self._clock())
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:  # noqa: BLE001 - 调度循环不得因单次异常退出
+            except Exception as exc:  # 调度循环不得因单次异常退出
                 self._warn("调度循环出现异常：%s", safe_detail(exc))
             await asyncio.sleep(self._tick)
 
@@ -213,7 +213,7 @@ class Scheduler:
             abandoned = result is ABANDONED
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 单个 job 失败不影响调度器
+        except Exception as exc:  # 单个 job 失败不影响调度器
             error = safe_detail(exc)
 
         self._notify(spec.key, ok=error is None and not abandoned, started=started)
@@ -283,7 +283,7 @@ class Scheduler:
         for spec in self._jobs.values():
             try:
                 data = await self._store.get(self._state_key(spec.key), None)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("读取任务 %s 状态失败：%s", spec.key, safe_detail(exc))
                 data = None
             if isinstance(data, dict):
@@ -317,7 +317,7 @@ class Scheduler:
         }
         try:
             await self._store.set(self._state_key(spec.key), payload)
-        except Exception as exc:  # noqa: BLE001 - 持久化失败只影响幂等性，不影响功能
+        except Exception as exc:  # 持久化失败只影响幂等性，不影响功能
             self._warn("持久化任务 %s 状态失败：%s", spec.key, safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -338,5 +338,5 @@ class Scheduler:
             return
         try:
             self._observer(key, ok, max(0.0, (time.time() - started) * 1000.0))
-        except Exception as exc:  # noqa: BLE001 - 埋点失败不影响调度
+        except Exception as exc:  # 埋点失败不影响调度
             self._warn("任务观察者回调失败：%s", safe_detail(exc))

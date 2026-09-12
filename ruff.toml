@@ -13,10 +13,6 @@ ignore = [
     "E402",   # main.py 需要在 sys.path 处理后导入
 ]
 
-[lint.per-file-ignores]
-# 测试允许更宽松的写法（长断言、私有属性访问等）
-"tests/*" = ["E501"]
-
 [format]
 quote-style = "double"
 indent-style = "space"

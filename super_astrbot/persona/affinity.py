@@ -19,7 +19,7 @@ from ..harness.protocols import EventView, LlmGateway
 from ..spec.errors import LlmError, safe_detail
 from ..spec.scopes import MemoryScope, retrieval_scopes
 from ..storage import AffinityRepository
-from ..support import PromptOverrides, truncate
+from ..support import PromptOverrides, half_life_factor, truncate
 from .config import AffinityConfig
 from .prompts import affinity_system, build_affinity_prompt, parse_affinity_verdict
 
@@ -264,7 +264,7 @@ class AffinityService:
         except LlmError as exc:
             self._debug("好感度判定失败：%s", safe_detail(exc))
             return ""
-        except Exception as exc:  # noqa: BLE001 - 兜底失败不影响对话
+        except Exception as exc:  # 兜底失败不影响对话
             self._debug("好感度判定异常：%s", safe_detail(exc))
             return ""
         self._stats["llm_calls"] += 1
@@ -333,8 +333,7 @@ class AffinityService:
         elapsed_days = max(0.0, (moment - last_at) / 86400.0)
         if elapsed_days <= 0:
             return self._clamp_score(score)
-        half_life = max(1.0, self._config.decay_half_life_days)
-        factor = 0.5 ** (elapsed_days / half_life)
+        factor = half_life_factor(self._config.decay_half_life_days, elapsed_days=elapsed_days)
         baseline = self._config.initial_score
         return self._clamp_score(baseline + (score - baseline) * factor)
 

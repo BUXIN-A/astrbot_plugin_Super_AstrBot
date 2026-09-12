@@ -21,6 +21,12 @@ from astrbot.api.web import error_response, json_response, request
 
 from ..monitor import CORE_METRICS, MAX_RANGE_HOURS
 from ..spec.scopes import MemoryScope
+from ..storage import (
+    DEFAULT_JOURNAL_SORT,
+    DEFAULT_MEMORY_SORT,
+    JOURNAL_SORT_OPTIONS,
+    MEMORY_SORT_OPTIONS,
+)
 
 PLUGIN_NAME = "astrbot_plugin_Super_AstrBot"
 PLUGIN_NAME_LOWER = PLUGIN_NAME.lower()
@@ -34,6 +40,7 @@ def register_web_apis(context: Any, app: Any) -> None:
     """注册面板后端接口（大小写两套前缀）。"""
     routes: list[tuple[str, Handler, list[str], str]] = [
         ("overview", _overview(app), ["GET"], "Super_AstrBot 总览与系统诊断"),
+        ("models", _models(app), ["GET"], "三类模型提供商与各功能所用模型"),
         ("features", _features(app), ["GET"], "功能清单与开关状态"),
         ("feature-toggle", _feature_toggle(app), ["POST"], "开启/关闭某个功能"),
         ("memories", _memories(app), ["GET"], "记忆列表（支持筛选与分页）"),
@@ -108,14 +115,14 @@ def _overview(app: Any) -> Handler:
     async def handler() -> Any:
         try:
             status = await app.status()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取状态失败：{exc}")
 
         stats: dict[str, Any] = {}
         if app.memory is not None:
             try:
                 stats = await app.memory.stats_all()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 stats = {"error": str(exc)}
 
         providers = [{"id": info.id, "model": info.model} for info in app.embedding_providers()]
@@ -142,6 +149,21 @@ def _overview(app: Any) -> Handler:
 
 
 # --------------------------------------------------------------------------- #
+# 模型
+# --------------------------------------------------------------------------- #
+
+
+def _models(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            return _ok(app.models_overview())
+        except Exception as exc:
+            return error_response(f"读取模型信息失败：{exc}")
+
+    return handler
+
+
+# --------------------------------------------------------------------------- #
 # 功能开关
 # --------------------------------------------------------------------------- #
 
@@ -150,7 +172,7 @@ def _features(app: Any) -> Handler:
     async def handler() -> Any:
         try:
             features = app.feature_catalog()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取功能清单失败：{exc}")
 
         domains: list[str] = []
@@ -180,7 +202,7 @@ def _feature_toggle(app: Any) -> Handler:
 
         try:
             result = await app.set_capability(key, bool(payload["enabled"]))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"切换失败：{exc}")
 
         if not result.get("ok"):
@@ -218,6 +240,9 @@ def _memories(app: Any) -> Handler:
         status = _str_param("status", "active").strip().lower()
         if status not in _ALLOWED_MEMORY_STATUS:
             status = "active"
+        sort = _str_param("sort", DEFAULT_MEMORY_SORT).strip()
+        if sort not in MEMORY_SORT_OPTIONS:
+            sort = DEFAULT_MEMORY_SORT
 
         try:
             items = await memory.list_all(
@@ -226,9 +251,10 @@ def _memories(app: Any) -> Handler:
                 keyword=keyword,
                 status=status,
                 kind=kind,
+                sort=sort,
             )
             total = await memory.count_filtered(status=status, kind=kind, keyword=keyword)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取记忆失败：{exc}")
 
         return _ok(
@@ -240,6 +266,8 @@ def _memories(app: Any) -> Handler:
                 "status": status,
                 "kind": kind,
                 "keyword": keyword,
+                "sort": sort,
+                "sorts": list(MEMORY_SORT_OPTIONS),
             }
         )
 
@@ -256,7 +284,7 @@ def _memory_detail(app: Any) -> Handler:
             return error_response("缺少参数 id")
         try:
             item = await memory.get_memory(int(raw_id))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取记忆失败：{exc}")
         if item is None:
             return error_response("记忆不存在", status_code=404)
@@ -319,7 +347,7 @@ def _search(app: Any) -> Handler:
                     "degraded": "未指定会话 UMO，已退化为跨作用域关键词匹配（无打分）",
                 }
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"检索失败：{exc}")
 
     return handler
@@ -337,10 +365,16 @@ def _journals(app: Any) -> Handler:
             return _not_ready()
         limit = _int_param("limit", 20, low=1, high=100)
         offset = _int_param("offset", 0, low=0, high=1_000_000)
+        keyword = _str_param("keyword").strip()
+        sort = _str_param("sort", DEFAULT_JOURNAL_SORT).strip()
+        if sort not in JOURNAL_SORT_OPTIONS:
+            sort = DEFAULT_JOURNAL_SORT
         try:
-            rows = await memory.list_all_journals(offset=offset, limit=limit)
-            total = await memory.count_all_journals()
-        except Exception as exc:  # noqa: BLE001
+            rows = await memory.list_all_journals(
+                offset=offset, limit=limit, keyword=keyword, sort=sort
+            )
+            total = await memory.count_all_journals(keyword=keyword)
+        except Exception as exc:
             return error_response(f"读取周记失败：{exc}")
 
         return _ok(
@@ -360,6 +394,9 @@ def _journals(app: Any) -> Handler:
                 "total": total,
                 "offset": offset,
                 "limit": limit,
+                "keyword": keyword,
+                "sort": sort,
+                "sorts": list(JOURNAL_SORT_OPTIONS),
             }
         )
 
@@ -374,21 +411,28 @@ def _journals(app: Any) -> Handler:
 def _reviews(app: Any) -> Handler:
     async def handler() -> Any:
         umo = _str_param("umo").strip()
+        origin = _str_param("origin").strip()
         limit = _int_param("limit", 20, low=1, high=100)
+        offset = _int_param("offset", 0, low=0, high=1_000_000)
+        scope = MemoryScope.for_session(umo) if umo else None
         try:
-            if umo:
-                rows = await app.pending_reviews(MemoryScope.for_session(umo), limit=limit)
+            if scope is not None:
+                rows = await app.pending_reviews(scope, limit=limit, offset=offset, origin=origin)
             else:
-                rows = await app.pending_reviews_all(limit=limit)
-        except Exception as exc:  # noqa: BLE001
+                rows = await app.pending_reviews_all(limit=limit, offset=offset, origin=origin)
+            total = await app.pending_count(scope, origin=origin)
+            origins = await app.pending_origins()
+        except Exception as exc:
             return error_response(f"读取待审队列失败：{exc}")
 
-        origins = sorted({str(row.get("origin") or "") for row in rows})
         return _ok(
             {
                 "items": rows,
-                "total": len(rows),
+                "total": total,
+                "offset": offset,
+                "limit": limit,
                 "origins": origins,
+                "origin": origin,
                 "umo": umo,
             }
         )
@@ -417,7 +461,7 @@ def _review_action(app: Any) -> Handler:
             if not rejected:
                 return error_response("该记录不存在或已处理", status_code=404)
             return _ok({"rejected": True})
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"处理失败：{exc}")
 
     return handler
@@ -450,7 +494,7 @@ def _persona(app: Any) -> Handler:
                 jargons = await service.all_jargons(limit=limit)
                 affinity = await service.all_affinity(limit=limit)
                 pending = len(await app.pending_reviews_all(limit=100))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取学习数据失败：{exc}")
 
         style = snapshot.get("style") or {}
@@ -541,7 +585,7 @@ def _graph(app: Any) -> Handler:
                     scope=scope, limit_nodes=limit_nodes, limit_edges=limit_edges
                 )
             stats = await service.stats()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取图谱失败：{exc}")
 
         nodes = [
@@ -604,7 +648,7 @@ def _monitor(app: Any) -> Handler:
                 metrics=metrics, range_hours=range_hours, bucket_seconds=bucket
             )
             snapshot = await service.snapshot()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取监控数据失败：{exc}")
 
         review: dict[str, Any] = {}
@@ -613,7 +657,7 @@ def _monitor(app: Any) -> Handler:
             try:
                 review = await auto.stats()
                 review["enabled"] = bool(app.capabilities.get("review.auto", False))
-            except Exception as exc:  # noqa: BLE001 - 监控页不应因单个区块失败而整体报错
+            except Exception as exc:  # 监控页不应因单个区块失败而整体报错
                 review = {"error": str(exc)}
 
         graph: dict[str, Any] = {}
@@ -621,7 +665,7 @@ def _monitor(app: Any) -> Handler:
         if graph_service is not None:
             try:
                 graph = await graph_service.stats()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 graph = {"error": str(exc)}
 
         return _ok(
@@ -651,7 +695,7 @@ def _prompts(app: Any) -> Handler:
     async def handler() -> Any:
         try:
             items = app.prompt_catalog()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"读取提示词失败：{exc}")
 
         groups: list[str] = []
@@ -675,7 +719,7 @@ def _prompt_save(app: Any) -> Handler:
 
         try:
             result = await app.set_prompt(key, str(payload["value"]))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"保存失败：{exc}")
         if not result.get("ok"):
             return error_response(str(result.get("message") or "保存失败"))
@@ -693,7 +737,7 @@ def _prompt_reset(app: Any) -> Handler:
 
         try:
             result = await app.reset_prompt(key)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"重置失败：{exc}")
         if not result.get("ok"):
             return error_response(str(result.get("message") or "重置失败"))
@@ -718,7 +762,7 @@ def _maintenance(app: Any) -> Handler:
             return error_response("当前仅支持 action=reindex")
         try:
             stats = await memory.reindex()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return error_response(f"重建索引失败：{exc}")
         return _ok({"stats": stats})
 

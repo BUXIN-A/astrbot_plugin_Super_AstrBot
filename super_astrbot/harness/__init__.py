@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from . import astrbot_compat as compat
-from .astrbot_event import is_event_stopped, to_event_view
+from .astrbot_event import to_event_view
 from .astrbot_group import (
     GROUP_FILTER_AVAILABLE,
     GroupMessageFilter,
@@ -80,7 +80,6 @@ __all__ = [
     "register_tools",
     "unregister_tools",
     "to_event_view",
-    "is_event_stopped",
     "GROUP_FILTER_AVAILABLE",
     "GroupMessageFilter",
     "set_group_gate",
@@ -130,7 +129,7 @@ class Harness:
         )
         try:
             parts.append(f"可用对话模型数：{len(self.llm.list_providers())}")
-        except Exception:  # noqa: BLE001
+        except Exception:
             parts.append("可用对话模型数：未知")
         return "；".join(parts)
 

@@ -19,7 +19,7 @@ def _call(obj: Any, name: str, default: Any = None) -> Any:
     if callable(attr):
         try:
             return attr()
-        except Exception:  # noqa: BLE001 - 单个可选 API 失败不应中断
+        except Exception:  # 单个可选 API 失败不应中断
             return default
     return attr
 
@@ -60,11 +60,6 @@ def to_event_view(event: Any, *, now: float | None = None) -> EventView:
     )
 
 
-def is_event_stopped(event: Any) -> bool:
-    """判断事件是否已被 ``/stop``（用于循环控制的停止感知）。"""
-    return bool(_call(event, "is_stopped", False))
-
-
 def extract_result_text(event: Any) -> str:
     """提取事件当前的待发送文本（用于记录 Bot 回复作为反思原料）。
 
@@ -78,6 +73,6 @@ def extract_result_text(event: Any) -> str:
     if callable(getter):
         try:
             return str(getter() or "")
-        except Exception:  # noqa: BLE001
+        except Exception:
             return ""
     return ""

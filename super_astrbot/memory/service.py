@@ -14,7 +14,12 @@ from typing import Any, Sequence
 
 from ..harness.protocols import InjectResult
 from ..spec.scopes import MemoryScope, retrieval_scopes
-from ..storage import JournalRepository, MemoryRepository
+from ..storage import (
+    DEFAULT_JOURNAL_SORT,
+    DEFAULT_MEMORY_SORT,
+    JournalRepository,
+    MemoryRepository,
+)
 from .config import INJECTION_DISABLED, INJECTION_SYSTEM, MemoryConfig
 from .formatter import build_memory_body, format_search_results
 from .lifecycle import MemoryLifecycle
@@ -226,7 +231,7 @@ class MemoryService:
         moment = now if now is not None else time.time()
         try:
             await self._memories.touch_access(ids, moment)
-        except Exception as exc:  # noqa: BLE001 - 计数失败不影响对话
+        except Exception as exc:  # 计数失败不影响对话
             self._warn("更新记忆访问计数失败：%s", exc)
 
     # ------------------------------------------------------------------ #
@@ -282,10 +287,11 @@ class MemoryService:
         keyword: str = "",
         status: str = STATUS_ACTIVE,
         kind: str = "",
+        sort: str = DEFAULT_MEMORY_SORT,
     ) -> list[MemoryItem]:
         """跨作用域列出记忆（面板总览用）。"""
         rows = await self._memories.list_all_page(
-            offset=offset, limit=limit, keyword=keyword, status=status, kind=kind
+            offset=offset, limit=limit, keyword=keyword, status=status, kind=kind, sort=sort
         )
         return [MemoryItem.from_row(row) for row in rows]
 
@@ -295,12 +301,21 @@ class MemoryService:
         """与 ``list_all`` 同条件的总数。"""
         return await self._memories.count_filtered(status=status, kind=kind, keyword=keyword)
 
-    async def list_all_journals(self, *, offset: int = 0, limit: int = 20) -> list[dict[str, Any]]:
-        return await self._journals.list_all_page(offset=offset, limit=limit)
+    async def list_all_journals(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 20,
+        keyword: str = "",
+        sort: str = DEFAULT_JOURNAL_SORT,
+    ) -> list[dict[str, Any]]:
+        return await self._journals.list_all_page(
+            offset=offset, limit=limit, keyword=keyword, sort=sort
+        )
 
-    async def count_all_journals(self) -> int:
+    async def count_all_journals(self, *, keyword: str = "") -> int:
         """周记总数（跨作用域，面板统计用）。"""
-        return await self._journals.count_all()
+        return await self._journals.count_all(keyword=keyword)
 
     async def stats_all(self) -> dict[str, Any]:
         """全局统计（面板总览用）。"""

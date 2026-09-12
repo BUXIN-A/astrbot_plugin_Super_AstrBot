@@ -114,7 +114,7 @@ class TaskScope:
             try:
                 if checker():
                     return True
-            except Exception as exc:  # noqa: BLE001 - 停止检查不应成为新的故障点
+            except Exception as exc:  # 停止检查不应成为新的故障点
                 self._log_debug("停止检查器异常：%s", safe_detail(exc))
         return False
 

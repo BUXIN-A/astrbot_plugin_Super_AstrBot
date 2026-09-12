@@ -115,7 +115,7 @@ class MemoryLifecycle:
                 with_vector=with_vector,
             )
             await self._db.finish_write_op(op_id)
-        except Exception as exc:  # noqa: BLE001 - 索引失败不影响记忆本体可用
+        except Exception as exc:  # 索引失败不影响记忆本体可用
             self._warn("记忆 %s 的索引/向量写入失败，将在启动时修复：%s", memory_id, exc)
         return memory_id
 
@@ -165,7 +165,7 @@ class MemoryLifecycle:
             await self._graph_indexer.index_memory(
                 scope, memory_id=memory_id, content=content, now=now
             )
-        except Exception as exc:  # noqa: BLE001 - 图谱失败只降级
+        except Exception as exc:  # 图谱失败只降级
             self._warn("图谱索引失败（memory=%s）：%s", memory_id, exc)
 
     def _vector_ready(self) -> bool:
@@ -187,7 +187,7 @@ class MemoryLifecycle:
                     "source": draft.source,
                 },
             )
-        except Exception as exc:  # noqa: BLE001 - 日志表不可用不应阻断写入
+        except Exception as exc:  # 日志表不可用不应阻断写入
             self._warn("登记写日志失败（继续写入）：%s", exc)
 
     # ------------------------------------------------------------------ #
@@ -211,7 +211,7 @@ class MemoryLifecycle:
         if self._graph_indexer is not None:
             try:
                 await self._graph_indexer.clear_memories(ids)
-            except Exception as exc:  # noqa: BLE001 - 图谱清理失败不影响状态变更
+            except Exception as exc:  # 图谱清理失败不影响状态变更
                 self._warn("图谱关联清理失败：%s", exc)
         return count
 
@@ -351,7 +351,7 @@ class MemoryLifecycle:
         """
         try:
             rows = await self._db.load_open_write_ops()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("读取写日志失败：%s", exc)
             return 0
 
@@ -389,7 +389,7 @@ class MemoryLifecycle:
                         scope=MemoryScope(ScopeType.parse(item.scope_type), item.scope_id),
                     )
                     repaired += 1
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._warn("修复记忆 %s 索引失败：%s", memory_id, exc)
             await self._db.finish_write_op(op_id)
         if repaired:

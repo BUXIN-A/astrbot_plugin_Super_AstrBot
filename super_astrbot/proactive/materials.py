@@ -70,7 +70,7 @@ class MemoryMaterialSource:
             return ()
         try:
             items = await self._memory.list_memories(scope, limit=limit)
-        except Exception as exc:  # noqa: BLE001 - 素材缺失只影响本次生成
+        except Exception as exc:  # 素材缺失只影响本次生成
             self._warn("读取记忆素材失败：%s", exc)
             return ()
         return tuple(str(getattr(item, "content", "") or "") for item in items)
@@ -80,7 +80,7 @@ class MemoryMaterialSource:
             return ()
         try:
             rows = await self._memory.list_journals(scope, limit=limit)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("读取周记素材失败：%s", exc)
             return ()
         return tuple(str(row.get("content") or "") for row in rows)
@@ -88,7 +88,7 @@ class MemoryMaterialSource:
     async def _safe_buffers(self, scope: MemoryScope) -> tuple[str, ...]:
         try:
             items = await self._memory.buffer_material(scope, limit=5)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("读取对话缓冲失败：%s", exc)
             return ()
         return tuple(str(getattr(item, "content", "") or "") for item in items)

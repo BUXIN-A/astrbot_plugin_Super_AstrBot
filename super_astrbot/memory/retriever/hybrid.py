@@ -153,9 +153,6 @@ class HybridRetriever:
         self._routes = [item for item in self._routes if str(getattr(item, "name", "")) != name]
         return len(self._routes) != before
 
-    def has_route(self, name: str) -> bool:
-        return any(str(getattr(item, "name", "")) == name for item in self._routes)
-
     async def search(
         self,
         scopes: Sequence[MemoryScope],
@@ -307,7 +304,7 @@ class HybridRetriever:
             )
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 单路失败必须隔离
+        except Exception as exc:  # 单路失败必须隔离
             if self._logger is not None:
                 self._logger.debug("检索路 %s 失败：%s", name, safe_detail(exc))
             return RouteOutcome(

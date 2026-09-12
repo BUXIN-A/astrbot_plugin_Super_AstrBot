@@ -28,6 +28,9 @@ class _Gate:
 class ConcurrencyGate:
     """读共享、写独占的门闸集合。"""
 
+    _MAX_IDLE_GATES = 256
+    """空闲门闸超过该数量时先清理，避免长期运行下字典按会话数无限增长。"""
+
     def __init__(self, *, logger: Any | None = None) -> None:
         self._gates: Dict[str, _Gate] = {}
         self._logger = logger
@@ -35,6 +38,8 @@ class ConcurrencyGate:
     def _gate(self, key: str) -> _Gate:
         gate = self._gates.get(key)
         if gate is None:
+            if len(self._gates) >= self._MAX_IDLE_GATES:
+                self.prune_idle()
             gate = _Gate()
             self._gates[key] = gate
         return gate

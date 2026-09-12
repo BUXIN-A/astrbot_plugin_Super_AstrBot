@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -20,7 +19,7 @@ from ..loop.state_store import StateStore
 from ..spec.errors import LlmError, safe_detail
 from ..spec.scopes import MemoryScope, ScopeType, retrieval_scopes
 from ..storage import JargonRepository, ReviewRepository
-from ..support import PromptOverrides, normalize_text, tokenize, truncate
+from ..support import PromptOverrides, normalize_text, parse_payload, tokenize, truncate
 from .config import JargonConfig
 from .prompts import build_jargon_prompt, jargon_system, parse_jargon_insights, render_jargon_block
 
@@ -158,7 +157,7 @@ class JargonService:
             return JargonOutcome(
                 ran=True, reason="推断失败", candidates=len(chosen), error=safe_detail(exc)
             )
-        except Exception as exc:  # noqa: BLE001 - 单次扫描失败不影响其它任务
+        except Exception as exc:  # 单次扫描失败不影响其它任务
             self._stats["errors"] += 1
             return JargonOutcome(
                 ran=True, reason="推断异常", candidates=len(chosen), error=safe_detail(exc)
@@ -292,7 +291,7 @@ class JargonService:
             scope_type, _, scope_id = key.partition(":")
             try:
                 await self._flush(MemoryScope(ScopeType.parse(scope_type), scope_id))
-            except Exception as exc:  # noqa: BLE001 - 落盘失败不应阻断卸载流程
+            except Exception as exc:  # 落盘失败不应阻断卸载流程
                 self._debug("黑话计数落盘失败（%s）：%s", key, safe_detail(exc))
 
     def tracked_scopes(self) -> list[MemoryScope]:
@@ -371,7 +370,7 @@ class JargonService:
         """待审队列里已有的候选词，避免同一个词反复入队。"""
         try:
             rows = await self._reviews.list_pending(scopes, limit=_PENDING_SCAN_LIMIT)
-        except Exception as exc:  # noqa: BLE001 - 读取失败只影响去重，不应中断扫描
+        except Exception as exc:  # 读取失败只影响去重，不应中断扫描
             self._debug("读取待审队列失败：%s", safe_detail(exc))
             return set()
 
@@ -379,7 +378,7 @@ class JargonService:
         for row in rows:
             if str(row.get("origin") or "") != SOURCE_JARGON:
                 continue
-            payload = _load_payload(row)
+            payload = parse_payload(row.get("payload")) or {}
             term = str(payload.get("term") or "").strip()
             if term:
                 terms.add(term)
@@ -388,14 +387,6 @@ class JargonService:
     def _debug(self, message: str, *args: Any) -> None:
         if self._logger is not None:
             self._logger.debug(message, *args)
-
-
-def _load_payload(record: dict[str, Any]) -> dict[str, Any]:
-    try:
-        payload = json.loads(record.get("payload") or "{}")
-    except (TypeError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 __all__ = ["JargonService", "JargonOutcome", "SOURCE_JARGON"]

@@ -28,6 +28,7 @@
         <button class="nav-item" data-page="persona" data-i18n="nav.persona">学习</button>
         <button class="nav-item" data-page="graph" data-i18n="nav.graph">图谱</button>
         <button class="nav-item" data-page="monitor" data-i18n="nav.monitor">监控</button>
+        <button class="nav-item" data-page="models" data-i18n="nav.models">模型</button>
         <button class="nav-item" data-page="prompts" data-i18n="nav.prompts">提示词</button>
         <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
       </nav>
@@ -48,6 +49,7 @@
       </header>
 
       <div class="content">
+        <div class="loading-bar" id="loading-bar" aria-hidden="true"></div>
         <!-- 总览 -->
         <section class="page" id="page-overview">
           <div class="stat-grid" id="ov-stats"></div>
@@ -98,6 +100,17 @@
                   <option value="episode">episode</option>
                 </select>
               </label>
+              <label class="field">
+                <span data-i18n="filter.sort">排序</span>
+                <select id="mem-sort">
+                  <option value="created_desc" data-i18n="sort.createdDesc">最新创建</option>
+                  <option value="created_asc" data-i18n="sort.createdAsc">最早创建</option>
+                  <option value="importance_desc" data-i18n="sort.importanceDesc">重要度从高到低</option>
+                  <option value="access_desc" data-i18n="sort.accessDesc">访问次数最多</option>
+                  <option value="last_access_desc" data-i18n="sort.lastAccessDesc">最近访问</option>
+                  <option value="updated_desc" data-i18n="sort.updatedDesc">最近更新</option>
+                </select>
+              </label>
               <label class="field grow">
                 <span data-i18n="filter.keyword">关键词</span>
                 <input type="text" id="mem-keyword" placeholder="内容包含…" />
@@ -141,6 +154,21 @@
         <section class="page" id="page-journals">
           <div class="card">
             <h2 data-i18n="journals.title">周记（现实记忆）</h2>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="filter.keyword">关键词</span>
+                <input type="text" id="jr-keyword" placeholder="内容或标签包含…" />
+              </label>
+              <label class="field">
+                <span data-i18n="filter.sort">排序</span>
+                <select id="jr-sort">
+                  <option value="event_desc" data-i18n="sort.eventDesc">时间从新到旧</option>
+                  <option value="event_asc" data-i18n="sort.eventAsc">时间从旧到新</option>
+                  <option value="created_desc" data-i18n="sort.createdDesc">最近写入</option>
+                </select>
+              </label>
+              <button class="btn" id="jr-search" data-i18n="action.query">查询</button>
+            </div>
             <div class="table-wrap" id="jr-table"></div>
             <div class="pager">
               <button class="btn ghost" id="jr-prev" data-i18n="action.prev">上一页</button>
@@ -154,8 +182,26 @@
         <section class="page" id="page-reviews">
           <div class="card">
             <h2 data-i18n="reviews.title">待审记录</h2>
+            <div class="filter-bar">
+              <label class="field">
+                <span data-i18n="filter.origin">来源</span>
+                <select id="rv-origin">
+                  <option value="" data-i18n="filter.all">全部</option>
+                </select>
+              </label>
+              <label class="field grow">
+                <span data-i18n="persona.umo">会话 UMO（可选）</span>
+                <input type="text" id="rv-umo" placeholder="aiocqhttp:GroupMessage:10086" />
+              </label>
+              <button class="btn" id="rv-search" data-i18n="action.query">查询</button>
+            </div>
             <p class="muted" id="rv-hint"></p>
             <div class="table-wrap" id="rv-table"></div>
+            <div class="pager">
+              <button class="btn ghost" id="rv-prev" data-i18n="action.prev">上一页</button>
+              <span class="muted" id="rv-page-info">—</span>
+              <button class="btn ghost" id="rv-next" data-i18n="action.next">下一页</button>
+            </div>
           </div>
         </section>
 
@@ -214,7 +260,7 @@
             <div class="muted" id="gp-meta"></div>
           </div>
           <div class="card">
-            <h2 data-i18n="graph.title">记忆图谱</h2>
+            <h2 data-i18n="graph.canvas">图谱可视化</h2>
             <div class="graph-stage">
               <canvas id="gp-canvas"></canvas>
               <div class="graph-tip" id="gp-tip" hidden></div>
@@ -282,6 +328,29 @@
           </div>
         </section>
 
+        <!-- 模型 -->
+        <section class="page" id="page-models">
+          <div class="card">
+            <h2 data-i18n="models.title">模型与提供商</h2>
+            <p class="muted" data-i18n="models.hint">
+              三类模型分工不同：对话模型负责生成与推理，嵌入模型负责向量化检索，重排序模型负责精选 top-k。
+              这里只做核对，具体选择在 AstrBot 插件配置页的对应分组。
+            </p>
+            <div class="kv-grid" id="md-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="models.auxiliary">辅助调用模型（对话模型）</h2>
+            <p class="muted" data-i18n="models.auxiliaryHint">
+              留空表示跟随会话默认模型。若填了嵌入 / 重排序提供商的 ID，调用前会被识别并回退到默认模型。
+            </p>
+            <div class="table-wrap" id="md-aux"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="models.providers">可用提供商</h2>
+            <div class="table-wrap" id="md-providers"></div>
+          </div>
+        </section>
+
         <!-- 提示词 -->
         <section class="page" id="page-prompts">
           <div class="card">
@@ -309,10 +378,6 @@
           <div class="card">
             <h2 data-i18n="system.budget">辅助调用预算</h2>
             <div class="table-wrap" id="sys-budget"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="system.embedding">嵌入模型提供商</h2>
-            <div class="table-wrap" id="sys-embed"></div>
           </div>
           <div class="card">
             <h2 data-i18n="system.maintenance">维护</h2>

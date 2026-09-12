@@ -24,6 +24,7 @@ const LOCAL_I18N = {
     "nav.persona": "学习",
     "nav.graph": "图谱",
     "nav.monitor": "监控",
+    "nav.models": "模型",
     "nav.prompts": "提示词",
     "nav.system": "系统",
     "features.title": "功能开关",
@@ -128,7 +129,6 @@ const LOCAL_I18N = {
     "system.framework": "框架与环境",
     "system.jobs": "后台任务",
     "system.budget": "辅助调用预算",
-    "system.embedding": "嵌入模型提供商",
     "system.maintenance": "维护",
     "system.reindexHint": "根据当前配置重建关键词索引与向量索引，不会删除记忆。",
     "modal.detail": "详情",
@@ -148,6 +148,7 @@ const LOCAL_I18N = {
     "nav.persona": "Learning",
     "nav.graph": "Graph",
     "nav.monitor": "Monitor",
+    "nav.models": "Models",
     "nav.prompts": "Prompts",
     "nav.system": "System",
     "features.title": "Feature toggles",
@@ -252,7 +253,6 @@ const LOCAL_I18N = {
     "system.framework": "Framework",
     "system.jobs": "Scheduled jobs",
     "system.budget": "LLM budget",
-    "system.embedding": "Embedding providers",
     "system.maintenance": "Maintenance",
     "system.reindexHint": "Rebuild keyword and vector indexes from current config. Memories are not deleted.",
     "modal.detail": "Detail",
@@ -267,8 +267,17 @@ const state = {
   locale: "zh-CN",
   context: null,
   overview: null,
-  memories: { offset: 0, limit: 20, status: "active", kind: "", keyword: "", total: 0 },
-  journals: { offset: 0, limit: 20, total: 0 },
+  memories: {
+    offset: 0,
+    limit: 20,
+    status: "active",
+    kind: "",
+    keyword: "",
+    sort: "created_desc",
+    total: 0,
+  },
+  journals: { offset: 0, limit: 20, keyword: "", sort: "event_desc", total: 0 },
+  reviews: { offset: 0, limit: 20, origin: "", umo: "", total: 0 },
 };
 
 /* ---------------------------------------------------------------------- */
@@ -411,6 +420,36 @@ async function apiPost(endpoint, body) {
 /* 渲染辅助                                                                */
 /* ---------------------------------------------------------------------- */
 
+/* 表格排序登记表：``options.sortable`` 的表格留下最近一次数据与排序状态，
+   点击表头时按同一份数据重排，无需重新请求后端。 */
+const TABLE_STATE = new Map();
+
+function columnSortable(column) {
+  return Boolean(column.key) || typeof column.sortValue === "function";
+}
+
+function tableSortValue(column, row, index) {
+  if (typeof column.sortValue === "function") return column.sortValue(row, index);
+  return column.key ? row[column.key] : "";
+}
+
+function sortTableRows(columns, rows, sortIndex, direction) {
+  const column = columns[sortIndex];
+  if (!column) return rows;
+  const factor = direction === "desc" ? -1 : 1;
+  return rows.slice().sort((left, right) => {
+    const a = tableSortValue(column, left);
+    const b = tableSortValue(column, right);
+    if (typeof a === "number" && typeof b === "number") return (a - b) * factor;
+    return String(a ?? "").localeCompare(String(b ?? ""), "zh-CN", { numeric: true }) * factor;
+  });
+}
+
+/** 键值对单元格：面板多个分区共用。 */
+function kv(label, value) {
+  return `<div class="kv"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div></div>`;
+}
+
 function renderStats(target, pairs) {
   target.innerHTML = pairs
     .map(
@@ -432,26 +471,64 @@ function renderError(target, error) {
 
 function renderTable(target, columns, rows, options = {}) {
   if (!rows || rows.length === 0) {
+    TABLE_STATE.delete(target.id);
     renderEmpty(target, options.emptyText);
     return;
   }
-  const head = columns.map((column) => `<th>${esc(column.title)}</th>`).join("");
-  const body = rows
+  const previous = TABLE_STATE.get(target.id);
+  const entry = {
+    columns,
+    rows,
+    options,
+    sortable: Boolean(options.sortable),
+    sortIndex: previous && previous.sortIndex >= 0 ? previous.sortIndex : -1,
+    direction: previous ? previous.direction : "desc",
+  };
+  if (entry.sortable && target.id) TABLE_STATE.set(target.id, entry);
+  else TABLE_STATE.delete(target.id);
+  paintTable(target, entry);
+}
+
+function paintTable(target, entry) {
+  const { columns, rows, sortable, sortIndex, direction } = entry;
+  const data = sortIndex >= 0 ? sortTableRows(columns, rows, sortIndex, direction) : rows;
+  const head = columns
+    .map((column, index) => {
+      const clickable = sortable && columnSortable(column);
+      const cls = clickable ? ' class="sortable"' : "";
+      const attr = clickable ? ` data-sort-col="${index}"` : "";
+      const mark =
+        clickable && index === sortIndex
+          ? `<span class="sort-mark">${direction === "desc" ? "▼" : "▲"}</span>`
+          : "";
+      return `<th${cls}${attr}>${esc(column.title)}${mark}</th>`;
+    })
+    .join("");
+  const body = data
     .map((row, index) => {
       const cells = columns
         .map((column) => {
           const cls = column.className ? ` class="${column.className}"` : "";
-          const content = column.render
-            ? column.render(row, index)
-            : esc(row[column.key]);
+          const content = column.render ? column.render(row, index) : esc(row[column.key]);
           return `<td${cls}>${content}</td>`;
         })
         .join("");
-      const rowAttrs = options.rowAttrs ? options.rowAttrs(row) : "";
+      const rowAttrs = entry.options.rowAttrs ? entry.options.rowAttrs(row) : "";
       return `<tr${rowAttrs}>${cells}</tr>`;
     })
     .join("");
   target.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+/** 点击可排序表头：在已加载的数据上切换升/降序，不重新请求后端。 */
+function handleSortClick(header) {
+  const wrap = header.closest(".table-wrap");
+  const entry = wrap ? TABLE_STATE.get(wrap.id) : null;
+  if (!entry) return;
+  const index = Number(header.dataset.sortCol);
+  entry.direction = entry.sortIndex === index && entry.direction === "desc" ? "asc" : "desc";
+  entry.sortIndex = index;
+  paintTable(wrap, entry);
 }
 
 function truncate(text, limit = 120) {
@@ -463,15 +540,10 @@ function kindPill(kind) {
   return `<span class="pill info">${esc(kind)}</span>`;
 }
 
-function statusPill(status) {
-  const map = {
-    active: "on",
-    buffered: "info",
-    pending: "warn",
-    archived: "off",
-    forgotten: "err",
-  };
-  return `<span class="pill ${map[status] || "off"}">${esc(status)}</span>`;
+/** 顶部细进度条：切换分区与手动刷新时给出统一的加载反馈。 */
+function showLoading(active) {
+  const bar = $("loading-bar");
+  if (bar) bar.classList.toggle("active", Boolean(active));
 }
 
 /* ---------------------------------------------------------------------- */
@@ -667,9 +739,19 @@ function memoryColumns() {
     { title: "类型", render: (row) => kindPill(row.kind) },
     { title: "来源", key: "source" },
     { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope)}</span>` },
-    { title: "重要度", className: "num", render: (row) => esc(num(row.importance)) },
+    {
+      title: "重要度",
+      className: "num",
+      render: (row) => esc(num(row.importance)),
+      sortValue: (row) => Number(row.importance || 0),
+    },
     { title: "访问", className: "num", key: "access_count" },
-    { title: "创建", className: "num", render: (row) => esc(fmtTime(row.created_at)) },
+    {
+      title: "创建",
+      className: "num",
+      render: (row) => esc(fmtTime(row.created_at)),
+      sortValue: (row) => Number(row.created_at || 0),
+    },
   ];
 }
 
@@ -683,8 +765,10 @@ async function loadMemories() {
       status: cursor.status,
       kind: cursor.kind,
       keyword: cursor.keyword,
+      sort: cursor.sort,
     });
     cursor.total = Number(result.total || 0);
+    // 服务端已按 cursor.sort 排序；表格不再提供列排序，避免两种排序口径打架。
     renderTable(target, memoryColumns(), result.items || [], {
       emptyText: "该筛选条件下没有记忆。",
     });
@@ -775,7 +859,12 @@ async function loadJournals() {
   const target = $("jr-table");
   const cursor = state.journals;
   try {
-    const result = await apiGet("journals", { offset: cursor.offset, limit: cursor.limit });
+    const result = await apiGet("journals", {
+      offset: cursor.offset,
+      limit: cursor.limit,
+      keyword: cursor.keyword,
+      sort: cursor.sort,
+    });
     cursor.total = Number(result.total || 0);
     renderTable(
       target,
@@ -809,19 +898,41 @@ async function loadJournals() {
 /* 章节：待审                                                              */
 /* ---------------------------------------------------------------------- */
 
+/** 刷新「来源」下拉：选项来自后端实际出现过的来源，保留用户当前选择。 */
+function syncOriginOptions(origins, current) {
+  const select = $("rv-origin");
+  if (!select) return;
+  const values = ["", ...origins.filter(Boolean)];
+  if (current && !values.includes(current)) values.push(current);
+  const signature = values.join("|");
+  if (select.dataset.signature === signature) {
+    select.value = current || "";
+    return;
+  }
+  select.dataset.signature = signature;
+  select.innerHTML = values
+    .map((value) => `<option value="${esc(value)}">${esc(value || "全部")}</option>`)
+    .join("");
+  select.value = current || "";
+}
+
 async function loadReviews() {
   const target = $("rv-table");
   const hint = $("rv-hint");
+  const cursor = state.reviews;
   try {
-    const result = await apiGet("reviews", { limit: 50 });
-    const origins = (result.origins || []).join("、") || "—";
-    hint.textContent = `${t("reviews.disabled")}（来源：${origins}）`;
+    const result = await apiGet("reviews", {
+      limit: cursor.limit,
+      offset: cursor.offset,
+      origin: cursor.origin,
+      umo: cursor.umo,
+    });
+    cursor.total = Number(result.total || 0);
+    syncOriginOptions(result.origins || [], cursor.origin);
+    hint.textContent = cursor.total
+      ? `${t("reviews.disabled")}（共 ${cursor.total} 条待审）`
+      : `${t("reviews.disabled")}（队列为空）`;
 
-    const items = result.items || [];
-    if (items.length === 0) {
-      renderEmpty(target, "待审队列为空。");
-      return;
-    }
     renderTable(
       target,
       [
@@ -829,7 +940,12 @@ async function loadReviews() {
         { title: "内容", className: "content", render: (row) => esc(row.summary || "") },
         { title: "来源", key: "origin" },
         { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
-        { title: "时间", className: "num", render: (row) => esc(fmtTime(row.created_at)) },
+        {
+          title: "时间",
+          className: "num",
+          render: (row) => esc(fmtTime(row.created_at)),
+          sortValue: (row) => Number(row.created_at || 0),
+        },
         {
           title: "操作",
           className: "actions",
@@ -841,12 +957,18 @@ async function loadReviews() {
             )}</button>`,
         },
       ],
-      items
+      result.items || [],
+      { emptyText: "当前筛选下没有待审记录。" }
     );
   } catch (error) {
     hint.textContent = "";
     renderError(target, error);
   }
+  const from = cursor.total === 0 ? 0 : cursor.offset + 1;
+  const to = Math.min(cursor.offset + cursor.limit, cursor.total);
+  $("rv-page-info").textContent = `${from}-${to} / ${cursor.total}`;
+  $("rv-prev").disabled = cursor.offset <= 0;
+  $("rv-next").disabled = cursor.offset + cursor.limit >= cursor.total;
 }
 
 async function handleReviewAction(id, action, button) {
@@ -885,46 +1007,47 @@ async function loadPersona() {
       $("pn-style"),
       [
         { title: "#", key: "id", className: "num" },
-        { title: "场景", className: "content", render: (row) => esc(row.situation || "") },
-        { title: "表达", className: "content", render: (row) => esc(row.expression || "") },
-        { title: "权重", className: "num", render: (row) => esc(num(row.weight)) },
+        { title: "场景", key: "situation", className: "content", render: (row) => esc(row.situation || "") },
+        { title: "表达", key: "expression", className: "content", render: (row) => esc(row.expression || "") },
+        { title: "权重", key: "weight", className: "num", render: (row) => esc(num(row.weight)) },
         { title: "命中", className: "num", key: "hits" },
-        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+        { title: "作用域", key: "scope", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
       ],
       result.style || [],
-      { emptyText: "还没有学到表达样本" }
+      { sortable: true, emptyText: "还没有学到表达样本" }
     );
 
     renderTable(
       $("pn-jargon"),
       [
         { title: "#", key: "id", className: "num" },
-        { title: "词语", render: (row) => esc(row.term || "") },
-        { title: "含义", className: "content", render: (row) => esc(row.meaning || "") },
-        { title: "置信度", className: "num", render: (row) => esc(num(row.confidence)) },
+        { title: "词语", key: "term", render: (row) => esc(row.term || "") },
+        { title: "含义", key: "meaning", className: "content", render: (row) => esc(row.meaning || "") },
+        { title: "置信度", key: "confidence", className: "num", render: (row) => esc(num(row.confidence)) },
         { title: "证据", className: "num", key: "evidence" },
-        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+        { title: "作用域", key: "scope", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
       ],
       result.jargon || [],
-      { emptyText: "还没有收录群内用语" }
+      { sortable: true, emptyText: "还没有收录群内用语" }
     );
 
     renderTable(
       $("pn-affinity"),
       [
-        { title: "对象", render: (row) => esc(row.target_id || "") },
-        { title: "好感度", className: "num", render: (row) => esc(num(row.score)) },
-        { title: "情绪", render: (row) => esc(row.mood || "—") },
+        { title: "对象", key: "target_id", render: (row) => esc(row.target_id || "") },
+        { title: "好感度", key: "score", className: "num", render: (row) => esc(num(row.score)) },
+        { title: "情绪", key: "mood", render: (row) => esc(row.mood || "—") },
         { title: "交互", className: "num", key: "interactions" },
-        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+        { title: "作用域", key: "scope", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
         {
           title: "最近交互",
+          key: "last_interaction",
           className: "num",
           render: (row) => esc(row.last_interaction ? fmtTime(row.last_interaction) : "—"),
         },
       ],
       result.affinity || [],
-      { emptyText: "还没有好感度记录" }
+      { sortable: true, emptyText: "还没有好感度记录" }
     );
   } catch (error) {
     meta.textContent = "";
@@ -944,14 +1067,6 @@ async function loadSystem(force = false) {
     const data = state.overview;
     const framework = data.framework || {};
     const memory = data.memory || {};
-    const rerank = data.rerank || {};
-
-    const kv = (label, value) =>
-      `<div class="kv"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div></div>`;
-
-    const rerankText = !rerank.enabled
-      ? "关闭"
-      : `${rerank.available ? "可用" : "模型不可用（回退 " + (rerank.fallback || "none") + "）"} · ${rerank.state || ""}`;
 
     $("sys-fw").innerHTML = [
       kv("插件版本", data.plugin_version || "—"),
@@ -962,8 +1077,6 @@ async function loadSystem(force = false) {
       kv("FTS 全文索引", data.fts ? "可用" : "降级为 LIKE"),
       kv("检索路", (memory.routes || []).join(" + ") || "—"),
       kv("注入方式", memory.injection_method || "—"),
-      kv("向量能力", memory.vector_available ? "可用" : "不可用"),
-      kv("重排序能力", rerankText),
       kv("后台任务", String(data.pending_tasks ?? "—")),
     ].join("");
 
@@ -1018,18 +1131,90 @@ async function loadSystem(force = false) {
       ],
       Object.keys(budget).length ? [budget] : []
     );
-
-    renderTable(
-      $("sys-embed"),
-      [
-        { title: "提供商 ID", key: "id" },
-        { title: "模型", render: (row) => esc(row.model || "—") },
-      ],
-      data.embedding_providers || [],
-      { emptyText: "未检测到嵌入模型提供商：检索将只使用关键词路（可在 AstrBot 中配置嵌入提供商）" }
-    );
   } catch (error) {
     renderError($("sys-fw"), error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：模型                                                              */
+/* ---------------------------------------------------------------------- */
+
+function modelStatusText(kind, info) {
+  if (kind === "embedding") {
+    if (!info.available) return "不可用（检索降级为关键词路）";
+    const dim = info.dimension ? `${info.dimension} 维` : "维度未知";
+    return `可用 · ${dim}${info.selected ? "" : " · 自动选择"}`;
+  }
+  if (kind === "rerank") {
+    if (!info.enabled) return "未启用";
+    if (!info.available) return `模型不可用（回退 ${info.fallback || "none"}）`;
+    return `可用 · 权重 ${num(info.weight, 2)} · 候选 ${info.candidates ?? "—"}`;
+  }
+  return info.model || "—";
+}
+
+async function loadModels() {
+  const meta = $("md-meta");
+  try {
+    const result = await apiGet("models");
+    const chat = result.chat || {};
+    const embedding = result.embedding || {};
+    const rerank = result.rerank || {};
+
+    meta.innerHTML = [
+      kv("对话模型", `${(chat.providers || []).length} 个可用`),
+      kv("嵌入模型", modelStatusText("embedding", embedding)),
+      kv("重排序模型", modelStatusText("rerank", rerank)),
+      kv(
+        "重排序状态",
+        rerank.enabled ? rerank.state || "—" : "未启用（检索使用融合排名）"
+      ),
+    ].join("");
+
+    renderTable(
+      $("md-aux"),
+      [
+        { title: "功能", key: "title" },
+        { title: "模型类型", key: "model_type" },
+        {
+          title: "配置的提供商",
+          render: (row) =>
+            row.provider_id
+              ? esc(row.provider_id)
+              : `<span class="muted">会话默认</span>`,
+        },
+        { title: "配置项", key: "config_key" },
+      ],
+      chat.auxiliary || [],
+      { sortable: true, emptyText: "没有需要单独指定模型的辅助功能。" }
+    );
+
+    const rows = [];
+    (chat.providers || []).forEach((item) =>
+      rows.push({ kind: "对话", id: item.id, model: item.model || "—" })
+    );
+    (embedding.providers || []).forEach((item) =>
+      rows.push({ kind: "嵌入", id: item.id, model: item.model || "—" })
+    );
+    (rerank.providers || []).forEach((item) =>
+      rows.push({ kind: "重排序", id: item.id, model: item.model || "—" })
+    );
+    renderTable(
+      $("md-providers"),
+      [
+        { title: "类型", key: "kind" },
+        { title: "提供商 ID", key: "id" },
+        { title: "模型", key: "model" },
+      ],
+      rows,
+      {
+        sortable: true,
+        emptyText: "未检测到任何模型提供商：请在 AstrBot 中配置对话 / 嵌入 / 重排序提供商。",
+      }
+    );
+  } catch (error) {
+    renderError(meta, error);
   }
 }
 
@@ -1053,9 +1238,7 @@ async function openMemoryDetail(id) {
       ["最近访问", item.last_access_at ? fmtTime(item.last_access_at) : "从未"],
       ["标签", Array.isArray(item.tags) && item.tags.length ? item.tags.join("、") : "无"],
     ];
-    const table = rows
-      .map(([key, value]) => `<div class="kv"><div class="k">${esc(key)}</div><div class="v">${esc(value)}</div></div>`)
-      .join("");
+    const table = rows.map(([key, value]) => kv(key, value)).join("");
     openModal(`记忆 #${esc(item.id)}`, `<div class="kv-grid">${table}</div><pre>${esc(item.content)}</pre>`);
   } catch (error) {
     toast(error.message || String(error), "err");
@@ -1341,30 +1524,44 @@ async function loadGraph() {
       [
         {
           title: t("graph.nodes"),
+          sortValue: (row) => graphNodeLabel(row),
           render: (row) =>
             `<span class="clickable" data-node="${esc(row.id)}">${esc(graphNodeLabel(row))}</span>`,
         },
-        { title: "类型", render: (row) => esc(row.entity_type || "—") },
-        { title: "权重", className: "num", render: (row) => esc(num(row.weight)) },
-        { title: "证据", className: "num", render: (row) => esc(row.evidence ?? "—") },
-        { title: "度数", className: "num", render: (row) => esc(row.degree ?? 0) },
-        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+        { title: "类型", key: "entity_type", render: (row) => esc(row.entity_type || "—") },
+        { title: "权重", key: "weight", className: "num", render: (row) => esc(num(row.weight)) },
+        { title: "证据", key: "evidence", className: "num", render: (row) => esc(row.evidence ?? "—") },
+        { title: "度数", key: "degree", className: "num", render: (row) => esc(row.degree ?? 0) },
+        { title: "作用域", key: "scope", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
       ],
       nodes,
-      { emptyText: t("graph.empty") }
+      { sortable: true, emptyText: t("graph.empty") }
     );
 
     renderTable(
       edgesEl,
       [
-        { title: "起点", render: (row) => esc(labelOf(row.src_entity_id)) },
-        { title: "关系", render: (row) => esc(row.relation || "—") },
-        { title: "终点", render: (row) => esc(labelOf(row.dst_entity_id)) },
-        { title: "权重", className: "num", render: (row) => esc(num(row.weight)) },
-        { title: "置信度", className: "num", render: (row) => esc(num(row.confidence)) },
+        {
+          title: "起点",
+          sortValue: (row) => labelOf(row.src_entity_id),
+          render: (row) => esc(labelOf(row.src_entity_id)),
+        },
+        { title: "关系", key: "relation", render: (row) => esc(row.relation || "—") },
+        {
+          title: "终点",
+          sortValue: (row) => labelOf(row.dst_entity_id),
+          render: (row) => esc(labelOf(row.dst_entity_id)),
+        },
+        { title: "权重", key: "weight", className: "num", render: (row) => esc(num(row.weight)) },
+        {
+          title: "置信度",
+          key: "confidence",
+          className: "num",
+          render: (row) => esc(num(row.confidence)),
+        },
       ],
       edges,
-      { emptyText: t("graph.empty") }
+      { sortable: true, emptyText: t("graph.empty") }
     );
 
     buildGraphLayout(nodes);
@@ -1612,8 +1809,6 @@ function renderMonitorReview(data) {
   if (!target) return;
   const review = data.review || {};
   const flag = (value) => (value ? t("features.switchOn") : t("features.switchOff"));
-  const kv = (label, value) =>
-    `<div class="kv"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div></div>`;
   target.innerHTML = [
     kv(t("monitor.review"), flag(review.enabled)),
     kv("LLM", flag(review.use_llm)),
@@ -1779,6 +1974,7 @@ const PAGE_TITLES = {
   persona: "nav.persona",
   graph: "nav.graph",
   monitor: "nav.monitor",
+  models: "nav.models",
   prompts: "nav.prompts",
   system: "nav.system",
 };
@@ -1792,9 +1988,22 @@ const LOADERS = {
   persona: () => loadPersona(),
   graph: () => loadGraph(),
   monitor: () => loadMonitor(),
+  models: () => loadModels(),
   prompts: () => loadPrompts(),
   system: () => loadSystem(true),
 };
+
+/** 统一执行分区加载器，并驱动顶部加载条。 */
+async function runLoader(page) {
+  const loader = LOADERS[page];
+  if (!loader) return;
+  showLoading(true);
+  try {
+    await loader();
+  } finally {
+    showLoading(false);
+  }
+}
 
 function navigate(page, options = {}) {
   const target = PAGE_TITLES[page] ? page : "overview";
@@ -1807,8 +2016,7 @@ function navigate(page, options = {}) {
   });
   $("page-title").textContent = t(PAGE_TITLES[target]);
   if (!options.skipLoad && target !== "recall") {
-    const loader = LOADERS[target];
-    if (loader) loader();
+    runLoader(target);
   }
   if (!options.skipHash) {
     window.location.hash = `#/${target}`;
@@ -1857,9 +2065,8 @@ function bindEvents() {
     button.disabled = true;
     state.overview = null;
     try {
-      const loader = LOADERS[state.page];
-      if (loader) await loader();
-      else if (state.page === "recall") await runRecall();
+      if (state.page === "recall") await runRecall();
+      else await runLoader(state.page);
       toast("已刷新", "ok");
     } catch (error) {
       toast(error.message || String(error), "err");
@@ -1875,8 +2082,17 @@ function bindEvents() {
     state.memories.status = $("mem-status").value;
     state.memories.kind = $("mem-kind").value;
     state.memories.keyword = $("mem-keyword").value.trim();
+    state.memories.sort = $("mem-sort").value;
     state.memories.offset = 0;
     loadMemories();
+  });
+  $("mem-sort").addEventListener("change", () => {
+    state.memories.sort = $("mem-sort").value;
+    state.memories.offset = 0;
+    loadMemories();
+  });
+  $("mem-keyword").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") $("mem-search").click();
   });
   $("mem-prev").addEventListener("click", () => {
     state.memories.offset = Math.max(0, state.memories.offset - state.memories.limit);
@@ -1893,7 +2109,18 @@ function bindEvents() {
     if (event.key === "Enter") runRecall();
   });
 
-  // 周记分页
+  // 周记：筛选与分页
+  const journalQuery = () => {
+    state.journals.keyword = $("jr-keyword").value.trim();
+    state.journals.sort = $("jr-sort").value;
+    state.journals.offset = 0;
+    loadJournals();
+  };
+  $("jr-search").addEventListener("click", journalQuery);
+  $("jr-sort").addEventListener("change", journalQuery);
+  $("jr-keyword").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") journalQuery();
+  });
   $("jr-prev").addEventListener("click", () => {
     state.journals.offset = Math.max(0, state.journals.offset - state.journals.limit);
     loadJournals();
@@ -1901,6 +2128,27 @@ function bindEvents() {
   $("jr-next").addEventListener("click", () => {
     state.journals.offset += state.journals.limit;
     loadJournals();
+  });
+
+  // 待审：来源筛选与分页
+  const reviewQuery = () => {
+    state.reviews.origin = $("rv-origin").value;
+    state.reviews.umo = $("rv-umo").value.trim();
+    state.reviews.offset = 0;
+    loadReviews();
+  };
+  $("rv-search").addEventListener("click", reviewQuery);
+  $("rv-origin").addEventListener("change", reviewQuery);
+  $("rv-umo").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") reviewQuery();
+  });
+  $("rv-prev").addEventListener("click", () => {
+    state.reviews.offset = Math.max(0, state.reviews.offset - state.reviews.limit);
+    loadReviews();
+  });
+  $("rv-next").addEventListener("click", () => {
+    state.reviews.offset += state.reviews.limit;
+    loadReviews();
   });
 
   // 拟人化学习
@@ -1940,8 +2188,13 @@ function bindEvents() {
     }
   });
 
-  // 事件委托：跳转、详情、审批
+  // 事件委托：跳转、详情、审批、表头排序
   document.addEventListener("click", (event) => {
+    const sortHeader = event.target.closest("th[data-sort-col]");
+    if (sortHeader) {
+      handleSortClick(sortHeader);
+      return;
+    }
     const gotoNode = event.target.closest("[data-goto]");
     if (gotoNode) {
       navigate(gotoNode.dataset.goto);
@@ -2027,8 +2280,7 @@ async function init() {
             state.locale = next.locale;
             applyStaticI18n();
             $("page-title").textContent = t(PAGE_TITLES[state.page]);
-            const loader = LOADERS[state.page];
-            if (loader) loader();
+            runLoader(state.page);
           }
           if (next && typeof next.isDark === "boolean") {
             applyTheme(next.isDark ? "dark" : "light");
@@ -2047,8 +2299,7 @@ async function init() {
   navigate(currentPageFromHash(), { skipLoad: true, skipHash: true });
   await loadOverview(true);
   if (state.page !== "overview") {
-    const loader = LOADERS[state.page];
-    if (loader) await loader();
+    await runLoader(state.page);
   }
 }
 

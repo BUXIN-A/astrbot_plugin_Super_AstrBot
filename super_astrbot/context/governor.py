@@ -108,7 +108,7 @@ class _Prepared:
 def _request_messages(request: Any) -> list[Any] | None:
     try:
         messages = getattr(request, "contexts", None)
-    except Exception:  # noqa: BLE001 - 探测必须宽容
+    except Exception:  # 探测必须宽容
         return None
     if not isinstance(messages, list) or not messages:
         return None
@@ -120,7 +120,7 @@ def _replace_messages(request: Any, messages: list[Any]) -> bool:
     try:
         request.contexts = messages
         return True
-    except Exception:  # noqa: BLE001 - 只读属性等异常场景，放弃治理
+    except Exception:  # 只读属性等异常场景，放弃治理
         return False
 
 
@@ -452,7 +452,7 @@ class ContextGovernor:
                 cached=bool(previous),
                 error=f"摘要调用失败：{safe_detail(exc)}",
             )
-        except Exception as exc:  # noqa: BLE001 - 摘要失败必须降级
+        except Exception as exc:  # 摘要失败必须降级
             return _SummaryOutcome(
                 text=previous,
                 covered=covered,
@@ -476,7 +476,7 @@ class ContextGovernor:
             return None
         try:
             value = await self._store.get(_CACHE_PREFIX + session_key, None)
-        except Exception as exc:  # noqa: BLE001 - 读缓存失败只是退化为重新摘要
+        except Exception as exc:  # 读缓存失败只是退化为重新摘要
             self._warn("读取上下文摘要缓存失败：%s", safe_detail(exc))
             return None
         return value if isinstance(value, dict) else None
@@ -494,7 +494,7 @@ class ContextGovernor:
         }
         try:
             await self._store.set(_CACHE_PREFIX + session_key, payload)
-        except Exception as exc:  # noqa: BLE001 - 写缓存失败只影响下次是否复用
+        except Exception as exc:  # 写缓存失败只影响下次是否复用
             self._warn("写入上下文摘要缓存失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #

@@ -32,7 +32,7 @@ class KeywordRetriever:
 
         try:
             rows = await self._memories.fts_search(scopes, build_match_query(tokens), limit=limit)
-        except Exception as exc:  # noqa: BLE001 - 检索路失败必须降级为空
+        except Exception as exc:  # 检索路失败必须降级为空
             self._log_debug("FTS 检索失败，尝试 LIKE 降级：%s", exc)
             rows = []
 

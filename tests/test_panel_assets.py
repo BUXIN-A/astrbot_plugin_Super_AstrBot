@@ -23,6 +23,7 @@ I18N_DIR = ROOT / ".astrbot-plugin" / "i18n"
 
 ENDPOINTS = (
     "overview",
+    "models",
     "features",
     "feature-toggle",
     "memories",
@@ -31,6 +32,7 @@ ENDPOINTS = (
     "journals",
     "reviews",
     "review-action",
+    "persona",
     "graph",
     "monitor",
     "prompts",

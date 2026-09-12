@@ -116,12 +116,6 @@ METRIC_SCHEDULER_FAILURES = "scheduler.failures"
 METRIC_SCHEDULER_DURATION_MS = "scheduler.duration_ms"
 """调度任务耗时累计（total 为毫秒和）。"""
 
-METRIC_TASK_ABANDONED = "task.abandoned"
-"""任务被放弃（用户停止/超时）次数（count）。"""
-
-METRIC_DB_ERRORS = "db.errors"
-"""数据库错误次数（count）。"""
-
 CORE_METRICS: tuple[str, ...] = (
     METRIC_LLM_CALLS,
     METRIC_LLM_ERRORS,

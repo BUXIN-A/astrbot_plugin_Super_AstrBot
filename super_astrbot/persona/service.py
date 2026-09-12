@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -25,6 +24,7 @@ from ..storage import (
     ReviewRepository,
     StyleRepository,
 )
+from ..support import parse_payload
 from .affinity import AffinityService
 from .config import PersonaConfig
 from .jargon import SOURCE_JARGON, JargonService
@@ -130,7 +130,7 @@ class PersonaService:
             return None
         try:
             return self._extra_scope(view)
-        except Exception as exc:  # noqa: BLE001 - 解析失败只降级为不做个性化
+        except Exception as exc:  # 解析失败只降级为不做个性化
             self._debug("个性化作用域解析失败：%s", exc)
             return None
 
@@ -139,12 +139,12 @@ class PersonaService:
         if self._config.jargon.enabled:
             try:
                 await self._jargon.observe(MemoryScope.for_session(view.umo), text)
-            except Exception as exc:  # noqa: BLE001 - 统计失败不影响对话
+            except Exception as exc:  # 统计失败不影响对话
                 self._debug("黑话候选统计失败：%s", exc)
         if self._config.affinity.enabled:
             try:
                 outcome = await self._affinity.observe(view, text)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._debug("好感度更新失败：%s", exc)
                 return
             if outcome.updated:
@@ -204,7 +204,7 @@ class PersonaService:
         if origin not in {SOURCE_STYLE, SOURCE_JARGON}:
             return False, ""
 
-        payload = _load_payload(record)
+        payload = parse_payload(record.get("payload")) or {}
         if origin == SOURCE_STYLE:
             message = await self._style.approve(record, payload)
         else:
@@ -291,19 +291,11 @@ class PersonaService:
             self._logger.debug(message, *args)
 
 
-def _load_payload(record: dict[str, Any]) -> dict[str, Any]:
-    try:
-        payload = json.loads(record.get("payload") or "{}")
-    except (TypeError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def summarize_reviews(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     """把待审记录整理成统一的展示结构（命令与面板共用）。"""
     items: list[dict[str, Any]] = []
     for row in rows:
-        payload = _load_payload(row)
+        payload = parse_payload(row.get("payload")) or {}
         origin = str(row.get("origin") or "")
         if origin == SOURCE_STYLE:
             summary = f"风格样本：{payload.get('situation', '')} → {payload.get('expression', '')}"

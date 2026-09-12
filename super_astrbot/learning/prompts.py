@@ -9,12 +9,10 @@
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Any
 
 from ..memory import ALL_KINDS, KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE
-from ..support import PromptOverrides, PromptSpec, render, truncate
+from ..support import PromptOverrides, PromptSpec, extract_json, render, truncate
 
 PROMPT_REFLECTION_SYSTEM = "reflection_system"
 PROMPT_REFLECTION_TEMPLATE = "reflection_template"
@@ -37,8 +35,6 @@ _MIN_CONTENT = 4
 _MAX_CONTENT = 400
 _MAX_TAGS = 5
 _MAX_TAG_LEN = 16
-
-_FENCE_RE = re.compile(r"```[a-zA-Z]*\s*(.*?)```", re.DOTALL)
 
 _REFLECTION_TEMPLATE = """以下是最近的一段对话片段（按时间顺序）：
 
@@ -152,29 +148,6 @@ def build_weekly_prompt(
     return render(template, material=material, max_facts=max_facts)
 
 
-def _strip_fences(text: str) -> str:
-    match = _FENCE_RE.search(text)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
-
-def _extract_json_array(text: str) -> list[Any] | None:
-    body = _strip_fences(text)
-    start = body.find("[")
-    end = body.rfind("]")
-    if start == -1 or end == -1 or end <= start:
-        return None
-    candidate = body[start : end + 1]
-    try:
-        parsed = json.loads(candidate)
-    except (TypeError, ValueError):
-        return None
-    if not isinstance(parsed, list):
-        return None
-    return parsed
-
-
 def _sanitize_tags(raw: Any) -> list[str]:
     if not isinstance(raw, (list, tuple)):
         return []
@@ -201,7 +174,7 @@ def _sanitize_importance(raw: Any, default: float) -> float:
 
 def parse_insights(text: str, *, max_facts: int) -> list[dict[str, Any]]:
     """解析模型产出，返回**已通过校验**的条目列表。"""
-    entries = _extract_json_array(text)
+    entries = extract_json(text, kind="array")
     if not entries:
         return []
 

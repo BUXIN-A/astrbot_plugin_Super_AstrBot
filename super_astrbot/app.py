@@ -387,7 +387,7 @@ class SuperAstrBotApp:
         if self._scheduler is not None:
             try:
                 await self._scheduler.shutdown()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("关闭调度器失败：%s", safe_detail(exc))
             self._scheduler = None
 
@@ -396,7 +396,7 @@ class SuperAstrBotApp:
                 cancelled = await self._scope.cancel_all(timeout=5.0)
                 if cancelled:
                     self._info("已收敛 %s 个后台任务", cancelled)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("收敛后台任务失败：%s", safe_detail(exc))
             self._scope = None
 
@@ -404,7 +404,7 @@ class SuperAstrBotApp:
             # 候选词计数保存在内存里，卸载前必须落盘，否则重载即归零。
             try:
                 await self._persona_service.flush()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("拟人化学习进度落盘失败：%s", safe_detail(exc))
             self._persona_service = None
 
@@ -412,14 +412,14 @@ class SuperAstrBotApp:
             # 指标在内存里按小时桶聚合，卸载前落盘，否则最后一个窗口的数据会丢。
             try:
                 await self._monitor_service.flush()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("运行指标落盘失败：%s", safe_detail(exc))
             self._monitor_service = None
 
         if self._db is not None:
             try:
                 await self._db.close()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("关闭数据库失败：%s", safe_detail(exc))
             self._db = None
 
@@ -541,7 +541,7 @@ class SuperAstrBotApp:
             return False
         try:
             return await asyncio.to_thread(self._prompt_store.save, values)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("保存提示词失败：%s", safe_detail(exc))
             return False
 
@@ -574,7 +574,7 @@ class SuperAstrBotApp:
                 self._star, self._context, self._config, data_dir=self._data_dir_override
             )
             return Path(host.data_dir())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._debug("解析数据目录失败：%s", safe_detail(exc))
             return None
 
@@ -612,7 +612,7 @@ class SuperAstrBotApp:
                 )
             if not gateway.available:
                 overrides["memory.vector_enabled"] = False
-        except Exception as exc:  # noqa: BLE001 - 探测失败按不可用处理
+        except Exception as exc:  # 探测失败按不可用处理
             overrides["memory.vector_enabled"] = False
             self._debug("向量能力探测失败，按不可用处理：%s", safe_detail(exc))
         return overrides
@@ -632,7 +632,7 @@ class SuperAstrBotApp:
         if self._reflection_config is not None:
             self._reflection_config.enabled = self._enabled("reflection.enabled")
         if self._context_config is not None:
-            self._context_config.enabled = self._enabled("context.governance")
+            self._context_config.enabled = self._enabled("context.enabled")
         if self._group_config is not None:
             self._group_config.enabled = self._enabled("group.enabled")
         if self._proactive_config is not None:
@@ -709,12 +709,12 @@ class SuperAstrBotApp:
         gateway = self._harness.rerank if self._harness is not None else None
         if gateway is not None:
             try:
-                gateway.refresh()
-            except Exception as exc:  # noqa: BLE001 - 重新探测失败不影响流程
+                gateway.refresh(self._memory_config.rerank_provider_id)
+            except Exception as exc:  # 重新探测失败不影响流程
                 self._debug("重排序提供商重新探测失败：%s", safe_detail(exc))
         try:
             retriever.configure_rerank(self._memory_config.retrieval_config(), gateway)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._debug("重排序热切换失败：%s", safe_detail(exc))
 
     def _sync_scheduler_jobs(self) -> None:
@@ -848,7 +848,10 @@ class SuperAstrBotApp:
         """
         previous = dict(self._effective_capabilities)
         if self._harness is not None:
-            self._harness.embedding.refresh()
+            embedding_id = (
+                self._memory_config.embedding_provider_id if self._memory_config else None
+            )
+            self._harness.embedding.refresh(embedding_id)
 
         overrides = self._probe_runtime_overrides()
         self._capability_overrides = overrides
@@ -885,7 +888,7 @@ class SuperAstrBotApp:
         try:
             self.refresh_capabilities()
             self.sync_schema_options()
-        except Exception as exc:  # noqa: BLE001 - 复检失败不影响主流程
+        except Exception as exc:  # 复检失败不影响主流程
             self._debug("框架加载后的能力复检失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -985,7 +988,7 @@ class SuperAstrBotApp:
         if callable(async_saver):
             try:
                 return bool(await async_saver())
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("保存配置失败：%s", safe_detail(exc))
                 return False
         sync_saver = getattr(self._config, "save_config", None)
@@ -993,7 +996,7 @@ class SuperAstrBotApp:
             try:
                 await asyncio.to_thread(sync_saver)
                 return True
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("保存配置失败：%s", safe_detail(exc))
                 return False
         return False
@@ -1059,7 +1062,7 @@ class SuperAstrBotApp:
                 ),
                 llm_observer=self._on_llm_call,
             )
-        except Exception as exc:  # noqa: BLE001 - Harness 失败则整体不可用
+        except Exception as exc:  # Harness 失败则整体不可用
             self._error("Harness 初始化失败：%s", safe_detail(exc))
             return False
 
@@ -1238,7 +1241,7 @@ class SuperAstrBotApp:
             repaired = await self._memory_service.repair()
             if repaired:
                 self._info("启动修复完成：%s 条", repaired)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("启动修复失败：%s", safe_detail(exc))
 
         # 2) 每日维护：衰减 + 清理缓冲
@@ -1299,7 +1302,7 @@ class SuperAstrBotApp:
         )
         try:
             registered = register_memory_tools(self._context, backend, logger=self._logger)
-        except Exception as exc:  # noqa: BLE001 - 注册失败不影响核心能力
+        except Exception as exc:  # 注册失败不影响核心能力
             self._warn("注册 Agent 记忆工具失败：%s", safe_detail(exc))
             return 0
         if not registered:
@@ -1315,7 +1318,7 @@ class SuperAstrBotApp:
         """注销本插件注册的函数工具，避免插件卸载/重载后残留。"""
         try:
             unregister_tools(self._context, logger=self._logger)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("注销 Agent 记忆工具失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -1328,7 +1331,7 @@ class SuperAstrBotApp:
             return []
         try:
             return list(self._harness.embedding.list_providers())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._debug("枚举嵌入提供商失败：%s", safe_detail(exc))
             return []
 
@@ -1338,9 +1341,110 @@ class SuperAstrBotApp:
             return []
         try:
             return list(self._harness.rerank.list_providers())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._debug("枚举重排序提供商失败：%s", safe_detail(exc))
             return []
+
+    def chat_providers(self) -> list[Any]:
+        """当前可选的对话模型提供商。"""
+        if self._harness is None:
+            return []
+        try:
+            return list(self._harness.llm.list_providers())
+        except Exception as exc:
+            self._debug("枚举对话提供商失败：%s", safe_detail(exc))
+            return []
+
+    def auxiliary_models(self) -> list[dict[str, Any]]:
+        """列出各「辅助调用」所配置的对话模型。
+
+        面板「模型」分区据此说明「哪个功能用哪一类模型」：这里的每一项都必须是
+        对话模型（由 ``AstrBotLlmGateway.valid_provider_id`` 在调用前校验）；
+        留空表示跟随会话默认模型。记忆的向量化用嵌入模型、重排序用重排序模型，
+        二者不走此表。
+        """
+        sources: list[tuple[str, str, str, str]] = [
+            (
+                "reflection",
+                "反思学习 / 周度洞察",
+                "reflection.provider_id",
+                self._reflection_config.provider_id if self._reflection_config else "",
+            ),
+            (
+                "context",
+                "上下文摘要",
+                "context.summary_provider_id",
+                self._context_config.summary_provider_id if self._context_config else "",
+            ),
+            (
+                "graph",
+                "知识图谱抽取",
+                "graph.provider_id",
+                self._graph_config.provider_id if self._graph_config else "",
+            ),
+            (
+                "review",
+                "自动审核兜底",
+                "review.auto_provider_id",
+                self._review_config.provider_id if self._review_config else "",
+            ),
+            (
+                "proactive",
+                "主动消息生成",
+                "proactive.provider_id",
+                self._proactive_config.provider_id if self._proactive_config else "",
+            ),
+            (
+                "jargon",
+                "群内用语推断",
+                "persona.jargon_provider_id",
+                self._persona_config.jargon.provider_id if self._persona_config else "",
+            ),
+            (
+                "affinity",
+                "好感度兜底",
+                "persona.affinity_provider_id",
+                self._persona_config.affinity.provider_id if self._persona_config else "",
+            ),
+        ]
+        return [
+            {
+                "key": key,
+                "title": title,
+                "config_key": config_key,
+                "provider_id": provider_id,
+                "model_type": "chat",
+            }
+            for key, title, config_key, provider_id in sources
+        ]
+
+    def models_overview(self) -> dict[str, Any]:
+        """三类模型提供商的选项与当前使用情况（面板「模型」分区）。"""
+        embedding = self._harness.embedding if self._harness is not None else None
+        return {
+            "chat": {
+                "providers": [
+                    {"id": info.id, "model": info.model} for info in self.chat_providers()
+                ],
+                "auxiliary": self.auxiliary_models(),
+            },
+            "embedding": {
+                "providers": [
+                    {"id": info.id, "model": info.model} for info in self.embedding_providers()
+                ],
+                "selected": self._memory_config.embedding_provider_id
+                if self._memory_config
+                else "",
+                "available": bool(embedding.available) if embedding is not None else False,
+                "dimension": embedding.dimension() if embedding is not None else 0,
+            },
+            "rerank": {
+                "providers": [
+                    {"id": info.id, "model": info.model} for info in self.rerank_providers()
+                ],
+                **self._rerank_status(),
+            },
+        }
 
     def sync_schema_options(self) -> bool:
         """把真实的嵌入 / 重排序模型列表注入插件配置 schema 的下拉选项。
@@ -1398,7 +1502,7 @@ class SuperAstrBotApp:
 
         try:
             injected = inject_string_options(self._config, path, options, labels)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._debug("注入配置下拉选项失败（%s）：%s", config_key, safe_detail(exc))
             return False
         if injected:
@@ -1411,7 +1515,7 @@ class SuperAstrBotApp:
         while self._scope is not None and not self._scope.is_stopped():
             try:
                 self.sync_schema_options()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._debug("schema 同步异常：%s", safe_detail(exc))
             await asyncio.sleep(_SCHEMA_SYNC_INTERVAL)
 
@@ -1450,7 +1554,7 @@ class SuperAstrBotApp:
         scope = self._scope_for(view)
         try:
             result = await self._memory_service.recall(scope, view.text)
-        except Exception as exc:  # noqa: BLE001 - 召回失败不影响对话
+        except Exception as exc:  # 召回失败不影响对话
             self._warn("记忆召回失败：%s", safe_detail(exc))
             return
 
@@ -1465,7 +1569,7 @@ class SuperAstrBotApp:
 
         try:
             inject_result = await self._memory_service.inject(request, result)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("记忆注入失败：%s", safe_detail(exc))
             return
 
@@ -1485,11 +1589,11 @@ class SuperAstrBotApp:
     async def _govern_context(self, view: EventView, request: Any) -> None:
         """请求级上下文治理：仅在估算超过阈值时动手。"""
         governor = self._context_governor
-        if governor is None or not self._enabled("context.governance"):
+        if governor is None or not self._enabled("context.enabled"):
             return
         try:
             result = await governor.govern(request, session_key=view.umo)
-        except Exception as exc:  # noqa: BLE001 - 治理失败不影响对话
+        except Exception as exc:  # 治理失败不影响对话
             self._warn("上下文治理异常：%s", safe_detail(exc))
             return
         if result.error:
@@ -1522,7 +1626,7 @@ class SuperAstrBotApp:
         async def _task() -> None:
             try:
                 await service.observe_user(view, text)
-            except Exception as exc:  # noqa: BLE001 - 学习失败不影响对话
+            except Exception as exc:  # 学习失败不影响对话
                 self._warn("拟人化学习观测失败：%s", safe_detail(exc))
 
         self._scope.spawn(_task(), name="persona-observe")
@@ -1534,7 +1638,7 @@ class SuperAstrBotApp:
             return
         try:
             detail = await service.inject(request, view)
-        except Exception as exc:  # noqa: BLE001 - 注入失败不影响对话
+        except Exception as exc:  # 注入失败不影响对话
             self._warn("拟人化学习注入失败：%s", safe_detail(exc))
             return
         if detail:
@@ -1554,7 +1658,7 @@ class SuperAstrBotApp:
             return
         try:
             outcome = await service.learn_style(view, user_text=user_text, reply_text=reply_text)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("风格学习失败：%s", safe_detail(exc))
             return
         if outcome.stored or outcome.pending:
@@ -1577,7 +1681,7 @@ class SuperAstrBotApp:
             decision = await service.decide(view, signals)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 决策失败按框架原判定处理
+        except Exception as exc:  # 决策失败按框架原判定处理
             self._warn("群聊语义决策异常：%s", safe_detail(exc))
             return
 
@@ -1644,7 +1748,7 @@ class SuperAstrBotApp:
             try:
                 await self._memory_service.buffer_episode(scope, line, now=timestamp)
                 record(METRIC_MEMORY_WRITES)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("写入对话缓冲失败：%s", safe_detail(exc))
 
         self._scope.spawn(_task(), name="buffer")
@@ -1687,7 +1791,7 @@ class SuperAstrBotApp:
 
         try:
             scopes = await self._memories.all_scopes(status="buffered")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("枚举待反思作用域失败：%s", safe_detail(exc))
             return
 
@@ -1695,7 +1799,7 @@ class SuperAstrBotApp:
             scope = MemoryScope(ScopeType.parse(scope_type), scope_id)
             try:
                 should, reason = await self._reflection_service.should_run(scope)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("反思条件判定失败（%s）：%s", scope.key, safe_detail(exc))
                 continue
             if not should:
@@ -1712,7 +1816,7 @@ class SuperAstrBotApp:
                     outcome = await self._reflection_service.reflect(scope, reason=reason)
             else:
                 outcome = await self._reflection_service.reflect(scope, reason=reason)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("反思执行异常（%s）：%s", scope.key, safe_detail(exc))
             return
         self._info("反思（%s）：%s", scope.key, outcome.summary())
@@ -1724,7 +1828,7 @@ class SuperAstrBotApp:
             return
         try:
             scopes = await self._journals_repo.all_scopes()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("枚举周记作用域失败：%s", safe_detail(exc))
             return
 
@@ -1732,7 +1836,7 @@ class SuperAstrBotApp:
             scope = MemoryScope(ScopeType.parse(scope_type), scope_id)
             try:
                 outcome = await self._reflection_service.weekly_reflect(scope)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._warn("周度洞察异常（%s）：%s", scope.key, safe_detail(exc))
                 continue
             self._info("周度洞察（%s）：%s", scope.key, outcome.summary())
@@ -1768,7 +1872,7 @@ class SuperAstrBotApp:
                         outcome = await service.scan_jargon(scope)
                 else:
                     outcome = await service.scan_jargon(scope)
-            except Exception as exc:  # noqa: BLE001 - 单会话失败不影响其它会话
+            except Exception as exc:  # 单会话失败不影响其它会话
                 self._warn("黑话扫描异常（%s）：%s", scope.key, safe_detail(exc))
                 continue
             if outcome.ran:
@@ -1818,19 +1922,19 @@ class SuperAstrBotApp:
             try:
                 total = await self._memories.count_all(status="active")
                 record(METRIC_MEMORY_TOTAL, gauge=float(total))
-            except Exception as exc:  # noqa: BLE001 - 指标刷新失败不影响主流程
+            except Exception as exc:  # 指标刷新失败不影响主流程
                 self._debug("刷新记忆总量指标失败：%s", safe_detail(exc))
         if self._reviews_repo is not None:
             try:
                 pending = await self._reviews_repo.count_all_pending()
                 record(METRIC_REVIEW_PENDING, gauge=float(pending))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._debug("刷新待审指标失败：%s", safe_detail(exc))
         if self._graph_service is not None and self._enabled("graph.enabled"):
             try:
                 stats = await self._graph_service.stats()
                 record(METRIC_GRAPH_ENTITIES, gauge=float(stats.get("entities") or 0))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._debug("刷新图谱指标失败：%s", safe_detail(exc))
 
     async def _job_monitor_flush(self) -> None:
@@ -1850,7 +1954,7 @@ class SuperAstrBotApp:
             return
         try:
             outcome = await service.run_once()
-        except Exception as exc:  # noqa: BLE001 - 审核失败不影响其它任务
+        except Exception as exc:  # 审核失败不影响其它任务
             self._warn("自动审核异常：%s", safe_detail(exc))
             return
         if outcome.approved:
@@ -1864,19 +1968,44 @@ class SuperAstrBotApp:
     # 待审队列（统一入口）
     # ------------------------------------------------------------------ #
 
-    async def pending_reviews(self, scope: MemoryScope, *, limit: int = 20) -> list[dict[str, Any]]:
+    async def pending_reviews(
+        self,
+        scope: MemoryScope,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        origin: str = "",
+    ) -> list[dict[str, Any]]:
         """读取待审队列（含反思与拟人化学习两类来源）。"""
         if self._reviews_repo is None:
             return []
-        rows = await self._reviews_repo.list_pending(retrieval_scopes(scope), limit=limit)
+        rows = await self._reviews_repo.list_pending(
+            retrieval_scopes(scope), limit=limit, offset=offset, origin=origin
+        )
         return summarize_reviews(rows)
 
-    async def pending_reviews_all(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    async def pending_reviews_all(
+        self, *, limit: int = 50, offset: int = 0, origin: str = ""
+    ) -> list[dict[str, Any]]:
         """跨作用域读取待审队列（面板默认视角）。"""
         if self._reviews_repo is None:
             return []
-        rows = await self._reviews_repo.list_all_pending(limit=limit)
+        rows = await self._reviews_repo.list_all_pending(limit=limit, offset=offset, origin=origin)
         return summarize_reviews(rows)
+
+    async def pending_count(self, scope: MemoryScope | None = None, *, origin: str = "") -> int:
+        """待审总数（面板分页与统计用）。"""
+        if self._reviews_repo is None:
+            return 0
+        if scope is None:
+            return await self._reviews_repo.count_all_pending(origin=origin)
+        return await self._reviews_repo.count_pending(retrieval_scopes(scope), origin=origin)
+
+    async def pending_origins(self) -> list[str]:
+        """待审队列出现过的来源（供面板筛选）。"""
+        if self._reviews_repo is None:
+            return []
+        return await self._reviews_repo.distinct_origins()
 
     async def approve_review(self, review_id: int) -> tuple[bool, str]:
         """审批一条待审记录：拟人化学习来源由本域落地，其余交给反思域。"""
@@ -1918,7 +2047,7 @@ class SuperAstrBotApp:
             return
         try:
             await self._reviews_repo.mark_decided_by(review_id, "auto")
-        except Exception as exc:  # noqa: BLE001 - 留痕失败不影响审批结果
+        except Exception as exc:  # 留痕失败不影响审批结果
             self._debug("写入自动审核留痕失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -1937,7 +2066,7 @@ class SuperAstrBotApp:
             try:
                 available = bool(gateway.available)
                 model = gateway.model() if available else ""
-            except Exception as exc:  # noqa: BLE001 - 状态查询失败不应影响 status
+            except Exception as exc:  # 状态查询失败不应影响 status
                 self._debug("读取重排序状态失败：%s", safe_detail(exc))
         return {
             "enabled": self._enabled("memory.rerank_enabled"),
@@ -1960,7 +2089,7 @@ class SuperAstrBotApp:
             try:
                 # 面板/命令没有具体会话时，用全局视角统计。
                 memory_stats = await self._memory_service.stats(MemoryScope.global_scope())
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 memory_stats = {"error": safe_detail(exc)}
 
         scheduler = self._scheduler.snapshot() if self._scheduler is not None else []
@@ -1979,14 +2108,14 @@ class SuperAstrBotApp:
                     "jargon": counts.jargon,
                     "affinity": counts.affinity,
                 }
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 persona["counts"] = {"error": safe_detail(exc)}
         graph: dict[str, Any] = {}
         if self._graph_service is not None:
             graph = {"enabled": self._enabled("graph.enabled")}
             try:
                 graph.update(await self._graph_service.stats())
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 graph["error"] = safe_detail(exc)
         review: dict[str, Any] = {}
         if self._auto_review_service is not None:
@@ -1996,7 +2125,7 @@ class SuperAstrBotApp:
             }
             try:
                 review.update(await self._auto_review_service.stats())
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 review["error"] = safe_detail(exc)
         monitor: dict[str, Any] = {}
         if self._monitor_service is not None:

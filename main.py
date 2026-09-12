@@ -63,14 +63,14 @@ class SuperAstrBot(Star):
         """插件激活时装配运行时。"""
         try:
             await self._app.start()
-        except Exception as exc:  # noqa: BLE001 - 初始化失败不应阻断 AstrBot 启动
+        except Exception as exc:  # 初始化失败不应阻断 AstrBot 启动
             self.logger.error("Super_AstrBot 初始化失败：%s", safe_detail(exc))
 
         try:
             from .super_astrbot.web import register_web_apis
 
             register_web_apis(self.context, self._app)
-        except Exception as exc:  # noqa: BLE001 - 面板注册失败不影响核心能力
+        except Exception as exc:  # 面板注册失败不影响核心能力
             self.logger.warning(
                 "注册 Web API 失败（面板不可用，核心功能不受影响）：%s", safe_detail(exc)
             )
@@ -79,7 +79,7 @@ class SuperAstrBot(Star):
         """插件卸载/停用时收敛资源。"""
         try:
             await self._app.shutdown()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.logger.warning("Super_AstrBot 卸载清理失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -91,7 +91,7 @@ class SuperAstrBot(Star):
         """请求 LLM 前：召回并注入长期记忆。"""
         try:
             await self._app.on_llm_request(event, request)
-        except Exception as exc:  # noqa: BLE001 - 钩子绝不可打断对话
+        except Exception as exc:  # 钩子绝不可打断对话
             self.logger.warning("记忆注入钩子异常：%s", safe_detail(exc))
 
     @filter.after_message_sent()
@@ -99,7 +99,7 @@ class SuperAstrBot(Star):
         """消息发送后：把回复放入对话缓冲，作为反思原料。"""
         try:
             await self._app.on_after_message_sent(event)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.logger.debug("回复采集钩子异常：%s", safe_detail(exc))
 
     if _GROUP_HANDLER_READY:
@@ -114,7 +114,7 @@ class SuperAstrBot(Star):
             """
             try:
                 await self._app.on_group_message(event)
-            except Exception as exc:  # noqa: BLE001 - 群聊钩子绝不可打断消息链路
+            except Exception as exc:  # 群聊钩子绝不可打断消息链路
                 self.logger.warning("群聊语义钩子异常：%s", safe_detail(exc))
 
     @filter.on_astrbot_loaded()
@@ -126,7 +126,7 @@ class SuperAstrBot(Star):
         """
         try:
             await self._app.on_astrbot_loaded()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.logger.warning("框架加载后的能力复检异常：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
@@ -152,6 +152,6 @@ class SuperAstrBot(Star):
             action, rest = resolve_action(args)
             view = to_event_view(event)
             return await self._commands.dispatch(action, view, rest)
-        except Exception as exc:  # noqa: BLE001 - 命令层兜底，绝不把异常抛回框架
+        except Exception as exc:  # 命令层兜底，绝不把异常抛回框架
             self.logger.warning("指令执行异常：%s", safe_detail(exc))
             return f"指令执行异常：{safe_detail(exc)}"

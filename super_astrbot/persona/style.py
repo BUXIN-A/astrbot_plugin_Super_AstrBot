@@ -15,7 +15,7 @@ from typing import Any, Callable
 from ..harness.protocols import EventView
 from ..spec.scopes import MemoryScope, ScopeType, retrieval_scopes
 from ..storage import ReviewRepository, StyleRepository
-from ..support import jaccard, normalize_text, tokenize, truncate
+from ..support import half_life_factor, jaccard, normalize_text, tokenize, truncate
 from .config import StyleConfig
 from .prompts import render_style_block
 
@@ -259,8 +259,7 @@ class StyleService:
         moment = self._clock() if now is None else now
         archived = 0
         if with_decay:
-            half_life = max(1.0, self._config.half_life_days)
-            factor = 0.5 ** (1.0 / half_life)
+            factor = half_life_factor(self._config.half_life_days)
             archived = await self._patterns.apply_decay(
                 factor=factor, floor=self._config.weight_floor, at=moment
             )

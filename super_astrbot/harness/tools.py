@@ -120,7 +120,7 @@ def _build_memory_tools(
                 query=str(kwargs.get("query") or ""),
                 limit=_coerce_limit(kwargs.get("limit")),
             )
-        except Exception as exc:  # noqa: BLE001 - 工具失败不得打断对话
+        except Exception as exc:  # 工具失败不得打断对话
             _log_debug(logger, "记忆检索工具执行失败：%s", safe_detail(exc))
             return "记忆检索暂时不可用，请直接根据现有信息回答。"
 
@@ -132,7 +132,7 @@ def _build_memory_tools(
                 kind=str(kwargs.get("kind") or "fact"),
                 importance=_coerce_importance(kwargs.get("importance")),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _log_warning(logger, "记忆写入工具执行失败：%s", safe_detail(exc))
             return "记忆写入暂时不可用，请直接回答用户。"
 
@@ -165,7 +165,7 @@ def create_memory_tools(
         return []
     try:
         return _build_memory_tools(backend, tool_cls=resolved, logger=logger)
-    except Exception as exc:  # noqa: BLE001 - 构造失败按「不支持」处理
+    except Exception as exc:  # 构造失败按「不支持」处理
         _log_warning(logger, "构造记忆工具失败，已跳过：%s", safe_detail(exc))
         return []
 
@@ -191,7 +191,7 @@ def register_tools(
         try:
             adder(*tools)
             return len(tools)
-        except Exception as exc:  # noqa: BLE001 - 回退到工具管理器路径
+        except Exception as exc:  # 回退到工具管理器路径
             _log_debug(logger, "add_llm_tools 不可用，改用工具管理器注册：%s", safe_detail(exc))
 
     manager = _tool_manager(context)
@@ -232,7 +232,7 @@ def _tool_manager(context: Any) -> Any | None:
         if callable(getter):
             return getter()
         return getattr(getattr(context, "provider_manager", None), "llm_tools", None)
-    except Exception as exc:  # noqa: BLE001 - 探测必须宽容
+    except Exception as exc:  # 探测必须宽容
         _log_debug(None, "获取函数工具管理器失败：%s", safe_detail(exc))
         return None
 

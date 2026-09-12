@@ -23,7 +23,7 @@ def _load(module: str, name: str) -> Any | None:
     """宽容导入：模块或属性缺失时返回 None，不抛异常。"""
     try:
         mod = importlib.import_module(module)
-    except Exception:  # noqa: BLE001 - 兼容探测必须吞掉所有导入期异常
+    except Exception:  # 兼容探测必须吞掉所有导入期异常
         return None
     return getattr(mod, name, None)
 
@@ -118,7 +118,7 @@ def provider_meta(provider: Any) -> dict[str, str]:
     if callable(meta_fn):
         try:
             meta_obj = meta_fn()
-        except Exception:  # noqa: BLE001
+        except Exception:
             meta_obj = None
     meta_obj = meta_obj or provider
 
@@ -143,7 +143,7 @@ def configured_provider_entries(context: Any, *kinds: str) -> list[dict[str, Any
     try:
         manager = getattr(context, "provider_manager", None)
         configs = getattr(manager, "providers_config", None)
-    except Exception:  # noqa: BLE001 - Manager 可能是会抛异常的代理对象
+    except Exception:  # Manager 可能是会抛异常的代理对象
         return []
     if not isinstance(configs, (list, tuple)):
         return []

@@ -51,7 +51,7 @@ def group_gate_open() -> bool:
         return False
     try:
         return bool(_GATE())
-    except Exception:  # noqa: BLE001 - 门控异常不能影响消息链路
+    except Exception:  # 门控异常不能影响消息链路
         return False
 
 
@@ -103,12 +103,12 @@ def apply_group_decision(event: Any, decision: GroupDecision) -> None:
     if decision.text:
         try:
             event.message_str = decision.text
-        except Exception:  # noqa: BLE001 - 只读属性等异常场景保持原文
+        except Exception:  # 只读属性等异常场景保持原文
             pass
     try:
         event.is_at_or_wake_command = True
         event.is_wake = True
-    except Exception:  # noqa: BLE001 - 标记失败即退回框架原判定
+    except Exception:  # 标记失败即退回框架原判定
         pass
 
 

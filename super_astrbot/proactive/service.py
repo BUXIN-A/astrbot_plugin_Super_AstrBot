@@ -113,7 +113,7 @@ class ProactiveService:
         for umo in self._config.targets:
             try:
                 attempts.append(await self.send_one(umo, kind=kind))
-            except Exception as exc:  # noqa: BLE001 - 单个会话失败不影响其它会话
+            except Exception as exc:  # 单个会话失败不影响其它会话
                 self._stats["failed"] += 1
                 self._warn("主动消息发送失败（%s）：%s", umo, safe_detail(exc))
                 attempts.append(Attempt(umo=umo, kind=kind, reason=f"异常：{safe_detail(exc)}"))
@@ -234,7 +234,7 @@ class ProactiveService:
         sent = False
         try:
             sent = bool(await self._host.send_message(umo, text))
-        except Exception as exc:  # noqa: BLE001 - 主动发送失败只记录
+        except Exception as exc:  # 主动发送失败只记录
             sent = False
             self._warn("主动发送异常（%s）：%s", umo, safe_detail(exc))
 
@@ -293,7 +293,7 @@ class ProactiveService:
         for umo in self._config.targets:
             try:
                 value = await self._store.get(_PAUSED_PREFIX + umo, False)
-            except Exception as exc:  # noqa: BLE001 - 读失败按未暂停处理
+            except Exception as exc:  # 读失败按未暂停处理
                 self._warn("读取暂停状态失败：%s", safe_detail(exc))
                 continue
             if value:
@@ -304,7 +304,7 @@ class ProactiveService:
             return 0
         try:
             value = await self._store.get(self._count_key(umo, now), 0)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("读取当日发送计数失败：%s", safe_detail(exc))
             return 0
         return as_int(value, 0)
@@ -319,7 +319,7 @@ class ProactiveService:
             return ""
         try:
             value = await self._store.get(_LAST_PREFIX + umo, None)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("读取上次主动内容失败：%s", safe_detail(exc))
             return ""
         return str(value.get("text") or "") if isinstance(value, dict) else ""
@@ -335,7 +335,7 @@ class ProactiveService:
             return
         try:
             await self._store.set(key, value)
-        except Exception as exc:  # noqa: BLE001 - 写失败只影响幂等性
+        except Exception as exc:  # 写失败只影响幂等性
             self._warn("写入主动交互状态失败：%s", safe_detail(exc))
 
     @staticmethod

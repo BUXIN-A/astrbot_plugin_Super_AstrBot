@@ -7,11 +7,9 @@
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Any, Sequence
 
-from ..support import PromptOverrides, PromptSpec, render, truncate
+from ..support import PromptOverrides, PromptSpec, extract_json, render, truncate
 
 PROMPT_JARGON_SYSTEM = "jargon_system"
 PROMPT_JARGON_TEMPLATE = "jargon_template"
@@ -66,8 +64,6 @@ _AFFINITY_TEMPLATE = """请判断下面这句话对对话对象的态度类型�
 
 注意：否定表达要按整体语义判断，例如「不难过」属于 neutral，「你太笨了」属于 insult。
 """
-
-_FENCE_RE = re.compile(r"```[a-zA-Z]*\s*(.*?)```", re.DOTALL)
 
 _MIN_MEANING = 2
 _MAX_MEANING = 60
@@ -170,32 +166,11 @@ def build_affinity_prompt(message: str, *, overrides: PromptOverrides | None = N
     return render(template, message=truncate(message, 300))
 
 
-def _strip_fences(text: str) -> str:
-    match = _FENCE_RE.search(text)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
-
-def _extract_json(text: str, *, array: bool) -> Any:
-    body = _strip_fences(text)
-    if array:
-        start, end = body.find("["), body.rfind("]")
-    else:
-        start, end = body.find("{"), body.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        return None
-    try:
-        return json.loads(body[start : end + 1])
-    except (TypeError, ValueError):
-        return None
-
-
 def parse_jargon_insights(
     text: str, *, candidates: Sequence[str], min_confidence: float
 ) -> list[dict[str, Any]]:
     """解析黑话推断产出；只保留候选集合内、判定为是、且置信度达标的条目。"""
-    entries = _extract_json(text, array=True)
+    entries = extract_json(text, kind="array")
     if not isinstance(entries, list):
         return []
 
@@ -229,7 +204,7 @@ def parse_jargon_insights(
 
 def parse_affinity_verdict(text: str) -> tuple[str, float]:
     """解析好感度判定产出，返回 ``(类型, 置信度)``；无法解析时返回 ``("", 0.0)``。"""
-    payload = _extract_json(text, array=False)
+    payload = extract_json(text, kind="object")
     if not isinstance(payload, dict):
         return "", 0.0
     kind = str(payload.get("type") or "").strip().lower()

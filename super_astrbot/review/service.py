@@ -25,6 +25,7 @@ from typing import Any, Awaitable, Callable, Mapping
 from ..spec.capabilities import as_int
 from ..spec.errors import safe_detail
 from ..storage import ReviewRepository
+from ..support import parse_payload
 from .config import ReviewConfig
 from .prompts import build_prompt, parse_verdict, system_prompt
 
@@ -121,7 +122,7 @@ class AutoReviewService:
 
         try:
             rows = await self._reviews.list_pending_page(limit=batch)
-        except Exception as exc:  # noqa: BLE001 - 队列读取失败不阻断调度
+        except Exception as exc:  # 队列读取失败不阻断调度
             outcome.reason = f"读取待审队列失败：{safe_detail(exc)}"
             self._warn("自动审核读取队列失败：%s", safe_detail(exc))
             return outcome
@@ -131,7 +132,7 @@ class AutoReviewService:
         for row in rows:
             try:
                 await self._process(row, outcome)
-            except Exception as exc:  # noqa: BLE001 - 单条异常不影响其它记录
+            except Exception as exc:  # 单条异常不影响其它记录
                 outcome.unsure += 1
                 self._warn("自动审核单条异常（#%s）：%s", row.get("id"), safe_detail(exc))
 
@@ -178,7 +179,7 @@ class AutoReviewService:
         if not self._config.use_llm or self._llm is None:
             return "unsure", reason, "rule"
 
-        payload = _parse_payload(row.get("payload"))
+        payload = parse_payload(row.get("payload"))
         if payload is None:
             # 连待审文本都取不出来时，交给模型也只是浪费一次调用。
             return "unsure", reason, "rule"
@@ -186,7 +187,7 @@ class AutoReviewService:
         return verdict, reason, "llm"
 
     def _rule_verdict(self, row: Mapping[str, Any]) -> tuple[str, str]:
-        payload = _parse_payload(row.get("payload"))
+        payload = parse_payload(row.get("payload"))
         if payload is None:
             return "unsure", "payload 无法解析"
 
@@ -236,7 +237,7 @@ class AutoReviewService:
                 timeout=self._config.timeout_seconds,
                 purpose="review",
             )
-        except Exception as exc:  # noqa: BLE001 - 含 LlmError/BudgetExhaustedError
+        except Exception as exc:  # 含 LlmError/BudgetExhaustedError
             self._debug("自动审核模型调用失败：%s", safe_detail(exc))
             return "unsure", "模型不可用"
 
@@ -253,7 +254,7 @@ class AutoReviewService:
         """调用审批回调落地业务数据；回调返回 ``(是否处理成功, 说明)``。"""
         try:
             handled, message = await self._approve_cb(review_id)
-        except Exception as exc:  # noqa: BLE001 - 回调异常视为未处理
+        except Exception as exc:  # 回调异常视为未处理
             self._warn("审批回调异常 #%s：%s", review_id, safe_detail(exc))
             return False
         if not handled:
@@ -264,7 +265,7 @@ class AutoReviewService:
         """调用驳回回调；失败只记日志，不影响同批其它记录。"""
         try:
             return bool(await self._reject_cb(review_id))
-        except Exception as exc:  # noqa: BLE001 - 回调异常视为未处理
+        except Exception as exc:  # 回调异常视为未处理
             self._warn("驳回回调异常 #%s：%s", review_id, safe_detail(exc))
             return False
 
@@ -289,17 +290,6 @@ class AutoReviewService:
     def _warn(self, message: str, *args: Any) -> None:
         if self._logger is not None:
             self._logger.warning(message, *args)
-
-
-def _parse_payload(raw: Any) -> dict[str, Any] | None:
-    """把 ``payload`` 文本解析成字典；失败返回 ``None``（不抛异常）。"""
-    if isinstance(raw, Mapping):
-        return dict(raw)
-    try:
-        parsed = json.loads(raw if raw else "{}")
-    except (TypeError, ValueError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
 
 
 def _content_of(payload: Mapping[str, Any]) -> str:

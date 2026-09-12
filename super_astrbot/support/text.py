@@ -97,10 +97,10 @@ def _get_jieba() -> object | None:
 
         try:
             jieba.setLogLevel(logging.WARNING)
-        except Exception:  # noqa: BLE001 - 日志级别设置失败无关紧要
+        except Exception:  # 日志级别设置失败无关紧要
             pass
         _jieba_module = jieba
-    except Exception:  # noqa: BLE001 - 无 jieba 时走 bigram 降级
+    except Exception:  # 无 jieba 时走 bigram 降级
         _jieba_module = None
     return _jieba_module
 
@@ -131,7 +131,7 @@ def _tokenize_with_jieba(text: str) -> list[str]:
     try:
         pieces = module.cut(text, cut_all=False)  # type: ignore[attr-defined]
         return [piece.strip().lower() for piece in pieces]
-    except Exception:  # noqa: BLE001 - 分词失败即降级
+    except Exception:  # 分词失败即降级
         return []
 
 

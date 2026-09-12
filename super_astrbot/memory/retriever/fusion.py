@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Iterable, Sequence
 
-from ...support import jaccard, tokenize
+from ...support import half_life_factor, jaccard, tokenize
 from ..models import MemoryItem
 from .base import RouteOutcome
 
@@ -46,12 +46,11 @@ def recency_score(
     half_life_days: float,
 ) -> float:
     """指数时间衰减：``0.5 ** (age_days / half_life_days)``。"""
-    half_life = max(0.1, float(half_life_days or 14.0))
     base = max(float(created_at or 0.0), float(last_access_at or 0.0))
     if base <= 0:
         return 0.0
     age_days = max(0.0, (now - base) / 86400.0)
-    return 0.5 ** (age_days / half_life)
+    return half_life_factor(half_life_days or 14.0, elapsed_days=age_days, minimum_half_life=0.1)
 
 
 def dedupe_by_similarity(

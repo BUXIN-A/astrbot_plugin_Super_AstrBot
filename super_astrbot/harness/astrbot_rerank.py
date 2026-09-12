@@ -96,17 +96,21 @@ class AstrBotRerankGateway:
                         self._provider = candidate
                         self._resolved = True
                         return
-            elif providers:
+            # 未配置首选 ID，或首选 ID 已不可用：回退到第一个可用提供商。
+            # 与嵌入网关保持一致——用户填错 ID 时能力仍可用，而不是静默失效。
+            if providers:
                 self._provider = providers[0]
                 self._resolved = True
                 return
-        except Exception as exc:  # noqa: BLE001 - 探测失败按不可用处理
+        except Exception as exc:  # 探测失败按不可用处理
             self._host.log().debug("解析 Rerank 提供商失败：%s", safe_detail(exc))
         self._provider = None
         self._resolved = False
 
-    def refresh(self) -> None:
-        """清除解析缓存并允许重新解析。"""
+    def refresh(self, provider_id: str | None = None) -> None:
+        """清除解析缓存并允许重新解析；``provider_id`` 非空时同时更新首选 ID。"""
+        if provider_id is not None:
+            self._preferred_id = (provider_id or "").strip()
         self._resolved = False
         self._provider = None
 
@@ -116,7 +120,7 @@ class AstrBotRerankGateway:
             return []
         try:
             return [item for item in (getter() or []) if hasattr(item, "rerank")]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._host.log().debug("枚举 Rerank 提供商失败：%s", safe_detail(exc))
             return []
 
@@ -138,7 +142,7 @@ class AstrBotRerankGateway:
         if callable(getter):
             try:
                 return str(getter() or "")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return ""
         return compat.provider_meta(self._provider)["model"]
 
@@ -185,7 +189,7 @@ class AstrBotRerankGateway:
         docs = [truncate(str(document or ""), _MAX_DOC_CHARS) for document in documents]
         try:
             raw = await call(text[:_MAX_QUERY_CHARS], docs, top_n)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # 实例可能已被框架重建（旧连接已关闭），失效缓存以便下次重新解析。
             self._host.log().debug("Rerank 调用失败：%s", safe_detail(exc))
             self.refresh()

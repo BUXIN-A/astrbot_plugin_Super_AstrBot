@@ -87,7 +87,7 @@ class StaticRoute:
     def __init__(self, ids: list[int]) -> None:
         self._ids = list(ids)
 
-    async def search(self, scopes, query, *, limit):  # noqa: ANN001, ANN201
+    async def search(self, scopes, query, *, limit):
         return [
             Candidate(memory_id=memory_id, rank=index, relevance=1.0, route=self.name)
             for index, memory_id in enumerate(self._ids)

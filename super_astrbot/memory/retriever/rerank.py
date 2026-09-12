@@ -164,7 +164,7 @@ class Reranker:
         if callable(getter):
             try:
                 model = str(getter() or "")
-            except Exception:  # noqa: BLE001 - 展示失败不影响流程
+            except Exception:  # 展示失败不影响流程
                 model = ""
         return f"模型{'（' + model + '）' if model else ''}"
 
@@ -195,7 +195,7 @@ class Reranker:
             )
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 失败一律回退，绝不打断检索
+        except Exception as exc:  # 失败一律回退，绝不打断检索
             return self._on_failure(query, candidates, f"调用失败：{_brief(exc)}", started)
         duration_ms = (time.perf_counter() - started) * 1000.0
 
@@ -255,7 +255,7 @@ class Reranker:
             return
         try:
             self._observer(source, ok, duration_ms, candidates)
-        except Exception:  # noqa: BLE001 - 埋点失败绝不影响检索
+        except Exception:  # 埋点失败绝不影响检索
             pass
 
 
