@@ -2,6 +2,45 @@
 
 本文件记录 Super_AstrBot 的版本变更。版本号以 `metadata.yaml` 为唯一来源。
 
+## [0.2.0] - 未发布
+
+修复 v0.1.0 在真实服务器上暴露的三个问题，并重建控制台界面。
+
+### 修复
+
+- **指令面收敛，消除冲突可能**（问题 1）
+  `main.py` 不再用 `@filter.command_group("sab")` 注册十余条子指令，改为**单一顶层指令 `sab`**（别名 `superastrbot`），子命令由 `commands/parser.py` 自行解析。
+  原因：AstrBot 的指令冲突检测以指令「完整名」为键，注册项越多冲突面越大；收敛后只剩一个名字，且不再依赖框架的 `GreedyStr`/参数推导行为。
+  另注：用户截图中 10 对冲突全部来自 `astrbot_plugin_cost_control` 自身重复注册（同一指令分别以模块路径与展示名 `Token成本控制` 各出现一次），与 Super_AstrBot 无关 —— 我们的子指令完整名是 `"sab xxx"`，不会与顶层 `help`/`reset` 撞名。
+
+- **嵌入模型下拉列表改为真实数据**（问题 2）
+  `_special: "select_provider"` 在 AstrBot 中被硬编码为 `chat_completion`，且框架不存在嵌入模型专用的 special 值，因此配置页列出的必然是对话模型。
+  现改为**运行时把真实的嵌入模型列表注入 schema**（`harness/schema_options.py` + `AstrBotEmbeddingGateway.list_providers()`），并每 10 分钟重新注入一次（保存插件配置会触发重载并重建 `AstrBotConfig`，注入会丢失）。
+  安全降级：**没有嵌入提供商时不注入 options**，字段保持文本框，可手动填写 ID —— 避免变成「只有自动选择一项」的不可输入下拉框。
+
+- **控制台「加载失败：Failed to fetch」**（问题 3）
+  两个叠加原因：① 原实现是 classic 内联脚本，在 AstrBot 注入 bridge SDK **之前**执行，`window.AstrBotPluginPage` 为 null；② 兜底逻辑直接 `fetch`，而插件页运行在 sandbox iframe（无 `allow-same-origin`），跨源请求必然抛 `Failed to fetch`。
+  现改为：脚本使用 `<script type="module">`（天然 defer，保证在 bridge 之后执行）+ **完全移除 fetch、只经 bridge 调用**。
+
+### 变更
+
+- **控制台界面重建**（融合 livingmemory 与 self_learning 的做法）
+  - 侧边栏 hash 路由 + 六个分区：总览 / 记忆 / 检索 / 周记 / 待审 / 系统；
+  - 总览：统计卡 + 能力开关 + 降级原因 + 最近记忆；
+  - 记忆：状态/类型/关键词筛选 + 分页 + 点击查看详情（弹窗）；
+  - 检索：可选会话 UMO，展示最终分与打分构成；
+  - 待审：批准 / 驳回；
+  - 系统：框架版本与符号诊断、任务调度、调用预算、嵌入提供商列表、重建索引；
+  - 深/浅色主题（跟随 Dashboard 并可本地记忆）、Toast 反馈、桥接 i18n；
+  - 样式与脚本完全自包含，无 CDN / 无外部字体图标；HTML 转义覆盖五个字符以防存储型 XSS。
+- 新增 `.astrbot-plugin/i18n/{zh-CN,en-US}.json`，使页面在 WebUI 中的标题与描述正确显示。
+- 后端新增/增强接口：`memories`（状态/类型/关键词筛选 + 总数）、`memory`（单条详情）、`maintenance`（重建索引），`overview` 增加框架诊断与嵌入提供商列表。
+- 移除 `metadata.yaml` 的 `pages` 声明：AstrBot 通过扫描 `pages/<name>/index.html` 自动发现，无需声明。
+
+### 测试
+
+新增指令解析、schema 注入、嵌入模型枚举、配置页注入链路等测试；总计通过用例增至 100+。
+
 ## [0.1.0] - 未发布
 
 首个可用版本：完成「规格 → Harness → 循环控制 → 持久层 → 记忆闭环 → 周记 → 命令 → 面板」全链路。

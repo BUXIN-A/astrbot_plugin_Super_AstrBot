@@ -10,12 +10,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any, Mapping
 
 from . import __version__
-from .harness import Harness, compat, create_harness, to_event_view
+from .harness import (
+    Harness,
+    clear_options,
+    compat,
+    create_harness,
+    inject_string_options,
+    to_event_view,
+)
 from .harness.protocols import EventView
 from .journal import JournalConfig, JournalService
 from .learning import ReflectionConfig, ReflectionService
@@ -51,6 +59,16 @@ _REFLECTION_SCAN_INTERVAL = 300.0
 """反思扫描间隔（秒）：只查条件是否满足，满足才真正调用模型。"""
 
 _MAINTENANCE_HOUR, _MAINTENANCE_MINUTE = 4, 30
+
+_SCHEMA_SYNC_START_DELAY = 5.0
+"""启动后延迟再同步 schema：给 ProviderManager 留出加载提供商的时间。"""
+
+_SCHEMA_SYNC_INTERVAL = 600.0
+"""schema 同步间隔（秒）。保存插件配置会触发重载并重建 AstrBotConfig，
+因此运行时注入的下拉选项会丢失，必须周期性重新注入。"""
+
+_EMBEDDING_FIELD_PATH = ("memory", "embedding_provider_id")
+"""需要动态注入选项的配置字段路径。"""
 
 
 class SuperAstrBotApp:
@@ -423,6 +441,75 @@ class SuperAstrBotApp:
         self._info(
             "后台调度已启动：%s", "、".join(job["key"] for job in self._scheduler.snapshot())
         )
+
+        # 5) 配置页动态下拉：把真实的嵌入模型列表注入到 schema
+        if self._enabled("memory.enabled"):
+            self._scope.spawn(self._schema_sync_loop(), name="schema-sync")
+
+    # ------------------------------------------------------------------ #
+    # 配置页动态选项
+    # ------------------------------------------------------------------ #
+
+    def embedding_providers(self) -> list[Any]:
+        """当前可选的嵌入模型提供商。"""
+        if self._harness is None:
+            return []
+        try:
+            return list(self._harness.embedding.list_providers())
+        except Exception as exc:  # noqa: BLE001
+            self._debug("枚举嵌入提供商失败：%s", safe_detail(exc))
+            return []
+
+    def sync_schema_options(self) -> bool:
+        """把真实嵌入模型列表注入插件配置 schema 的下拉选项。
+
+        AstrBot 的 ``_special: "select_provider"`` 只列对话模型且无法按类型过滤，
+        因此这里改用运行时注入。三种情形：
+
+        - 有嵌入提供商 → 注入 ``options``，字段渲染为下拉框；
+        - 无嵌入提供商 → **移除** ``options``，字段退回文本框，用户可手填 ID；
+        - 注入失败（如 schema 结构不符）→ 静默返回 ``False``，不影响功能。
+
+        第 2 条很关键：如果注入一个只有「自动选择」的空列表，字段会变成无法输入的下拉框，
+        反而把用户锁死。
+        """
+        from .spec.capabilities import get_path
+
+        providers = self.embedding_providers()
+        if not providers:
+            clear_options(self._config, _EMBEDDING_FIELD_PATH)
+            return False
+
+        options = [""]
+        labels = ["（自动选择第一个可用的嵌入模型）"]
+        for info in providers:
+            options.append(info.id)
+            labels.append(f"{info.id} · {info.model}" if info.model else info.id)
+
+        current = str(get_path(self._config, "memory.embedding_provider_id", "") or "")
+        if current and current not in options:
+            # 保留「已配置但当前不可用」的值，避免下拉框把用户设置清空
+            options.append(current)
+            labels.append(f"{current}（当前不可用）")
+
+        try:
+            injected = inject_string_options(self._config, _EMBEDDING_FIELD_PATH, options, labels)
+        except Exception as exc:  # noqa: BLE001
+            self._debug("注入配置下拉选项失败：%s", safe_detail(exc))
+            return False
+        if injected:
+            self._debug("已注入 %s 个嵌入模型选项", len(providers))
+        return injected
+
+    async def _schema_sync_loop(self) -> None:
+        """周期性重新注入：保存插件配置会触发插件重载并重建 AstrBotConfig。"""
+        await asyncio.sleep(_SCHEMA_SYNC_START_DELAY)
+        while self._scope is not None and not self._scope.is_stopped():
+            try:
+                self.sync_schema_options()
+            except Exception as exc:  # noqa: BLE001
+                self._debug("schema 同步异常：%s", safe_detail(exc))
+            await asyncio.sleep(_SCHEMA_SYNC_INTERVAL)
 
     # ------------------------------------------------------------------ #
     # 钩子动作

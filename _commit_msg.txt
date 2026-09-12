@@ -1,0 +1,20 @@
+fix(panel+commands+config): 发布 v0.2.0
+
+修复在真实服务器上暴露的三个问题：
+
+1. 指令冲突面收敛：不再用 command_group 注册十余条子指令，改为单一顶层指令
+   sab（别名 superastrbot）+ 自行解析子命令。AstrBot 的冲突检测以指令「完整名」
+   为键，注册项越少撞名概率越低，也不再依赖框架的参数推导行为。
+   （截图中 10 对冲突均来自另一插件自身重复注册，与本插件无关。）
+
+2. 嵌入模型下拉：框架的 _special=select_provider 被硬编码为对话模型且无嵌入专用
+   选择器，改为运行时把真实嵌入模型列表注入 schema 并周期重注入；无可用提供商时
+   退回文本框以便手填，避免变成无法输入的空下拉。
+
+3. 控制台「Failed to fetch」：入口脚本改为 type="module"（保证在 bridge 注入之后
+   执行），并彻底移除 fetch —— 插件页位于无 allow-same-origin 的 sandbox iframe，
+   直连请求必然失败。同时按 livingmemory / self_learning 的做法重建界面为六分区
+   （总览/记忆/检索/周记/待审/系统），补齐筛选、分页、详情弹窗、主题与 i18n。
+
+其它：后端新增 memory 详情与 maintenance 接口、memories 支持筛选与总数；
+新增面板静态契约测试以防上述问题回归。

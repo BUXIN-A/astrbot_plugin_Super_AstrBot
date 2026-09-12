@@ -4,7 +4,12 @@
 
 1. 注册插件类与生命周期（``initialize`` / ``terminate``）；
 2. 注册事件钩子（LLM 请求前注入记忆、消息发送后记录回复）；
-3. 注册 ``/sab`` 指令组（参数解析与回显），并把动作交给 ``CommandService``。
+3. 注册**单一顶层指令** ``sab``（别名 ``superastrbot``），参数解析交给
+   ``super_astrbot.commands.parser``，执行交给 ``CommandService``。
+
+为什么只有一个顶层指令：AstrBot 的指令冲突检测以指令「完整名」为键。把状态、检索、
+周记、待审等全部作为子指令注册，会在指令列表中产生十余条注册项；收敛为单入口后
+冲突面只剩 ``sab`` 一个名字，跨插件撞名概率最低，也不依赖框架的参数推导行为。
 
 注意：``Star.__init__`` 不会保存 config，必须自行保存（见 AstrBot 源码
 ``astrbot/core/star/base.py:Star.__init__``）。
@@ -18,16 +23,12 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
 from .super_astrbot.app import SuperAstrBotApp
-from .super_astrbot.commands import CommandService
+from .super_astrbot.commands import CommandService, resolve_action, split_command_args
 from .super_astrbot.harness import to_event_view
 from .super_astrbot.spec.errors import safe_detail
 
-try:  # pragma: no cover - 依赖框架版本
-    from astrbot.core.star.filter.command import GreedyStr
-except Exception:  # noqa: BLE001 - 极老版本无此类时退化为普通字符串
-
-    class GreedyStr(str):  # type: ignore[no-redef]
-        """降级实现：多词参数会被截断为第一个词。"""
+COMMAND_NAME = "sab"
+COMMAND_ALIASES = {"superastrbot"}
 
 
 class SuperAstrBot(Star):
@@ -87,78 +88,28 @@ class SuperAstrBot(Star):
             self.logger.debug("回复采集钩子异常：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
-    # 指令组
+    # 唯一顶层指令
     # ------------------------------------------------------------------ #
 
-    @filter.command_group("sab")
-    async def sab(self) -> None:
-        """Super_AstrBot 管理指令组。"""
+    @filter.command(
+        COMMAND_NAME,
+        alias=COMMAND_ALIASES,
+        desc="Super_AstrBot 管理指令：状态 / 记忆检索 / 周记 / 待审 / 重置 / 重建索引",
+    )
+    async def sab(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        """Super_AstrBot 统一入口，用法见 ``/sab help``。"""
+        yield event.plain_result(await self._dispatch(event))
 
-    async def _run_command(self, action: str, event: AstrMessageEvent, args: list[str]) -> str:
-        """统一执行入口：把事件转成视图，再交给命令层。"""
+    async def _dispatch(self, event: AstrMessageEvent) -> str:
+        """解析并执行子命令；所有异常都在此兜底。"""
         try:
+            args = split_command_args(
+                getattr(event, "message_str", "") or "",
+                (COMMAND_NAME, *COMMAND_ALIASES),
+            )
+            action, rest = resolve_action(args)
             view = to_event_view(event)
-            return await self._commands.dispatch(action, view, args)
-        except Exception as exc:  # noqa: BLE001 - 命令层兜底
-            self.logger.warning("指令 %s 执行异常：%s", action, safe_detail(exc))
+            return await self._commands.dispatch(action, view, rest)
+        except Exception as exc:  # noqa: BLE001 - 命令层兜底，绝不把异常抛回框架
+            self.logger.warning("指令执行异常：%s", safe_detail(exc))
             return f"指令执行异常：{safe_detail(exc)}"
-
-    @sab.command("help")
-    async def sab_help(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("help", event, []))
-
-    @sab.command("status")
-    async def sab_status(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("status", event, []))
-
-    @sab.command("search")
-    async def sab_search(
-        self, event: AstrMessageEvent, query: GreedyStr
-    ) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("search", event, [str(query)]))
-
-    @sab.command("why")
-    async def sab_why(self, event: AstrMessageEvent, query: GreedyStr) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("why", event, [str(query)]))
-
-    @sab.command("remember")
-    async def sab_remember(
-        self, event: AstrMessageEvent, content: GreedyStr
-    ) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("remember", event, [str(content)]))
-
-    @sab.command("journal")
-    async def sab_journal(
-        self, event: AstrMessageEvent, content: GreedyStr
-    ) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("journal", event, [str(content)]))
-
-    @sab.command("journals")
-    async def sab_journals(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("journals", event, []))
-
-    @sab.command("review")
-    async def sab_review(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("review", event, []))
-
-    @sab.command("approve")
-    async def sab_approve(
-        self, event: AstrMessageEvent, review_id: str
-    ) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("approve", event, [str(review_id)]))
-
-    @sab.command("reject")
-    async def sab_reject(
-        self, event: AstrMessageEvent, review_id: str
-    ) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("reject", event, [str(review_id)]))
-
-    @sab.command("reset")
-    async def sab_reset(
-        self, event: AstrMessageEvent, confirm: str = ""
-    ) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("reset", event, [str(confirm)]))
-
-    @sab.command("reindex")
-    async def sab_reindex(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
-        yield event.plain_result(await self._run_command("reindex", event, []))

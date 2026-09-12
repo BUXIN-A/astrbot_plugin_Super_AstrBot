@@ -230,8 +230,17 @@ class EventView:
 ## 9. 可观测性与运维
 
 - 日志统一经 `Host.log()`；关键路径分级，`debug_log` 开启才输出检索打分细节。
-- 命令：`/sab status`、`/sab search <关键词>`、`/sab why <关键词>`（显示打分构成）、`/sab journal ...`、`/sab review list|approve|reject`、`/sab reset`（清当前会话记忆，需确认）、`/sab reindex`。
-- 面板（`pages/dashboard`）：总览、记忆浏览/搜索、周记列表、反思记录、待审队列、配置概览。
+- 命令采用**单一顶层入口** `sab`（别名 `superastrbot`），子命令由
+  `commands/parser.py` 自行解析：`status`、`search`、`why`、`remember`、`journal`、
+  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`help`。
+  之所以不注册多条顶层/子指令：AstrBot 的指令冲突检测以指令「完整名」为键，
+  注册项越少撞名概率越低，也不依赖框架的参数推导行为。
+- 面板（`pages/dashboard`）六个分区：总览、记忆、检索、周记、待审、系统。
+  前端**只经 `window.AstrBotPluginPage` bridge 请求**，不使用 `fetch`（插件页位于
+  无 `allow-same-origin` 的 sandbox iframe，直连请求必然失败）；入口脚本必须
+  `type="module"`，确保在 AstrBot 注入 bridge 之后执行。
+- 配置页的「嵌入模型提供商」下拉由 `app.sync_schema_options()` 运行时注入（框架的
+  `select_provider` 硬编码为对话模型）；无可用嵌入提供商时字段退回文本框。
 - 所有敏感值（除内容外）只回状态不回原文；面板默认只读优先。
 
 ---
@@ -274,11 +283,13 @@ class EventView:
 |---|---|---|
 | P0 | 规格 + 脚手架 + Harness + Loop + Storage | ✅ 已完成 |
 | P1 | Memory 闭环 + 周记 + 命令 + 面板 | ✅ 已完成 |
+| P1.6 | 修复指令冲突面/嵌入模型下拉/面板加载失败；控制台重建为六分区 | ✅ 已完成（v0.2.0） |
 | P1.5 | Agent 函数工具（`memory_search` / `memory_write`） | 待做（近期） |
 | P2 | 上下文治理（token 估算 / 工具与图片历史占位 / 摘要水位线） | 规划 |
 | P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | 规划 |
 | P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | 规划 |
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | 规划 |
 
-**P0/P1 验收结果**：`pytest tests -q` 63 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用。
-真实 AstrBot 环境下的「面板加载」与「向量路启用」两条路径尚未实测（本地无运行实例），已列入 README 待办。
+**验收结果**：`pytest tests -q` 104 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+`node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载与向量路启用
+仍待服务器实测（本地无运行实例）。

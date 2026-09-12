@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "display_name": "Super_AstrBot",
+    "desc": "Long-term memory and self-learning enhancement for AstrBot: layered adaptive retrieval, memory lifecycle, journal memories and reflective self-learning."
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Super_AstrBot Console",
+      "description": "Manage long-term memory, journal entries and self-learning: browse and recall memories, review reflection results, inspect runtime diagnostics."
+    }
+  }
+}

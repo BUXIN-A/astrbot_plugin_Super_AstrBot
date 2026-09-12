@@ -91,11 +91,10 @@
         "hint": "检测不到可用的 Embedding 提供商时会自动降级为纯关键词检索，不会报错"
       },
       "embedding_provider_id": {
-        "description": "Embedding 提供商",
+        "description": "嵌入（Embedding）模型提供商",
         "type": "string",
         "default": "",
-        "_special": "select_provider",
-        "hint": "留空则自动挑选第一个可用的 Embedding 提供商"
+        "hint": "此下拉列表由插件在运行时自动填充为「嵌入模型」（而非对话模型）。留空则自动挑选第一个可用的嵌入提供商。若下拉为空，说明当前尚未配置任何嵌入提供商，可直接手动填写提供商 ID。"
       },
       "fusion_rrf_k": {
         "description": "RRF 融合常数 k",

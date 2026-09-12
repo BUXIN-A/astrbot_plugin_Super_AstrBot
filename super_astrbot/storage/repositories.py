@@ -347,10 +347,14 @@ class MemoryRepository:
         limit: int,
         keyword: str = "",
         status: str = "active",
+        kind: str = "",
     ) -> list[dict[str, Any]]:
-        """跨作用域分页（面板总览用）。"""
+        """跨作用域分页（面板总览用），支持按状态/类型/关键词过滤。"""
         clauses = ["status=?"]
         params: list[Any] = [status]
+        if kind:
+            clauses.append("kind=?")
+            params.append(kind)
         if keyword:
             clauses.append("content LIKE ?")
             params.append(f"%{keyword}%")
@@ -361,6 +365,26 @@ class MemoryRepository:
             params,
         )
         return [row_to_dict(row) for row in rows]
+
+    async def count_filtered(
+        self, *, status: str = "active", kind: str = "", keyword: str = ""
+    ) -> int:
+        """与 ``list_all_page`` 同条件的总数（面板分页需要）。"""
+        clauses = ["status=?"]
+        params: list[Any] = [status]
+        if kind:
+            clauses.append("kind=?")
+            params.append(kind)
+        if keyword:
+            clauses.append("content LIKE ?")
+            params.append(f"%{keyword}%")
+        return int(
+            await self._db.scalar(
+                f"SELECT COUNT(*) FROM memories WHERE {' AND '.join(clauses)}",
+                params,
+                default=0,
+            )
+        )
 
     async def count_all(self, *, status: str = "active") -> int:
         return int(

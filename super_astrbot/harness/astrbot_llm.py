@@ -264,6 +264,75 @@ class AstrBotEmbeddingGateway:
         meta = _provider_meta(candidate)
         return meta["type"] in {"embedding", str(getattr(expected.EMBEDDING, "value", "embedding"))}
 
+    # ------------------------------------------------------------------ #
+    # 枚举（供配置页动态下拉使用）
+    # ------------------------------------------------------------------ #
+
+    def list_providers(self) -> list[ProviderInfo]:
+        """列出可选的嵌入模型提供商。
+
+        数据来源有两路，按可靠性合并去重：
+
+        1. ``context.get_all_embedding_providers()``：已加载/启用的嵌入提供商（首选）；
+        2. ``provider_manager.providers_config`` 中 ``provider_type == "embedding"`` 的条目：
+           包含**尚未启用**的提供商，保证用户能在配置页提前选中。
+
+        之所以需要这个枚举：AstrBot 的 ``_special: "select_provider"`` 被硬编码为对话模型，
+        框架未提供嵌入模型专用选择器，因此插件只能在运行时把真实列表注入到 schema。
+        """
+        result: list[ProviderInfo] = []
+        seen: set[str] = set()
+
+        for provider in self._loaded_providers():
+            meta = _provider_meta(provider)
+            provider_id = meta["id"]
+            if provider_id and provider_id not in seen:
+                seen.add(provider_id)
+                result.append(ProviderInfo(id=provider_id, type="embedding", model=meta["model"]))
+
+        for entry in self._configured_embedding_entries():
+            provider_id = str(entry.get("id") or "")
+            if provider_id and provider_id not in seen:
+                seen.add(provider_id)
+                result.append(
+                    ProviderInfo(
+                        id=provider_id,
+                        type="embedding",
+                        model=str(entry.get("model") or ""),
+                    )
+                )
+        return result
+
+    def _loaded_providers(self) -> list[Any]:
+        getter = getattr(self._context, "get_all_embedding_providers", None)
+        if not callable(getter):
+            return []
+        try:
+            return list(getter() or [])
+        except Exception as exc:  # noqa: BLE001 - 枚举失败不影响其它路径
+            self._host.log().debug("枚举已加载的嵌入提供商失败：%s", safe_detail(exc))
+            return []
+
+    def _configured_embedding_entries(self) -> list[dict[str, Any]]:
+        # 注意：provider_manager 可能是会抛异常的属性/代理对象，
+        # getattr 并不吞异常，因此这里必须显式包裹，否则枚举失败会外泄。
+        try:
+            manager = getattr(self._context, "provider_manager", None)
+            configs = getattr(manager, "providers_config", None)
+        except Exception as exc:  # noqa: BLE001
+            self._host.log().debug("读取提供商配置失败：%s", safe_detail(exc))
+            return []
+        if not isinstance(configs, (list, tuple)):
+            return []
+        entries: list[dict[str, Any]] = []
+        for item in configs:
+            if not isinstance(item, dict):
+                continue
+            provider_type = str(item.get("provider_type") or "").lower()
+            if provider_type == "embedding" or provider_type.endswith("_embedding"):
+                entries.append(item)
+        return entries
+
     @property
     def available(self) -> bool:
         self._resolve()

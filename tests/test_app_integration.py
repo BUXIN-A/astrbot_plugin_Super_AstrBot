@@ -237,3 +237,105 @@ def test_journal_and_weekly_material_integration(tmp_path: Path) -> None:
     assert journal_id > 0
     assert has_material is True
     assert journal_count == 1
+
+
+# --------------------------------------------------------------------------- #
+# 配置页动态下拉（嵌入模型列表注入）
+# --------------------------------------------------------------------------- #
+
+
+class EmbeddingProviderStub:
+    def __init__(self, provider_id: str, model: str) -> None:
+        self._meta = SimpleNamespace(id=provider_id, model=model, type="embedding")
+
+    def meta(self) -> object:
+        return self._meta
+
+
+class EmbeddingContext(FakeContext):
+    """带嵌入提供商的 Context 替身。"""
+
+    def __init__(self, providers: list[object]) -> None:
+        self._providers = providers
+
+    def get_all_embedding_providers(self) -> list[object]:
+        return list(self._providers)
+
+
+class SchemaConfig(dict):
+    """模拟 AstrBotConfig：既是 dict，又带可变的 schema。"""
+
+    def __init__(self, data: dict, schema: dict) -> None:
+        super().__init__(data)
+        self.schema = schema
+
+
+def _embedding_schema() -> dict:
+    return {
+        "memory": {
+            "embedding_provider_id": {
+                "description": "嵌入模型提供商",
+                "type": "string",
+                "default": "",
+            }
+        }
+    }
+
+
+def test_app_injects_embedding_options_into_schema(tmp_path: Path) -> None:
+    async def _run() -> tuple[list[str], list[str], bool, bool]:
+        schema = _embedding_schema()
+        config = SchemaConfig({"memory": {"embedding_provider_id": "ollama_embedding"}}, schema)
+        context = EmbeddingContext([EmbeddingProviderStub("ollama_embedding", "all-minilm:22m")])
+        app = SuperAstrBotApp(star=FakeStar(), context=context, config=config, data_dir=tmp_path)
+        await app.start()
+
+        providers = [info.id for info in app.embedding_providers()]
+        injected = app.sync_schema_options()
+        field = schema["memory"]["embedding_provider_id"]
+        options = list(field.get("options") or [])
+        labels = list(field.get("labels") or [])
+
+        await app.shutdown()
+        return providers, options, bool(labels), injected
+
+    providers, options, has_labels, injected = asyncio.run(_run())
+    assert providers == ["ollama_embedding"]
+    assert injected is True
+    assert options[0] == "", "第一项应为「自动选择」"
+    assert "ollama_embedding" in options
+    assert has_labels is True
+
+
+def test_app_keeps_text_field_when_no_embedding_provider(tmp_path: Path) -> None:
+    """没有嵌入提供商时必须退回文本框，否则字段会变成无法输入的空下拉框。"""
+
+    async def _run() -> tuple[bool, dict]:
+        schema = _embedding_schema()
+        config = SchemaConfig({}, schema)
+        app = SuperAstrBotApp(
+            star=FakeStar(), context=FakeContext(), config=config, data_dir=tmp_path
+        )
+        await app.start()
+        injected = app.sync_schema_options()
+        field = dict(schema["memory"]["embedding_provider_id"])
+        await app.shutdown()
+        return injected, field
+
+    injected, field = asyncio.run(_run())
+    assert injected is False
+    assert field["type"] == "string"
+    assert "options" not in field
+
+
+def test_app_sync_schema_options_tolerates_plain_dict_config(tmp_path: Path) -> None:
+    """配置是普通 dict（无 schema）时不得抛异常。"""
+
+    async def _run() -> bool:
+        app = SuperAstrBotApp(star=FakeStar(), context=FakeContext(), config={}, data_dir=tmp_path)
+        await app.start()
+        result = app.sync_schema_options()
+        await app.shutdown()
+        return result
+
+    assert asyncio.run(_run()) is False

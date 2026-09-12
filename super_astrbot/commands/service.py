@@ -18,10 +18,10 @@ from ..spec.capabilities import get_path
 from ..spec.errors import safe_detail
 from ..spec.scopes import MemoryScope, ScopeType
 
-HELP_TEXT = """Super_AstrBot 指令：
-/sab status          查看运行状态与能力开关
-/sab search <关键词>  检索记忆（含打分与来源）
-/sab why <关键词>     查看召回打分明细（调参用）
+HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）：
+/sab status          查看运行状态、框架诊断与能力开关
+/sab search <关键词>  检索记忆（含检索路、耗时与打分明细）
+/sab why <关键词>     同 search，调参时查看打分构成
 /sab remember <内容>  手动写入一条长期记忆
 /sab journal <内容> [#标签]  写一条周记（现实记忆）
 /sab journals        查看最近周记
@@ -30,7 +30,9 @@ HELP_TEXT = """Super_AstrBot 指令：
 /sab reject <编号>    驳回一条待审记忆
 /sab reset confirm   清空当前会话的记忆与缓冲（不可逆）
 /sab reindex         重建检索索引
-/sab help            显示本帮助"""
+/sab help            显示本帮助
+
+可视化管理：AstrBot 插件详情页 → Pages → dashboard"""
 
 
 class CommandService:

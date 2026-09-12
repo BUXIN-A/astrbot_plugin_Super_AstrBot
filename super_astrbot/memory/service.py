@@ -248,11 +248,25 @@ class MemoryService:
         }
 
     async def list_all(
-        self, *, offset: int = 0, limit: int = 20, keyword: str = ""
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 20,
+        keyword: str = "",
+        status: str = STATUS_ACTIVE,
+        kind: str = "",
     ) -> list[MemoryItem]:
         """跨作用域列出记忆（面板总览用）。"""
-        rows = await self._memories.list_all_page(offset=offset, limit=limit, keyword=keyword)
+        rows = await self._memories.list_all_page(
+            offset=offset, limit=limit, keyword=keyword, status=status, kind=kind
+        )
         return [MemoryItem.from_row(row) for row in rows]
+
+    async def count_filtered(
+        self, *, status: str = STATUS_ACTIVE, kind: str = "", keyword: str = ""
+    ) -> int:
+        """与 ``list_all`` 同条件的总数。"""
+        return await self._memories.count_filtered(status=status, kind=kind, keyword=keyword)
 
     async def list_all_journals(self, *, offset: int = 0, limit: int = 20) -> list[dict[str, Any]]:
         return await self._journals.list_all_page(offset=offset, limit=limit)

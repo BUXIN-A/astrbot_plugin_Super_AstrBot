@@ -1,355 +1,189 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Super_AstrBot 控制台</title>
-  <style>
-    :root {
-      --bg: #0f1115;
-      --panel: #171a21;
-      --border: #262b36;
-      --text: #e6e8ee;
-      --muted: #9aa3b2;
-      --accent: #4c8dff;
-      --ok: #3fb950;
-      --warn: #d29922;
-      --err: #f85149;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 18px 20px 40px;
-      background: var(--bg); color: var(--text);
-      font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      font-size: 14px; line-height: 1.55;
-    }
-    h1 { font-size: 18px; margin: 0; }
-    h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
-    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-    .top .sub { color: var(--muted); font-size: 12px; }
-    button {
-      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
-      padding: 6px 12px; cursor: pointer; font-size: 13px;
-    }
-    button.ghost { background: #232936; color: var(--text); }
-    button:disabled { opacity: .55; cursor: not-allowed; }
-    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 18px; }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px 14px;
-    }
-    .card .label { color: var(--muted); font-size: 12px; }
-    .card .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
-    section { margin-bottom: 20px; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    input[type="text"] {
-      flex: 1 1 240px; min-width: 180px; background: #10131a; color: var(--text);
-      border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px;
-    }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; font-size: 12px; }
-    td.content { max-width: 520px; word-break: break-word; }
-    .tag { display: inline-block; background: #222834; color: var(--muted); border-radius: 4px; padding: 1px 6px; font-size: 11px; margin-right: 4px; }
-    .muted { color: var(--muted); font-size: 12px; }
-    .pill { border-radius: 999px; padding: 1px 8px; font-size: 11px; }
-    .pill.ok { background: rgba(63,185,80,.15); color: var(--ok); }
-    .pill.warn { background: rgba(210,153,34,.15); color: var(--warn); }
-    .pill.err { background: rgba(248,81,73,.15); color: var(--err); }
-    .empty { color: var(--muted); padding: 10px 0; }
-    pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 12px; color: var(--muted); }
-  </style>
+  <title data-i18n="shell.title">Super_AstrBot 控制台</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="top">
-    <div>
-      <h1>Super_AstrBot 控制台</h1>
-      <div class="sub" id="subtitle">正在连接…</div>
-    </div>
-    <div class="row">
-      <button class="ghost" id="btn-refresh">刷新</button>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">
+          <span class="brand-name">Super_AstrBot</span>
+          <span class="brand-sub" data-i18n="shell.subtitle">长期记忆 · 自我学习</span>
+        </span>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="nav-item" data-page="overview" data-i18n="nav.overview">总览</button>
+        <button class="nav-item" data-page="memories" data-i18n="nav.memories">记忆</button>
+        <button class="nav-item" data-page="recall" data-i18n="nav.recall">检索</button>
+        <button class="nav-item" data-page="journals" data-i18n="nav.journals">周记</button>
+        <button class="nav-item" data-page="reviews" data-i18n="nav.reviews">待审</button>
+        <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="meta-line" id="footer-version">—</div>
+        <div class="meta-line" id="footer-ready">—</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="page-title" data-i18n="nav.overview">总览</h1>
+        <div class="topbar-actions">
+          <button class="btn ghost" id="btn-theme" data-i18n="action.theme">主题</button>
+          <button class="btn" id="btn-refresh" data-i18n="action.refresh">刷新</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <!-- 总览 -->
+        <section class="page" id="page-overview">
+          <div class="stat-grid" id="ov-stats"></div>
+          <div class="card">
+            <h2 data-i18n="overview.capabilities">能力状态</h2>
+            <div class="pill-row" id="ov-caps"></div>
+            <div class="degraded" id="ov-degraded"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="overview.recent">最近写入的记忆</h2>
+            <div class="table-wrap" id="ov-recent"></div>
+          </div>
+        </section>
+
+        <!-- 记忆 -->
+        <section class="page" id="page-memories">
+          <div class="card">
+            <div class="filter-bar">
+              <label class="field">
+                <span data-i18n="filter.status">状态</span>
+                <select id="mem-status">
+                  <option value="active" data-i18n="status.active">正式</option>
+                  <option value="buffered" data-i18n="status.buffered">缓冲</option>
+                  <option value="pending" data-i18n="status.pending">待审</option>
+                  <option value="archived" data-i18n="status.archived">归档</option>
+                  <option value="forgotten" data-i18n="status.forgotten">已遗忘</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="filter.kind">类型</span>
+                <select id="mem-kind">
+                  <option value="" data-i18n="filter.all">全部</option>
+                  <option value="fact">fact</option>
+                  <option value="insight">insight</option>
+                  <option value="preference">preference</option>
+                  <option value="journal">journal</option>
+                  <option value="episode">episode</option>
+                </select>
+              </label>
+              <label class="field grow">
+                <span data-i18n="filter.keyword">关键词</span>
+                <input type="text" id="mem-keyword" placeholder="内容包含…" />
+              </label>
+              <button class="btn" id="mem-search" data-i18n="action.query">查询</button>
+            </div>
+            <div class="table-wrap" id="mem-table"></div>
+            <div class="pager">
+              <button class="btn ghost" id="mem-prev" data-i18n="action.prev">上一页</button>
+              <span class="muted" id="mem-page-info">—</span>
+              <button class="btn ghost" id="mem-next" data-i18n="action.next">下一页</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 检索 -->
+        <section class="page" id="page-recall">
+          <div class="card">
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="recall.query">检索词</span>
+                <input type="text" id="recall-query" placeholder="例如：项目 上线 疲惫" />
+              </label>
+              <label class="field grow">
+                <span data-i18n="recall.umo">会话 UMO（可选）</span>
+                <input type="text" id="recall-umo" placeholder="aiocqhttp:FriendMessage:12345" />
+              </label>
+              <label class="field">
+                <span data-i18n="recall.limit">条数</span>
+                <input type="number" id="recall-limit" value="5" min="1" max="20" />
+              </label>
+              <button class="btn" id="recall-run" data-i18n="action.search">检索</button>
+            </div>
+            <p class="muted" data-i18n="recall.hint">不填 UMO 时按关键词跨作用域匹配；填写后走混合检索并展示打分构成。</p>
+            <div class="muted" id="recall-meta"></div>
+            <div class="table-wrap" id="recall-table"></div>
+          </div>
+        </section>
+
+        <!-- 周记 -->
+        <section class="page" id="page-journals">
+          <div class="card">
+            <h2 data-i18n="journals.title">周记（现实记忆）</h2>
+            <div class="table-wrap" id="jr-table"></div>
+            <div class="pager">
+              <button class="btn ghost" id="jr-prev" data-i18n="action.prev">上一页</button>
+              <span class="muted" id="jr-page-info">—</span>
+              <button class="btn ghost" id="jr-next" data-i18n="action.next">下一页</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 待审 -->
+        <section class="page" id="page-reviews">
+          <div class="card">
+            <h2 data-i18n="reviews.title">待审记忆</h2>
+            <p class="muted" id="rv-hint"></p>
+            <div class="table-wrap" id="rv-table"></div>
+          </div>
+        </section>
+
+        <!-- 系统 -->
+        <section class="page" id="page-system">
+          <div class="card">
+            <h2 data-i18n="system.framework">框架与环境</h2>
+            <div class="kv-grid" id="sys-fw"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="system.jobs">后台任务</h2>
+            <div class="table-wrap" id="sys-jobs"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="system.budget">辅助调用预算</h2>
+            <div class="table-wrap" id="sys-budget"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="system.embedding">嵌入模型提供商</h2>
+            <div class="table-wrap" id="sys-embed"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="system.maintenance">维护</h2>
+            <div class="row">
+              <button class="btn" id="btn-reindex" data-i18n="action.reindex">重建检索索引</button>
+              <span class="muted" data-i18n="system.reindexHint">根据当前配置重建关键词索引与向量索引，不会删除记忆。</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-region" id="toasts"></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <header class="modal-head">
+        <h3 id="modal-title" data-i18n="modal.detail">详情</h3>
+        <button class="btn ghost" id="modal-close" data-i18n="action.close">关闭</button>
+      </header>
+      <div class="modal-body" id="modal-body"></div>
     </div>
   </div>
 
-  <div class="grid" id="cards"></div>
-
-  <section>
-    <h2>检索记忆</h2>
-    <div class="row">
-      <input type="text" id="search-input" placeholder="输入关键词，例如：项目 上线" />
-      <button id="btn-search">检索</button>
-      <span class="muted">未填写会话 UMO 时按关键词跨作用域匹配；填写后按混合检索打分。</span>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <input type="text" id="umo-input" placeholder="可选：会话 UMO，例如 aiocqhttp:FriendMessage:12345" />
-    </div>
-    <div id="search-result" style="margin-top:10px"></div>
-  </section>
-
-  <section>
-    <h2>记忆（最新 20 条）</h2>
-    <div id="memories"></div>
-  </section>
-
-  <section>
-    <h2>周记</h2>
-    <div id="journals"></div>
-  </section>
-
-  <section>
-    <h2>待审记忆</h2>
-    <div id="reviews"></div>
-  </section>
-
-  <section>
-    <h2>后台任务</h2>
-    <div id="jobs"></div>
-  </section>
-
-  <script>
-    const PLUGIN_NAME = "astrbot_plugin_Super_AstrBot";
-    const FALLBACK_BASE = `/api/v1/plugins/extensions/${PLUGIN_NAME}`;
-    const bridge = window.AstrBotPluginPage || null;
-
-    async function callApi(endpoint, { method = "GET", params = null, body = null } = {}) {
-      // 优先使用插件 Page bridge（它会自动带上鉴权与插件上下文）
-      if (bridge && typeof bridge.apiGet === "function") {
-        if (method === "GET") return await bridge.apiGet(endpoint, params || {});
-        if (typeof bridge.apiPost === "function") return await bridge.apiPost(endpoint, body || {});
-      }
-      // 兜底：直接访问 Dashboard 转发路由
-      let url = `${FALLBACK_BASE}/${endpoint}`;
-      if (method === "GET" && params) {
-        const qs = new URLSearchParams(params).toString();
-        if (qs) url += `?${qs}`;
-      }
-      const resp = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: method === "GET" ? undefined : JSON.stringify(body || {}),
-      });
-      const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok || payload.status === "error") {
-        throw new Error(payload.message || `请求失败（HTTP ${resp.status}）`);
-      }
-      return payload.data;
-    }
-
-    function escapeHtml(text) {
-      return String(text == null ? "" : text)
-        .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-    }
-
-    function fmtTime(ts) {
-      const value = Number(ts || 0);
-      if (!value) return "—";
-      const d = new Date(value * 1000);
-      const pad = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
-    async function loadOverview() {
-      try {
-        const data = await callApi("overview");
-        const memory = data.memory || {};
-        const caps = data.capabilities || {};
-        const enabledCount = Object.values(caps).filter(Boolean).length;
-
-        const fw = data.framework || {};
-        const missing = fw.missing || [];
-        document.getElementById("subtitle").innerHTML =
-          `插件 ${escapeHtml(data.plugin_version || "未知")}　` +
-          `AstrBot ${escapeHtml(fw.version || "未知")}　` +
-          `就绪：<span class="pill ${data.ready ? "ok" : "warn"}">${data.ready ? "是" : "否"}</span>　` +
-          `数据库：${escapeHtml(data.database || "未初始化")}　` +
-          `FTS：<span class="pill ${data.fts ? "ok" : "warn"}">${data.fts ? "可用" : "降级"}</span>　` +
-          `能力：${enabledCount}/${Object.keys(caps).length}　` +
-          `向量：<span class="pill ${memory.vector_available ? "ok" : "warn"}">${memory.vector_available ? "可用" : "降级"}</span>` +
-          (missing.length
-            ? `　<span class="pill warn" title="缺失的框架符号：${escapeHtml(missing.join("、"))}">符号缺失 ${missing.length}</span>`
-            : "");
-
-        const cards = [
-          ["正式记忆", memory.active],
-          ["对话缓冲", memory.buffered],
-          ["周记", memory.journals],
-          ["归档", memory.archived],
-          ["后台任务", data.pending_tasks],
-        ];
-        document.getElementById("cards").innerHTML = cards.map(([label, value]) =>
-          `<div class="card"><div class="label">${label}</div><div class="value">${escapeHtml(value ?? "—")}</div></div>`
-        ).join("");
-
-        const degraded = data.degraded || [];
-        if (degraded.length) {
-          document.getElementById("cards").innerHTML +=
-            `<div class="card"><div class="label">未生效能力</div><pre>${escapeHtml(
-              degraded.map((d) => `${d.capability}：${d.reason}`).join("\n")
-            )}</pre></div>`;
-        }
-
-        const jobs = data.scheduler || [];
-        document.getElementById("jobs").innerHTML = jobs.length
-          ? `<table><thead><tr><th>任务</th><th>类型</th><th>运行</th><th>失败</th><th>下次</th><th>最近错误</th></tr></thead><tbody>${
-              jobs.map((j) => `<tr>
-                <td>${escapeHtml(j.key)}</td>
-                <td>${escapeHtml(j.kind)}</td>
-                <td>${escapeHtml(j.runs)}</td>
-                <td>${escapeHtml(j.failures)}</td>
-                <td>${j.seconds_to_next == null ? "—" : Math.round(j.seconds_to_next) + "s 后"}</td>
-                <td class="muted">${escapeHtml(j.last_error || "—")}</td>
-              </tr>`).join("")
-            }</tbody></table>`
-          : `<div class="empty">暂无调度任务。</div>`;
-      } catch (err) {
-        document.getElementById("subtitle").textContent = `加载失败：${err.message}`;
-      }
-    }
-
-    async function loadMemories() {
-      try {
-        const rows = await callApi("memories", { params: { limit: 20 } });
-        const list = Array.isArray(rows) ? rows : [];
-        document.getElementById("memories").innerHTML = list.length
-          ? `<table><thead><tr><th>#</th><th>内容</th><th>类型</th><th>来源</th><th>作用域</th><th>重要度</th><th>创建</th></tr></thead><tbody>${
-              list.map((m) => `<tr>
-                <td>${escapeHtml(m.id)}</td>
-                <td class="content">${escapeHtml(m.content)}</td>
-                <td>${escapeHtml(m.kind)}</td>
-                <td>${escapeHtml(m.source)}</td>
-                <td class="muted">${escapeHtml(m.scope)}</td>
-                <td>${escapeHtml(Number(m.importance || 0).toFixed(2))}</td>
-                <td class="muted">${fmtTime(m.created_at)}</td>
-              </tr>`).join("")
-            }</tbody></table>`
-          : `<div class="empty">暂无记忆。</div>`;
-      } catch (err) {
-        document.getElementById("memories").innerHTML = `<div class="empty">加载失败：${escapeHtml(err.message)}</div>`;
-      }
-    }
-
-    async function loadJournals() {
-      try {
-        const rows = await callApi("journals", { params: { limit: 10 } });
-        const list = Array.isArray(rows) ? rows : [];
-        document.getElementById("journals").innerHTML = list.length
-          ? `<table><thead><tr><th>#</th><th>内容</th><th>标签</th><th>情绪</th><th>时间</th></tr></thead><tbody>${
-              list.map((j) => `<tr>
-                <td>${escapeHtml(j.id)}</td>
-                <td class="content">${escapeHtml(j.content)}</td>
-                <td class="muted">${escapeHtml(j.tags)}</td>
-                <td>${escapeHtml(j.emotion ?? "—")}</td>
-                <td class="muted">${fmtTime(j.event_time)}</td>
-              </tr>`).join("")
-            }</tbody></table>`
-          : `<div class="empty">暂无周记。可在聊天中使用 <code>/sab journal 内容 #标签</code> 记录。</div>`;
-      } catch (err) {
-        document.getElementById("journals").innerHTML = `<div class="empty">加载失败：${escapeHtml(err.message)}</div>`;
-      }
-    }
-
-    async function loadReviews() {
-      try {
-        const rows = await callApi("reviews", { params: { limit: 20 } });
-        const list = Array.isArray(rows) ? rows : [];
-        if (!list.length) {
-          document.getElementById("reviews").innerHTML = `<div class="empty">待审队列为空（或未开启审批模式）。</div>`;
-          return;
-        }
-        document.getElementById("reviews").innerHTML =
-          `<table><thead><tr><th>#</th><th>内容</th><th>类型</th><th>操作</th></tr></thead><tbody>${
-            list.map((r) => `<tr>
-              <td>${escapeHtml(r.id)}</td>
-              <td class="content">${escapeHtml(r.content)}</td>
-              <td>${escapeHtml(r.kind)}</td>
-              <td><button class="ghost" data-action="approve" data-id="${escapeHtml(r.id)}">批准</button>
-                  <button class="ghost" data-action="reject" data-id="${escapeHtml(r.id)}">驳回</button></td>
-            </tr>`).join("")
-          }</tbody></table>`;
-
-        document.querySelectorAll("#reviews button[data-action]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            btn.disabled = true;
-            try {
-              await callApi("review-action", {
-                method: "POST",
-                body: { id: Number(btn.dataset.id), action: btn.dataset.action },
-              });
-              await loadReviews();
-            } catch (err) {
-              alert(`操作失败：${err.message}`);
-              btn.disabled = false;
-            }
-          });
-        });
-      } catch (err) {
-        document.getElementById("reviews").innerHTML = `<div class="empty">加载失败：${escapeHtml(err.message)}</div>`;
-      }
-    }
-
-    async function runSearch() {
-      const query = document.getElementById("search-input").value.trim();
-      const umo = document.getElementById("umo-input").value.trim();
-      const box = document.getElementById("search-result");
-      if (!query) {
-        box.innerHTML = `<div class="empty">请输入关键词。</div>`;
-        return;
-      }
-      box.innerHTML = `<div class="empty">检索中…</div>`;
-      try {
-        const data = await callApi("search", { method: "POST", body: { query, umo: umo || undefined } });
-        const items = (data && data.items) || [];
-        const meta = `检索路：${escapeHtml((data && data.routes) || "—")}　耗时：${
-          data && data.elapsed_ms != null ? data.elapsed_ms + "ms" : "—"
-        }${data && data.degraded ? "　⚠ " + escapeHtml(data.degraded) : ""}`;
-        box.innerHTML = `<div class="muted" style="margin-bottom:6px">${meta}</div>` + (
-          items.length
-            ? `<table><thead><tr><th>#</th><th>内容</th><th>分数</th><th>打分构成</th></tr></thead><tbody>${
-                items.map((m) => {
-                  const b = m.breakdown || {};
-                  const detail = Object.keys(b).length
-                    ? Object.entries(b).map(([k, v]) => `${k}=${Number(v).toFixed(3)}`).join("　")
-                    : "—";
-                  return `<tr>
-                    <td>${escapeHtml(m.id)}</td>
-                    <td class="content">${escapeHtml(m.content)}</td>
-                    <td>${m.score == null ? "—" : Number(m.score).toFixed(3)}</td>
-                    <td class="muted">${escapeHtml(detail)}</td>
-                  </tr>`;
-                }).join("")
-              }</tbody></table>`
-            : `<div class="empty">没有匹配的记忆。</div>`
-        );
-      } catch (err) {
-        box.innerHTML = `<div class="empty">检索失败：${escapeHtml(err.message)}</div>`;
-      }
-    }
-
-    async function refreshAll() {
-      await Promise.all([loadOverview(), loadMemories(), loadJournals(), loadReviews()]);
-    }
-
-    document.getElementById("btn-refresh").addEventListener("click", refreshAll);
-    document.getElementById("btn-search").addEventListener("click", runSearch);
-    document.getElementById("search-input").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") runSearch();
-    });
-
-    (async function init() {
-      if (bridge && typeof bridge.ready === "function") {
-        try {
-          const ctx = await bridge.ready();
-          if (ctx && ctx.displayName) {
-            document.title = `${ctx.displayName} 控制台`;
-          }
-        } catch (err) {
-          console.warn("bridge ready 失败，使用兜底请求方式", err);
-        }
-      }
-      await refreshAll();
-    })();
-  </script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

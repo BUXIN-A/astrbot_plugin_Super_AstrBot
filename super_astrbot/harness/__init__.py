@@ -33,6 +33,7 @@ from .protocols import (
     ProviderInfo,
     TokenUsage,
 )
+from .schema_options import clear_options, inject_string_options
 
 __all__ = [
     "Harness",
@@ -46,6 +47,8 @@ __all__ = [
     "to_event_view",
     "is_event_stopped",
     "compat",
+    "inject_string_options",
+    "clear_options",
     "Host",
     "LlmGateway",
     "EmbeddingGateway",
