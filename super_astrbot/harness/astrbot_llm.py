@@ -37,24 +37,8 @@ PERSONA_BLOCK_END = "[/SuperAstrBot 学习参考]"
 
 
 def _provider_meta(provider: Any) -> dict[str, str]:
-    """从 Provider 提取 id/type/model，全部防御式读取。"""
-    meta_obj = None
-    meta_fn = getattr(provider, "meta", None)
-    if callable(meta_fn):
-        try:
-            meta_obj = meta_fn()
-        except Exception:  # noqa: BLE001
-            meta_obj = None
-    meta_obj = meta_obj or provider
-
-    def _pick(name: str) -> str:
-        value = getattr(meta_obj, name, None)
-        if value is None:
-            return ""
-        value = getattr(value, "value", value)  # 处理 Enum
-        return str(value)
-
-    return {"id": _pick("id"), "type": _pick("type"), "model": _pick("model")}
+    """从 Provider 提取 id/type/model（实现集中在 ``compat.provider_meta``）。"""
+    return compat.provider_meta(provider)
 
 
 def _to_context_dicts(contexts: Sequence[ChatMessage] | None) -> list[dict[str, Any]] | None:
@@ -363,23 +347,8 @@ class AstrBotEmbeddingGateway:
 
     def _configured_embedding_entries(self) -> list[dict[str, Any]]:
         # 注意：provider_manager 可能是会抛异常的属性/代理对象，
-        # getattr 并不吞异常，因此这里必须显式包裹，否则枚举失败会外泄。
-        try:
-            manager = getattr(self._context, "provider_manager", None)
-            configs = getattr(manager, "providers_config", None)
-        except Exception as exc:  # noqa: BLE001
-            self._host.log().debug("读取提供商配置失败：%s", safe_detail(exc))
-            return []
-        if not isinstance(configs, (list, tuple)):
-            return []
-        entries: list[dict[str, Any]] = []
-        for item in configs:
-            if not isinstance(item, dict):
-                continue
-            provider_type = str(item.get("provider_type") or "").lower()
-            if provider_type == "embedding" or provider_type.endswith("_embedding"):
-                entries.append(item)
-        return entries
+        # getattr 并不吞异常，因此读取逻辑集中在 compat 里显式包裹。
+        return compat.configured_provider_entries(self._context, "embedding")
 
     @property
     def available(self) -> bool:

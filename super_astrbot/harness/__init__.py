@@ -29,6 +29,7 @@ from .astrbot_llm import (
     AstrBotInjector,
     AstrBotLlmGateway,
 )
+from .astrbot_rerank import AstrBotRerankGateway
 from .protocols import (
     BudgetGuard,
     ChatMessage,
@@ -44,6 +45,8 @@ from .protocols import (
     LoggerLike,
     MemoryToolBackend,
     ProviderInfo,
+    RerankGateway,
+    RerankHit,
     TokenUsage,
 )
 from .schema_options import clear_options, inject_string_options
@@ -63,6 +66,7 @@ __all__ = [
     "AstrBotHost",
     "AstrBotLlmGateway",
     "AstrBotEmbeddingGateway",
+    "AstrBotRerankGateway",
     "AstrBotInjector",
     "MEMORY_BLOCK_START",
     "MEMORY_BLOCK_END",
@@ -89,6 +93,8 @@ __all__ = [
     "Host",
     "LlmGateway",
     "EmbeddingGateway",
+    "RerankGateway",
+    "RerankHit",
     "Injector",
     "BudgetGuard",
     "MemoryToolBackend",
@@ -111,6 +117,7 @@ class Harness:
     host: AstrBotHost
     llm: AstrBotLlmGateway
     embedding: AstrBotEmbeddingGateway
+    rerank: AstrBotRerankGateway
     injector: AstrBotInjector
     persona_injector: AstrBotInjector
     """拟人化学习专用注入器：使用独立边界标记，与记忆注入互不覆盖。"""
@@ -136,6 +143,7 @@ def create_harness(
     budget: Any | None = None,
     llm_timeout: float = 45.0,
     embedding_provider_id: str = "",
+    rerank_provider_id: str = "",
     llm_observer: Any | None = None,
 ) -> Harness:
     """构建 Harness 容器。"""
@@ -144,6 +152,7 @@ def create_harness(
         context, host, timeout=llm_timeout, budget=budget, observer=llm_observer
     )
     embedding = AstrBotEmbeddingGateway(context, host, provider_id=embedding_provider_id)
+    rerank = AstrBotRerankGateway(context, host, provider_id=rerank_provider_id)
     injector = AstrBotInjector(host)
     persona_injector = AstrBotInjector(
         host, block_start=PERSONA_BLOCK_START, block_end=PERSONA_BLOCK_END
@@ -152,6 +161,7 @@ def create_harness(
         host=host,
         llm=llm,
         embedding=embedding,
+        rerank=rerank,
         injector=injector,
         persona_injector=persona_injector,
     )

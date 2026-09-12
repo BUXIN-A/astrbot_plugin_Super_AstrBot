@@ -106,6 +106,16 @@ class CommandService:
                 )
             )
 
+        rerank = data.get("rerank") or {}
+        if rerank:
+            if not rerank.get("enabled"):
+                lines.append("- 重排序：关闭")
+            else:
+                model = rerank.get("model") or "自动"
+                state = rerank.get("state") or ""
+                provider = rerank.get("provider_id") or "自动选择"
+                lines.append(f"- 重排序：开启（提供商 {provider}／模型 {model}／状态 {state}）")
+
         graph = data.get("graph") or {}
         if graph:
             lines.append(
@@ -220,6 +230,9 @@ class CommandService:
         except Exception as exc:  # noqa: BLE001
             return f"检索失败：{safe_detail(exc)}"
         header = f"检索「{text}」：命中 {len(result.items)} 条（{result.route_summary}，{result.elapsed_ms:.0f}ms）"
+        summary = result.rerank_summary
+        if summary:
+            header += f"\n{summary}"
         return f"{header}\n{memory.format_results(result, with_score=True)}"
 
     async def why(self, view: EventView, query: str) -> str:

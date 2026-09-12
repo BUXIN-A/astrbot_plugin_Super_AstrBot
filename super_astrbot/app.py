@@ -47,6 +47,7 @@ from .memory import (
     MemoryConfig,
     MemoryLifecycle,
     MemoryService,
+    Reranker,
     VectorRetriever,
 )
 from .memory.retriever import GraphRetriever
@@ -66,6 +67,10 @@ from .monitor import (
     METRIC_PERSONA_LEARNED,
     METRIC_PROACTIVE_SENT,
     METRIC_PROACTIVE_SKIPPED,
+    METRIC_RERANK_CALLS,
+    METRIC_RERANK_CANDIDATES,
+    METRIC_RERANK_FAILURES,
+    METRIC_RERANK_LATENCY_MS,
     METRIC_RETRIEVAL_CALLS,
     METRIC_RETRIEVAL_HITS,
     METRIC_RETRIEVAL_LATENCY_MS,
@@ -125,7 +130,10 @@ _SCHEMA_SYNC_INTERVAL = 600.0
 因此运行时注入的下拉选项会丢失，必须周期性重新注入。"""
 
 _EMBEDDING_FIELD_PATH = ("memory", "embedding_provider_id")
-"""需要动态注入选项的配置字段路径。"""
+"""需要动态注入选项的配置字段路径（嵌入模型）。"""
+
+_RERANK_FIELD_PATH = ("memory", "rerank_provider_id")
+"""需要动态注入选项的配置字段路径（重排序模型）。"""
 
 _JOB_PROACTIVE_DAILY = "proactive-daily"
 _JOB_PROACTIVE_IDLE = "proactive-idle"
@@ -618,6 +626,7 @@ class SuperAstrBotApp:
             memory.capture = self._enabled("memory.capture")
             memory.capture_groups = self._enabled("memory.capture_groups")
             memory.capture_private = self._enabled("memory.capture_private")
+            memory.rerank_enabled = self._enabled("memory.rerank_enabled")
         if self._journal_config is not None:
             self._journal_config.enabled = self._enabled("journal.enabled")
         if self._reflection_config is not None:
@@ -687,6 +696,26 @@ class SuperAstrBotApp:
             retriever.add_route(GraphRetriever(self._graph_service, logger=self._logger))
         else:
             retriever.remove_route(GraphRetriever.name)
+
+    def _sync_rerank(self) -> None:
+        """把重排序配置与网关推给检索器（热切换，无需重建检索路）。
+
+        每次都会 ``refresh()`` 网关：ProviderManager 可能在插件启动之后才加载，
+        或框架重建了 Provider 实例（旧实例的连接已关闭）。
+        """
+        retriever = self._retriever
+        if retriever is None or self._memory_config is None:
+            return
+        gateway = self._harness.rerank if self._harness is not None else None
+        if gateway is not None:
+            try:
+                gateway.refresh()
+            except Exception as exc:  # noqa: BLE001 - 重新探测失败不影响流程
+                self._debug("重排序提供商重新探测失败：%s", safe_detail(exc))
+        try:
+            retriever.configure_rerank(self._memory_config.retrieval_config(), gateway)
+        except Exception as exc:  # noqa: BLE001
+            self._debug("重排序热切换失败：%s", safe_detail(exc))
 
     def _sync_scheduler_jobs(self) -> None:
         """按能力开关启停定时任务。"""
@@ -828,6 +857,7 @@ class SuperAstrBotApp:
 
         self._sync_derived_configs()
         self._sync_retriever_routes()
+        self._sync_rerank()
         self._sync_scheduler_jobs()
 
         changed = {
@@ -1024,6 +1054,9 @@ class SuperAstrBotApp:
                 embedding_provider_id=str(
                     get_path(self._config, "memory.embedding_provider_id", "") or ""
                 ),
+                rerank_provider_id=str(
+                    get_path(self._config, "memory.rerank_provider_id", "") or ""
+                ),
                 llm_observer=self._on_llm_call,
             )
         except Exception as exc:  # noqa: BLE001 - Harness 失败则整体不可用
@@ -1070,10 +1103,17 @@ class SuperAstrBotApp:
                 )
             )
 
+        retrieval_config = self._memory_config.retrieval_config()
         retriever = HybridRetriever(
             routes=routes,
             memories=self._memories,
-            config=self._memory_config.retrieval_config(),
+            config=retrieval_config,
+            reranker=Reranker(
+                config=retrieval_config.rerank,
+                gateway=self._harness.rerank,
+                observer=self._on_rerank,
+                logger=self._logger,
+            ),
             logger=self._logger,
         )
         # 保存引用：功能开关热切换时需要增删检索路
@@ -1292,45 +1332,77 @@ class SuperAstrBotApp:
             self._debug("枚举嵌入提供商失败：%s", safe_detail(exc))
             return []
 
+    def rerank_providers(self) -> list[Any]:
+        """当前可选的重排序模型提供商。"""
+        if self._harness is None:
+            return []
+        try:
+            return list(self._harness.rerank.list_providers())
+        except Exception as exc:  # noqa: BLE001
+            self._debug("枚举重排序提供商失败：%s", safe_detail(exc))
+            return []
+
     def sync_schema_options(self) -> bool:
-        """把真实嵌入模型列表注入插件配置 schema 的下拉选项。
+        """把真实的嵌入 / 重排序模型列表注入插件配置 schema 的下拉选项。
 
         AstrBot 的 ``_special: "select_provider"`` 只列对话模型且无法按类型过滤，
         因此这里改用运行时注入。三种情形：
 
-        - 有嵌入提供商 → 注入 ``options``，字段渲染为下拉框；
-        - 无嵌入提供商 → **移除** ``options``，字段退回文本框，用户可手填 ID；
+        - 有提供商 → 注入 ``options``，字段渲染为下拉框；
+        - 无提供商 → **移除** ``options``，字段退回文本框，用户可手填 ID；
         - 注入失败（如 schema 结构不符）→ 静默返回 ``False``，不影响功能。
 
         第 2 条很关键：如果注入一个只有「自动选择」的空列表，字段会变成无法输入的下拉框，
-        反而把用户锁死。
+        反而把用户锁死。返回值为「是否至少有一个字段成功注入」。
         """
+        embedding_ok = self._sync_provider_options(
+            _EMBEDDING_FIELD_PATH,
+            self.embedding_providers(),
+            config_key="memory.embedding_provider_id",
+            auto_label="（自动选择第一个可用的嵌入模型）",
+        )
+        rerank_ok = self._sync_provider_options(
+            _RERANK_FIELD_PATH,
+            self.rerank_providers(),
+            config_key="memory.rerank_provider_id",
+            auto_label="（自动选择第一个可用的重排序模型）",
+        )
+        return embedding_ok or rerank_ok
+
+    def _sync_provider_options(
+        self,
+        path: tuple[str, ...],
+        providers: list[Any],
+        *,
+        config_key: str,
+        auto_label: str,
+    ) -> bool:
+        """把某一类提供商列表注入到指定字段的下拉选项。"""
         from .spec.capabilities import get_path
 
-        providers = self.embedding_providers()
         if not providers:
-            clear_options(self._config, _EMBEDDING_FIELD_PATH)
+            clear_options(self._config, path)
             return False
 
         options = [""]
-        labels = ["（自动选择第一个可用的嵌入模型）"]
+        labels = [auto_label]
         for info in providers:
             options.append(info.id)
             labels.append(f"{info.id} · {info.model}" if info.model else info.id)
 
-        current = str(get_path(self._config, "memory.embedding_provider_id", "") or "")
+        current = str(get_path(self._config, config_key, "") or "")
         if current and current not in options:
             # 保留「已配置但当前不可用」的值，避免下拉框把用户设置清空
             options.append(current)
             labels.append(f"{current}（当前不可用）")
 
         try:
-            injected = inject_string_options(self._config, _EMBEDDING_FIELD_PATH, options, labels)
+            injected = inject_string_options(self._config, path, options, labels)
         except Exception as exc:  # noqa: BLE001
-            self._debug("注入配置下拉选项失败：%s", safe_detail(exc))
+            self._debug("注入配置下拉选项失败（%s）：%s", config_key, safe_detail(exc))
             return False
         if injected:
-            self._debug("已注入 %s 个嵌入模型选项", len(providers))
+            self._debug("已为 %s 注入 %s 个选项", config_key, len(providers))
         return injected
 
     async def _schema_sync_loop(self) -> None:
@@ -1720,6 +1792,15 @@ class SuperAstrBotApp:
         if tokens:
             record(METRIC_LLM_TOKENS, total=float(tokens))
 
+    def _on_rerank(self, source: str, ok: bool, duration_ms: float, candidates: int) -> None:
+        """重排序回调：调用次数/耗时/候选数/失败（失败后已由检索层回退）。"""
+        record(METRIC_RERANK_CALLS)
+        record(METRIC_RERANK_LATENCY_MS, total=duration_ms)
+        if ok:
+            record(METRIC_RERANK_CANDIDATES, total=float(candidates))
+        else:
+            record(METRIC_RERANK_FAILURES)
+
     def _on_job(self, key: str, ok: bool, duration_ms: float) -> None:
         """调度器回调：任务运行次数/失败次数/耗时。"""
         record(METRIC_SCHEDULER_RUNS)
@@ -1844,6 +1925,31 @@ class SuperAstrBotApp:
     # 对外状态
     # ------------------------------------------------------------------ #
 
+    def _rerank_status(self) -> dict[str, Any]:
+        """重排序能力概览（供命令与面板展示）。"""
+        config = self._memory_config
+        if config is None:
+            return {}
+        gateway = self._harness.rerank if self._harness is not None else None
+        available = False
+        model = ""
+        if gateway is not None:
+            try:
+                available = bool(gateway.available)
+                model = gateway.model() if available else ""
+            except Exception as exc:  # noqa: BLE001 - 状态查询失败不应影响 status
+                self._debug("读取重排序状态失败：%s", safe_detail(exc))
+        return {
+            "enabled": self._enabled("memory.rerank_enabled"),
+            "available": available,
+            "model": model,
+            "provider_id": config.rerank_provider_id,
+            "fallback": config.rerank_fallback,
+            "candidates": config.rerank_candidates,
+            "weight": config.rerank_weight,
+            "state": self._retriever.rerank_note if self._retriever is not None else "未启用",
+        }
+
     async def status(self, *, umo: str = "") -> dict[str, Any]:
         """汇总运行状态，供命令与面板使用。
 
@@ -1896,6 +2002,7 @@ class SuperAstrBotApp:
         if self._monitor_service is not None:
             monitor = await self._monitor_service.snapshot()
         maibot = self._maibot_service.snapshot() if self._maibot_service is not None else {}
+        rerank = self._rerank_status()
         if umo:
             if self._group_service is not None:
                 group = {**group, "session": self._group_service.session_snapshot(umo)}
@@ -1930,6 +2037,7 @@ class SuperAstrBotApp:
             "review": review,
             "monitor": monitor,
             "maibot": maibot,
+            "rerank": rerank,
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,
             "database": str(self._db.path) if self._db is not None else "",
             "fts": bool(self._db.fts_available) if self._db is not None else False,

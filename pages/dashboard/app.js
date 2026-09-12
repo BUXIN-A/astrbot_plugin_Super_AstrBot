@@ -724,6 +724,7 @@ async function runRecall() {
       `检索路：${result.routes || "—"}`,
       `耗时：${result.elapsed_ms !== undefined ? `${result.elapsed_ms}ms` : "—"}`,
     ];
+    if (result.rerank) parts.push(result.rerank);
     if (result.degraded) parts.push(`提示：${result.degraded}`);
     meta.textContent = parts.join("　|　");
 
@@ -746,11 +747,15 @@ async function runRecall() {
           title: "打分构成",
           render: (row) => {
             const breakdown = row.breakdown || {};
-            const keys = Object.keys(breakdown);
-            if (keys.length === 0) return `<span class="muted">—</span>`;
-            return `<span class="muted">${esc(
-              keys.map((key) => `${key}=${num(breakdown[key], 3)}`).join("  ")
-            )}</span>`;
+            // 只渲染数值项；rerank_source 是来源标签，单独翻译成中文可读说明。
+            const chips = Object.entries(breakdown)
+              .filter(([, value]) => typeof value === "number")
+              .map(([key, value]) => `${key}=${num(value, 3)}`);
+            const source = breakdown.rerank_source;
+            if (source === "provider") chips.push("重排序=模型");
+            else if (source === "lexical") chips.push("重排序=词法兜底");
+            if (chips.length === 0) return `<span class="muted">—</span>`;
+            return `<span class="muted">${esc(chips.join("  "))}</span>`;
           },
         },
       ],
@@ -939,9 +944,14 @@ async function loadSystem(force = false) {
     const data = state.overview;
     const framework = data.framework || {};
     const memory = data.memory || {};
+    const rerank = data.rerank || {};
 
     const kv = (label, value) =>
       `<div class="kv"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div></div>`;
+
+    const rerankText = !rerank.enabled
+      ? "关闭"
+      : `${rerank.available ? "可用" : "模型不可用（回退 " + (rerank.fallback || "none") + "）"} · ${rerank.state || ""}`;
 
     $("sys-fw").innerHTML = [
       kv("插件版本", data.plugin_version || "—"),
@@ -953,6 +963,7 @@ async function loadSystem(force = false) {
       kv("检索路", (memory.routes || []).join(" + ") || "—"),
       kv("注入方式", memory.injection_method || "—"),
       kv("向量能力", memory.vector_available ? "可用" : "不可用"),
+      kv("重排序能力", rerankText),
       kv("后台任务", String(data.pending_tasks ?? "—")),
     ].join("");
 

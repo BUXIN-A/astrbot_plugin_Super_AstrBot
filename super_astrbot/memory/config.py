@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from ..spec.capabilities import as_bool, as_float, as_int, as_str, get_path
 from ..spec.scopes import ScopeType
 from .retriever.hybrid import RetrievalConfig
+from .retriever.rerank import FALLBACK_LEXICAL, FALLBACK_MODES, RerankSettings
 
 INJECTION_EXTRA = "extra_user_content"
 INJECTION_SYSTEM = "system_prompt"
@@ -44,6 +45,15 @@ class MemoryConfig:
     vector_max_scan: int = 5000
     journal_boost: float = 0.15
 
+    # --- 重排序（Rerank） ---
+    rerank_enabled: bool = False
+    rerank_provider_id: str = ""
+    rerank_candidates: int = 20
+    rerank_min_candidates: int = 3
+    rerank_weight: float = 0.7
+    rerank_fallback: str = FALLBACK_LEXICAL
+    rerank_timeout: float = 8.0
+
     # --- 注入 ---
     injection_method: str = INJECTION_EXTRA
     max_injected_chars: int = 1800
@@ -59,6 +69,11 @@ class MemoryConfig:
         method = as_str(get_path(config, "memory.injection_method", INJECTION_EXTRA))
         if method not in {INJECTION_EXTRA, INJECTION_SYSTEM, INJECTION_DISABLED}:
             method = INJECTION_EXTRA
+        fallback = (
+            as_str(get_path(config, "memory.rerank_fallback", FALLBACK_LEXICAL)).strip().lower()
+        )
+        if fallback not in FALLBACK_MODES:
+            fallback = FALLBACK_LEXICAL
         return cls(
             capture=as_bool(get_path(config, "memory.capture", True), True),
             capture_groups=as_bool(get_path(config, "memory.capture_groups", True), True),
@@ -99,6 +114,24 @@ class MemoryConfig:
             journal_boost=as_float(
                 get_path(config, "journal.retrieval_boost", 0.15), 0.15, low=0.0, high=1.0
             ),
+            rerank_enabled=as_bool(get_path(config, "memory.rerank_enabled", False), False),
+            rerank_provider_id=as_str(get_path(config, "memory.rerank_provider_id", "")),
+            rerank_candidates=as_int(
+                get_path(config, "memory.rerank_candidates", 20), 20, low=2, high=100
+            ),
+            rerank_min_candidates=as_int(
+                get_path(config, "memory.rerank_min_candidates", 3), 3, low=2, high=20
+            ),
+            rerank_weight=as_float(
+                get_path(config, "memory.rerank_weight", 0.7), 0.7, low=0.0, high=1.0
+            ),
+            rerank_fallback=fallback,
+            rerank_timeout=as_float(
+                get_path(config, "runtime.rerank_timeout_seconds", 8.0),
+                8.0,
+                low=1.0,
+                high=60.0,
+            ),
             injection_method=method,
             max_injected_chars=as_int(
                 get_path(config, "memory.max_injected_chars", 1800), 1800, low=100, high=20000
@@ -116,4 +149,12 @@ class MemoryConfig:
             dedup_similarity=self.dedup_similarity,
             half_life_days=self.half_life_days,
             journal_boost=self.journal_boost,
+            rerank=RerankSettings(
+                enabled=self.rerank_enabled,
+                fallback=self.rerank_fallback,
+                candidates=self.rerank_candidates,
+                min_candidates=self.rerank_min_candidates,
+                weight=self.rerank_weight,
+                timeout=self.rerank_timeout,
+            ),
         )

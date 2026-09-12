@@ -84,6 +84,7 @@
 | `memory.capture_private` | 记忆 | on | `memory.capture` | ✅ | 私聊消息是否进入对话缓冲 |
 | `memory.fts_enabled` | 记忆 | on | `memory.enabled` | ✅ | 关键词全文检索路 |
 | `memory.vector_enabled` | 记忆 | on | `memory.enabled` + 存在 Embedding Provider | ✅ | 向量语义检索路；不可用时静默降级 |
+| `memory.rerank_enabled` | 记忆 | **off** | `memory.enabled` | ✅ | 重排序模型精选 top-k；不可用时回退本地词法重排（见 6.3） |
 | `reflection.enabled` | 自我学习 | on | `memory.enabled` | ✅ | 反思式自我学习 |
 | `journal.enabled` | 周记 | on | `basic.enabled` | ✅ | 周记现实记忆 |
 | `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
@@ -273,9 +274,10 @@ class EventView:
 2. **向量路**（可选）：将查询向量化后与 `memory_vectors` 做暴力余弦，得到 `rank_vec`；无可用 Embedding Provider 或未启用时该路返回空。
 3. **图谱路**（可选）：查询词命中实体后取关联记忆（可选二跳邻居），得到 `rank_graph`；未启用知识图谱时该路被移除（见第 14 节）。
 4. **融合**：RRF：`score = Σ 1/(k + rank_i)`，k 取配置 `fusion_rrf_k`。
-5. **加权**：`final = w_rel · norm(rrf) + w_imp · importance + w_rec · recency`，其中 `recency = 0.5 ^ (age_days / half_life_days)`。
-6. **后处理**：过滤 `final < min_score`；按 `dedup_similarity` 做词袋去重；周记来源额外加 `journal.retrieval_boost`；截断到 `top_k`。
-7. **可观测**：每条结果附带 `score_breakdown`，供 `/sab why` 与面板排查。
+5. **重排序**（可选，见 6.3）：对融合后的候选按查询相关性重打分，再与融合分混合。
+6. **加权**：`final = w_rel · norm(rrf) + w_imp · importance + w_rec · recency`，其中 `recency = 0.5 ^ (age_days / half_life_days)`。
+7. **后处理**：过滤 `final < min_score`；按 `dedup_similarity` 做词袋去重；周记来源额外加 `journal.retrieval_boost`；截断到 `top_k`。
+8. **可观测**：每条结果附带 `score_breakdown`，供 `/sab why` 与面板排查。
 
 **降级要求**：任一路（向量/图谱）异常或不可用时，检索必须仍能返回其余路结果，不得整体失败。
 
@@ -286,6 +288,32 @@ class EventView:
 - 字符预算 `max_injected_chars` 内按分数从高到低填充，超出即停止（不截断单条导致语义破损，除非单条即超限）。
 - 注入前必须清理上一轮可能残留的同类注入块（按固定前缀识别）。
 - 方式为 `system_prompt` 时采用「保守追加」策略；`disabled` 时只检索不注入。
+
+### 6.3 重排序（Rerank）
+
+目标：用重排序模型提升 top-k 精度，同时保证「模型不可用/出错」**绝不**让召回失败或显著变慢。
+
+1. **候选扩充**：启用时先多召回（`fetch = max(top_k × candidate_multiplier, rerank_candidates)`），
+   把融合分最高的前 `rerank_candidates` 条交给模型。
+2. **调用**：`harness.rerank`（`RerankGateway`）→ AstrBot 重排序提供商；查询截断到 512 字符、
+   单条文档截断到 1024 字符；单次调用超时 `runtime.rerank_timeout_seconds`。
+   网关用**鸭子类型**读取返回结果（兼容对象与字典），不硬依赖框架内部模块，且永不抛异常。
+3. **分数口径**：提供商相关性分先做 **min-max 归一化**到 `[0,1]`（量纲差异极大，且可能为负），
+   未被评分的候选记 0（最低）；随后 `relevance = w · rerank + (1-w) · norm(rrf)`，
+   `w = memory.rerank_weight`（留出余量，避免模型分完全压过重要性与新近度）。
+4. **回退链**（自上而下短路，任何一层都不抛异常）：
+   - 未启用 → 纯融合排名（`rerank_source=off`）；
+   - 候选数 < `rerank_min_candidates` → **跳过模型调用**（省延迟），按回退策略处理；
+   - 熔断期内（连续失败 3 次，冷却 300 秒）→ 直接按回退策略处理；
+   - 模型不可用 / 调用异常 / 超时 / 返回空 → 记一次失败并按回退策略处理；
+   - 回退策略 `memory.rerank_fallback`：`lexical`（默认，零成本本地词法重排）/ `none`（不重排）。
+5. **本地词法重排**：`0.65 × 查询词覆盖率 + 0.35 × Dice 相似度`（仅用分词结果，无模型调用），
+   再 min-max 归一化；空查询返回空表（等价于不重排）。
+6. **可观测**：`RetrievalResult.rerank_source` / `rerank_note` / `rerank_summary`；
+   `score_breakdown` 增加 `rerank`（生效时）与 `rerank_source`；
+   指标 `rerank.calls` / `rerank.failures` / `rerank.latency_ms` / `rerank.candidates`。
+7. **热切换**：能力开关或配置变更后，由 `app._sync_rerank()` 就地重配（并 `refresh()` 网关，
+   因为框架可能重建 Provider 实例），无需重载插件。
 
 ---
 
@@ -803,6 +831,7 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | `llm.calls` / `llm.errors` / `llm.latency_ms` / `llm.tokens` / `llm.budget_blocked` | LLM 网关的调用观察者（依赖倒置注入，harness 不反向依赖业务域） |
 | `scheduler.runs` / `scheduler.failures` / `scheduler.duration_ms` | 调度器任务观察者 |
 | `retrieval.calls` / `retrieval.latency_ms` / `retrieval.hits` | 记忆召回返回后 |
+| `rerank.calls` / `rerank.failures` / `rerank.latency_ms` / `rerank.candidates` | 重排序执行回调（失败已由检索层回退，指标用于判断回退频率） |
 | `inject.blocks` / `inject.chars` | 记忆与拟人化注入成功时 |
 | `memory.writes` / `memory.total` | 缓冲与反思写入、每日维护刷新 gauge |
 | `review.pending` / `review.auto_approved` / `review.auto_rejected` | 自动审核与 gauge 刷新 |
@@ -974,6 +1003,8 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | 分级闸门：便宜规则先筛、模型只判不确定项 | self_learning（`jargon_statistical_filter` → `jargon_miner`） | `review/service.py` 的规则优先 + 模型兜底 |
 | 人工结论优先于自动结论 | self_learning（`is_complete` 短路） | `ReviewRepository.set_status` 的 `status='pending'` 条件 + `mark_decided_by` 留痕 |
 | 表达模式个性化 + 学习产物时间衰减 | self_learning（`MaiBot_Enhancement`） | `maibot/` + `persona/style.py`（只借鉴算法思路，未采纳其「服务替换」式接入） |
+| 召回后重排序 + min-max 归一化 + 失败静默降级 | livingmemory（`hybrid_retriever._apply_rerank` / `rrf_fusion.rerank_score`） | `memory/retriever/rerank.py` + `harness/astrbot_rerank.py`（借鉴「候选扩充 → 归一化 → 与原分混合 → 失败回退」，另加本地词法兜底与熔断） |
+| 重排序提供商解析（动态解析 + 类型/ID 校验 + query 截断） | self_learning（`services/reranker` / `provider_registry`） | `harness/astrbot_rerank.py`（改为鸭子类型读取结果，不硬依赖框架内部模块） |
 
 ---
 
@@ -1001,6 +1032,7 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
     Agent 工具、token 估算与上下文治理、群聊决策与合并、主动交互守卫与竞态、
     拟人化学习（样本过滤/选择与衰减、候选统计与推断、规则与兜底判定、审批分流）、
     图谱抽取/扩展/剪枝、自动审核规则与模型兜底、指标桶与落盘、提示词覆盖与回退、
+    重排序网关解析与各条回退路径（不可用/异常/超时/空结果/候选不足/熔断/关闭）、
     能力键与配置 schema 一致性。
 13. 知识图谱：关闭时不抽取、不加检索路；开启后零成本模式**不调用模型**即可建图，
     检索能通过实体关联召回记忆；模型产出不可解析时降级而非写入脏数据；孤立实体与弱关系会被清理。
@@ -1012,7 +1044,11 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 16. 提示词定制：面板各项默认填好内置文本，改后保存**立即生效**并落盘 `prompts.json`（重启保留）；
     缺占位符或花括号非法时**保存被拒绝**，重置即恢复内置默认；配置文件损坏时回退默认并告警，
     任何情况下都不因模板问题抛异常或改变结构化产出的校验强度。
-17. `ruff check .` 与 `ruff format .` 通过。
+17. 重排序：默认关闭时零副作用、零额外调用。开启后模型可用时按 min-max 归一化分数与融合分混合；
+    模型未配置 / 调用异常 / 超时 / 返回空 / 候选不足 / 熔断时**必须**落到确定的回退路径
+    （默认本地词法重排，或配置为不重排），召回结果与耗时不受影响，且任何情况都不抛异常；
+    连续失败 3 次后进入冷却，冷却期内不再发起调用。
+18. `ruff check .` 与 `ruff format .` 通过。
 
 ---
 
@@ -1032,8 +1068,9 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | ✅ 已完成（v0.7.0） |
 | P6 | 配置纠偏（能力键与 schema 对齐）、提示词可定制、知识图谱、自动审核、运行监控、MaiBot 增强、主题图标 | ✅ 已完成（v0.8.0） |
 | P6.1 | 提示词定制从插件配置页迁移到面板（内置默认回填 / 保存校验 / 一键重置 / 即时生效） | ✅ 已完成（v0.8.1） |
+| P6.2 | 重排序（Rerank）：模型精选 top-k + 多层回退（词法重排 / 熔断 / 关闭）+ 指标与状态展示 | ✅ 已完成（v0.9.0） |
 
-**验收结果**：`pytest tests -q` 275 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+**验收结果**：`pytest tests -q` 298 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
 `node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换、
 向量路启用、Agent 工具调用、上下文治理触发效果、群聊插话分寸、主动消息发送时机、
 拟人化学习的学习质量与审查流程、图谱建图质量与可视化、自动审核判定准确性、

@@ -137,6 +137,47 @@
         "type": "float",
         "default": 0.92,
         "slider": {"min": 0.5, "max": 1.0, "step": 0.01}
+      },
+      "rerank_enabled": {
+        "description": "启用重排序（Rerank）",
+        "type": "bool",
+        "default": false,
+        "hint": "召回后由重排序模型对候选重新打分，可明显提升 top-k 精度。需要先在 AstrBot 中配置重排序提供商；未配置或调用失败时会自动回退，不影响召回本身"
+      },
+      "rerank_provider_id": {
+        "description": "重排序（Rerank）模型提供商",
+        "type": "string",
+        "default": "",
+        "hint": "此下拉列表由插件在运行时自动填充为「重排序模型」。留空则自动挑选第一个可用的重排序提供商；若下拉为空，说明当前尚未配置任何重排序提供商，可直接手动填写提供商 ID"
+      },
+      "rerank_candidates": {
+        "description": "送入重排序的候选条数",
+        "type": "int",
+        "default": 20,
+        "slider": {"min": 2, "max": 100, "step": 1},
+        "hint": "先多召回、再由模型精选；越大越准也越慢，建议取「单次召回条数上限」的 2~4 倍"
+      },
+      "rerank_min_candidates": {
+        "description": "触发重排序的最少候选数",
+        "type": "int",
+        "default": 3,
+        "slider": {"min": 2, "max": 20, "step": 1},
+        "hint": "候选不足时跳过模型调用以省延迟（仍按回退策略处理）"
+      },
+      "rerank_weight": {
+        "description": "重排序分权重",
+        "type": "float",
+        "default": 0.7,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "hint": "最终相关性 = 权重 × 重排序分 + (1-权重) × 融合分；留出余量可避免模型分完全压过重要性与新近度"
+      },
+      "rerank_fallback": {
+        "description": "重排序不可用时的回退策略",
+        "type": "string",
+        "default": "lexical",
+        "options": ["lexical", "none"],
+        "labels": ["本地词法重排（零成本，推荐）", "不重排（仅按融合分排序）"],
+        "hint": "模型未配置、调用失败或熔断时采用；词法重排只用分词结果，不消耗任何模型调用"
       }
     }
   },
@@ -851,6 +892,13 @@
         "type": "int",
         "default": 45,
         "slider": {"min": 5, "max": 300, "step": 5}
+      },
+      "rerank_timeout_seconds": {
+        "description": "单次重排序调用超时（秒）",
+        "type": "float",
+        "default": 8.0,
+        "slider": {"min": 1.0, "max": 60.0, "step": 1.0},
+        "hint": "超时即按回退策略处理；连续失败 3 次会熔断 5 分钟，期间不再尝试调用模型"
       },
       "max_concurrent_llm": {
         "description": "辅助 LLM 最大并发",

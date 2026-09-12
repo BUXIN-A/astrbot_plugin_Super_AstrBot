@@ -38,11 +38,17 @@ from .models import (
     MemoryItem,
 )
 from .retriever import (
+    FALLBACK_LEXICAL,
+    FALLBACK_NONE,
     HybridRetriever,
     KeywordRetriever,
+    Reranker,
+    RerankSettings,
     RetrievalConfig,
     RetrievalResult,
     VectorRetriever,
+    lexical_scores,
+    normalize_scores,
 )
 from .service import MemoryService
 
@@ -58,6 +64,12 @@ __all__ = [
     "VectorRetriever",
     "RetrievalConfig",
     "RetrievalResult",
+    "Reranker",
+    "RerankSettings",
+    "FALLBACK_LEXICAL",
+    "FALLBACK_NONE",
+    "lexical_scores",
+    "normalize_scores",
     "build_memory_body",
     "format_search_results",
     "INJECTION_DISABLED",

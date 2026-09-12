@@ -534,3 +534,40 @@ def test_prompt_customization_roundtrip(tmp_path: Path) -> None:
     assert after_reset["custom"] is False
     assert after_reset["value"] == after_reset["default"]
     assert json.loads((tmp_path / "prompts.json").read_text(encoding="utf-8")) == {}
+
+
+def test_rerank_disabled_by_default_and_falls_back_when_enabled(tmp_path: Path) -> None:
+    """重排序默认关闭；开启但没有提供商时状态应显示「已回退」而不影响就绪。"""
+
+    async def _run(enabled: bool) -> tuple[dict, dict, dict, str, bool]:
+        config = {"memory": {"rerank_enabled": True}} if enabled else {}
+        app = SuperAstrBotApp(
+            star=FakeStar(), context=FakeContext(), config=config, data_dir=tmp_path
+        )
+        await app.start()
+        try:
+            feature = {item["key"]: item for item in app.feature_catalog()}
+            status = await app.status()
+            return (
+                dict(app.capabilities),
+                status.get("rerank") or {},
+                feature["memory.rerank_enabled"],
+                app.memory_config.rerank_enabled and app._retriever.rerank_note or "",
+                app.ready,
+            )
+        finally:
+            await app.shutdown()
+
+    caps, status, feature, note, ready = asyncio.run(_run(True))
+    assert ready is True, "没有重排序提供商也必须正常就绪"
+    assert caps["memory.rerank_enabled"] is True
+    assert feature["enabled"] is True
+    assert status["enabled"] is True
+    assert status["available"] is False
+    assert status["fallback"] == "lexical"
+    assert "不可用" in note and "回退" in note
+
+    caps_off, status_off, feature_off, _, _ = asyncio.run(_run(False))
+    assert caps_off["memory.rerank_enabled"] is False
+    assert feature_off["enabled"] is False
+    assert status_off["enabled"] is False

@@ -53,6 +53,18 @@ METRIC_RETRIEVAL_LATENCY_MS = "retrieval.latency_ms"
 METRIC_RETRIEVAL_HITS = "retrieval.hits"
 """记忆检索命中条数累计（total）。"""
 
+METRIC_RERANK_CALLS = "rerank.calls"
+"""重排序模型调用次数（count）。"""
+
+METRIC_RERANK_FAILURES = "rerank.failures"
+"""重排序调用失败/超时次数（count）；失败后走回退策略。"""
+
+METRIC_RERANK_LATENCY_MS = "rerank.latency_ms"
+"""重排序耗时累计（total 为毫秒和）。"""
+
+METRIC_RERANK_CANDIDATES = "rerank.candidates"
+"""送入重排序的候选条数累计（total）。"""
+
 METRIC_INJECT_BLOCKS = "inject.blocks"
 """注入块数累计（total）。"""
 
@@ -114,6 +126,8 @@ CORE_METRICS: tuple[str, ...] = (
     METRIC_LLM_CALLS,
     METRIC_LLM_ERRORS,
     METRIC_RETRIEVAL_CALLS,
+    METRIC_RERANK_CALLS,
+    METRIC_RERANK_FAILURES,
     METRIC_INJECT_CHARS,
     METRIC_SCHEDULER_RUNS,
     METRIC_SCHEDULER_FAILURES,

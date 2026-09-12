@@ -211,6 +211,46 @@ class EmbeddingGateway(Protocol):
         """返回向量；失败或不可用返回 ``None``。"""
 
 
+@dataclass(frozen=True)
+class RerankHit:
+    """一条重排序结果。
+
+    ``score`` 的口径由提供商决定（可能带负值、可能已被归一化），
+    调用方需自行做 min-max 归一化后再使用。
+    """
+
+    index: int
+    """候选在传入 ``documents`` 中的下标。"""
+
+    score: float
+
+
+@runtime_checkable
+class RerankGateway(Protocol):
+    """可选重排序能力。不可用或调用失败时返回空列表，调用方须降级。"""
+
+    @property
+    def available(self) -> bool: ...
+
+    def model(self) -> str:
+        """当前提供商的模型名；不可用返回空串。"""
+
+    def list_providers(self) -> Sequence[ProviderInfo]:
+        """列出可用的重排序提供商（供配置页动态下拉）。"""
+
+    def refresh(self) -> None:
+        """清除解析缓存（Provider 实例被框架重建后重新探测）。"""
+
+    async def rerank(
+        self,
+        query: str,
+        documents: Sequence[str],
+        *,
+        top_n: int | None = None,
+    ) -> list[RerankHit]:
+        """按查询相关性重排序候选，返回按分数降序的结果；失败返回空列表。"""
+
+
 # --------------------------------------------------------------------------- #
 # 注入
 # --------------------------------------------------------------------------- #

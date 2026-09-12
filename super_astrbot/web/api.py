@@ -133,6 +133,7 @@ def _overview(app: Any) -> Handler:
                 "budget": status.get("budget"),
                 "scheduler": status.get("scheduler"),
                 "memory": stats,
+                "rerank": status.get("rerank"),
                 "embedding_providers": providers,
             }
         )
@@ -299,6 +300,7 @@ def _search(app: Any) -> Handler:
                         "items": items,
                         "total": len(items),
                         "routes": result.route_summary,
+                        "rerank": result.rerank_summary,
                         "elapsed_ms": round(result.elapsed_ms, 2),
                         "degraded": result.degraded,
                     }

@@ -118,6 +118,17 @@ CAPABILITIES: tuple[Capability, ...] = (
         description="基于 Embedding 的语义召回路径；不可用时自动降级。",
     ),
     Capability(
+        key="memory.rerank_enabled",
+        title="重排序（Rerank）",
+        domain="memory",
+        default=False,
+        depends_on=("memory.enabled",),
+        description=(
+            "召回后用重排序模型对候选按相关性重新打分，提升 top-k 精度；"
+            "模型未配置或调用失败时自动回退（默认本地词法重排），不影响召回本身。默认关闭。"
+        ),
+    ),
+    Capability(
         key="reflection.enabled",
         title="反思式自我学习",
         domain="reflection",

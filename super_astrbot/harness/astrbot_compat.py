@@ -106,6 +106,60 @@ def _resolve() -> FrameworkSymbols:
 SYMBOLS: FrameworkSymbols = _resolve()
 
 
+def provider_meta(provider: Any) -> dict[str, str]:
+    """从 Provider 提取 ``id`` / ``type`` / ``model``，全部防御式读取。
+
+    放在 compat 而不是各网关里：Provider 的元信息形状由框架决定，
+    「拿不到就为空」的兼容处理应与其它框架符号探测集中在一处，
+    对话 / 嵌入 / 重排序三个网关共用同一份实现，避免口径漂移。
+    """
+    meta_obj = None
+    meta_fn = getattr(provider, "meta", None)
+    if callable(meta_fn):
+        try:
+            meta_obj = meta_fn()
+        except Exception:  # noqa: BLE001
+            meta_obj = None
+    meta_obj = meta_obj or provider
+
+    def _pick(name: str) -> str:
+        value = getattr(meta_obj, name, None)
+        if value is None:
+            return ""
+        value = getattr(value, "value", value)  # 处理 Enum
+        return str(value)
+
+    return {"id": _pick("id"), "type": _pick("type"), "model": _pick("model")}
+
+
+def configured_provider_entries(context: Any, *kinds: str) -> list[dict[str, Any]]:
+    """从 ``provider_manager.providers_config`` 读出指定类型的提供商条目。
+
+    这里读的是**配置条目**而非已加载实例：它包含「已配置但尚未启用」的提供商，
+    因此配置页能在用户启用之前就把可选项列出来。
+    匹配规则：``provider_type`` 等于 ``kind``，或以 ``_{kind}`` 结尾
+    （框架对嵌入类提供商存在 ``xxx_embedding`` 这类命名）。
+    """
+    try:
+        manager = getattr(context, "provider_manager", None)
+        configs = getattr(manager, "providers_config", None)
+    except Exception:  # noqa: BLE001 - Manager 可能是会抛异常的代理对象
+        return []
+    if not isinstance(configs, (list, tuple)):
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for item in configs:
+        if not isinstance(item, dict):
+            continue
+        provider_type = str(item.get("provider_type") or "").lower()
+        if any(
+            provider_type == kind or provider_type.endswith(f"_{kind}") for kind in kinds if kind
+        ):
+            entries.append(item)
+    return entries
+
+
 def has(name: str) -> bool:
     """判断某符号是否可用。"""
     return getattr(SYMBOLS, name, None) is not None
