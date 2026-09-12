@@ -10,6 +10,7 @@ from .capabilities import (
     capability,
     get_path,
     resolve_capabilities,
+    set_path,
 )
 from .errors import (
     BudgetExhaustedError,
@@ -25,6 +26,7 @@ __all__ = [
     "Capability",
     "capability",
     "get_path",
+    "set_path",
     "resolve_capabilities",
     "SuperAstrBotError",
     "ConfigError",

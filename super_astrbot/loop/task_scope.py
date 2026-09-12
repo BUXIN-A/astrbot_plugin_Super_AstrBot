@@ -33,6 +33,26 @@ class ScopeToken:
     generation: int
 
 
+class _Abandoned:
+    """哨兵：表示任务被放弃（停止 / 超时 / 令牌失效）。
+
+    必须与「任务正常返回 None」区分开：早期实现用 ``result is None`` 判断放弃，
+    导致所有正常返回 None 的任务都被误判为超时（调度器会误报 WARN 并计入跳过）。
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "ABANDONED"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+ABANDONED = _Abandoned()
+"""``TaskScope.run`` 在放弃执行时返回该哨兵。"""
+
+
 class TaskScope:
     """一个可取消的任务作用域。"""
 
@@ -165,18 +185,20 @@ class TaskScope:
 
         Args:
             factory: 协程工厂（延迟创建，避免在取消后仍创建协程对象）。
-            timeout: 超时秒数；超时按「放弃」处理并返回 ``None``。
+            timeout: 超时秒数；超时按「放弃」处理。
             token: 代次令牌；非当前代次直接放弃。
 
         Returns:
-            协程结果；被停止、超时或令牌失效时返回 ``None``。
+            协程结果；被停止、超时或令牌失效时返回 ``ABANDONED`` 哨兵
+            （注意：任务本身正常返回 ``None`` 时也会原样返回 ``None``，
+            调用方必须用 ``is ABANDONED`` 而不是 ``is None`` 判断放弃）。
             协程自身抛出的异常会原样向上传递（交由调用方决定降级策略）。
         """
         if self.is_stopped():
-            return None
+            return ABANDONED
         if not self.is_current(token):
             self._log_debug("令牌已失效，跳过执行：%s", token)
-            return None
+            return ABANDONED
 
         loop = asyncio.get_running_loop()
         task: asyncio.Task[Any] = asyncio.ensure_future(factory())
@@ -186,12 +208,12 @@ class TaskScope:
             while True:
                 if self.is_stopped():
                     await self._abandon(task)
-                    return None
+                    return ABANDONED
                 remaining = None if deadline is None else deadline - loop.time()
                 if remaining is not None and remaining <= 0:
                     await self._abandon(task)
                     self._log_debug("执行超时（%.1fs），已放弃", timeout or 0)
-                    return None
+                    return ABANDONED
                 wait_slice = self._poll if remaining is None else min(self._poll, remaining)
                 done, _ = await asyncio.wait({task}, timeout=wait_slice)
                 if done:

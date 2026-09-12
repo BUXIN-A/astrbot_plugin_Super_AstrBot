@@ -116,6 +116,7 @@ class SuperAstrBotApp:
         self._reflection_service: ReflectionService | None = None
 
         self._effective_capabilities: dict[str, bool] = {}
+        self._retriever: Any | None = None
 
     # ------------------------------------------------------------------ #
     # 属性
@@ -220,40 +221,256 @@ class SuperAstrBotApp:
     # ------------------------------------------------------------------ #
 
     def _build_configs(self) -> None:
-        from .spec.capabilities import get_path
-
-        # 运行环境探测：决定向量能力是否可用（分层自适应的关键）。
-        overrides: dict[str, bool] = {}
-        embedding_provider_id = str(
-            get_path(self._config, "memory.embedding_provider_id", "") or ""
-        )
-        if self._context is not None:
-            try:
-                from .harness.astrbot_host import AstrBotHost
-                from .harness.astrbot_llm import AstrBotEmbeddingGateway
-
-                probe_host = AstrBotHost(self._star, self._context, self._config)
-                probe = AstrBotEmbeddingGateway(
-                    self._context, probe_host, provider_id=embedding_provider_id
-                )
-                if not probe.available:
-                    overrides["memory.vector_enabled"] = False
-            except Exception as exc:  # noqa: BLE001 - 探测失败按不可用处理
-                overrides["memory.vector_enabled"] = False
-                self._warn("向量能力探测失败，按不可用处理：%s", safe_detail(exc))
-        else:
-            overrides["memory.vector_enabled"] = False
-
+        overrides = self._probe_runtime_overrides()
+        self._capability_overrides = overrides
         self._effective_capabilities = resolve_capabilities(self._config, overrides)
         self._degraded_reasons = explain_disabled(self._effective_capabilities, overrides)
 
         self._memory_config = MemoryConfig.from_mapping(self._config)
         self._journal_config = JournalConfig.from_mapping(self._config)
         self._reflection_config = ReflectionConfig.from_mapping(self._config)
+        self._sync_derived_configs()
 
-        # 让配置层的开关与能力解析结果保持一致（能力解析可能因环境降级）。
-        self._memory_config.vector_enabled = self._enabled("memory.vector_enabled")
-        self._memory_config.fts_enabled = self._enabled("memory.fts_enabled")
+    def _probe_runtime_overrides(self) -> dict[str, bool]:
+        """探测运行环境对能力的支持情况。
+
+        注意时序：AstrBot 的生命周期是「先加载插件、后初始化 ProviderManager」，
+        所以插件启动时这里多半探测不到嵌入提供商。因此：
+
+        - 探测结果只是**当次**结论，不缓存到 embedding 网关里（网关失败可重试）；
+        - 另注册 ``on_astrbot_loaded`` 钩子在框架完全就绪后重新探测并热应用。
+        """
+        from .spec.capabilities import get_path
+
+        overrides: dict[str, bool] = {}
+        embedding_provider_id = str(
+            get_path(self._config, "memory.embedding_provider_id", "") or ""
+        )
+
+        if self._context is None:
+            overrides["memory.vector_enabled"] = False
+            return overrides
+
+        try:
+            from .harness.astrbot_host import AstrBotHost
+            from .harness.astrbot_llm import AstrBotEmbeddingGateway
+
+            probe_host = AstrBotHost(self._star, self._context, self._config)
+            probe = AstrBotEmbeddingGateway(
+                self._context, probe_host, provider_id=embedding_provider_id
+            )
+            if not probe.available:
+                overrides["memory.vector_enabled"] = False
+        except Exception as exc:  # noqa: BLE001 - 探测失败按不可用处理
+            overrides["memory.vector_enabled"] = False
+            self._debug("向量能力探测失败，按不可用处理：%s", safe_detail(exc))
+        return overrides
+
+    def _sync_derived_configs(self) -> None:
+        """让各领域配置对象与能力解析结果保持一致。"""
+        memory = self._memory_config
+        if memory is not None:
+            memory.vector_enabled = self._enabled("memory.vector_enabled")
+            memory.fts_enabled = self._enabled("memory.fts_enabled")
+            memory.capture = self._enabled("memory.capture")
+            memory.capture_groups = self._enabled("memory.capture_groups")
+            memory.capture_private = self._enabled("memory.capture_private")
+        if self._journal_config is not None:
+            self._journal_config.enabled = self._enabled("journal.enabled")
+        if self._reflection_config is not None:
+            self._reflection_config.enabled = self._enabled("reflection.enabled")
+
+    def _sync_retriever_routes(self) -> None:
+        """按当前能力开关增删检索路（热切换）。"""
+        retriever = self._retriever
+        if retriever is None or self._harness is None:
+            return
+        memories = self._memories
+        if memories is None:
+            return
+
+        if self._enabled("memory.fts_enabled"):
+            retriever.add_route(KeywordRetriever(memories, logger=self._logger))
+        else:
+            retriever.remove_route(KeywordRetriever.name)
+
+        if self._harness.embedding.available and self._enabled("memory.vector_enabled"):
+            assert self._db is not None
+            retriever.add_route(
+                VectorRetriever(
+                    self._harness.embedding,
+                    VectorRepository(self._db),
+                    memories,
+                    max_scan=(self._memory_config.vector_max_scan if self._memory_config else 5000),
+                    logger=self._logger,
+                )
+            )
+        else:
+            retriever.remove_route(VectorRetriever.name)
+
+    def _sync_scheduler_jobs(self) -> None:
+        """按能力开关启停定时任务。"""
+        if self._scheduler is None:
+            return
+        self._scheduler.set_enabled("memory-maintenance", self._enabled("memory.enabled"))
+        self._scheduler.set_enabled("reflection-scan", self._enabled("reflection.enabled"))
+        self._scheduler.set_enabled("weekly-insight", self._enabled("journal.weekly_reflection"))
+
+    def refresh_capabilities(self) -> dict[str, bool]:
+        """重新探测运行时能力并热应用到各子系统。
+
+        适用场景：ProviderManager 就绪后向量能力变为可用、用户在控制台切换功能开关。
+        返回最新的生效状态。
+        """
+        previous = dict(self._effective_capabilities)
+        if self._harness is not None:
+            self._harness.embedding.refresh()
+
+        overrides = self._probe_runtime_overrides()
+        self._capability_overrides = overrides
+        self._effective_capabilities = resolve_capabilities(self._config, overrides)
+        self._degraded_reasons = explain_disabled(self._effective_capabilities, overrides)
+
+        self._sync_derived_configs()
+        self._sync_retriever_routes()
+        self._sync_scheduler_jobs()
+
+        changed = {
+            key: value
+            for key, value in self._effective_capabilities.items()
+            if previous.get(key) != value
+        }
+        if changed:
+            self._info(
+                "能力状态已更新：%s",
+                "、".join(f"{key}={'开' if value else '关'}" for key, value in changed.items()),
+            )
+            if self._retriever is not None:
+                self._info("当前检索路：%s", "、".join(self._retriever.route_names) or "无")
+        return dict(self._effective_capabilities)
+
+    async def on_astrbot_loaded(self) -> None:
+        """框架完全加载完成：重新探测能力。
+
+        AstrBot 先加载插件、后初始化 ProviderManager，因此插件启动阶段探测不到
+        嵌入提供商；这里补一次探测，让向量检索自动启用
+        （v0.2.0 在服务器上因此一直显示「向量能力不可用」）。
+        """
+        if not self._started:
+            return
+        try:
+            self.refresh_capabilities()
+            self.sync_schema_options()
+        except Exception as exc:  # noqa: BLE001 - 复检失败不影响主流程
+            self._debug("框架加载后的能力复检失败：%s", safe_detail(exc))
+
+    # ------------------------------------------------------------------ #
+    # 功能开关（控制台）
+    # ------------------------------------------------------------------ #
+
+    def feature_catalog(self) -> list[dict[str, Any]]:
+        """列出全部功能及其状态，供控制台渲染开关。"""
+        from .spec.capabilities import CAPABILITIES, get_path
+
+        catalog: list[dict[str, Any]] = []
+        for item in CAPABILITIES:
+            runtime_blocked = self._capability_overrides.get(item.key) is False
+            catalog.append(
+                {
+                    "key": item.key,
+                    "title": item.title,
+                    "domain": item.domain,
+                    "description": item.description,
+                    "enabled": bool(self._effective_capabilities.get(item.key)),
+                    "configured": bool(get_path(self._config, item.key, item.default)),
+                    "depends_on": list(item.depends_on),
+                    "hot_reloadable": item.hot_reloadable,
+                    "runtime_dependent": item.runtime_dependent,
+                    "runtime_blocked": runtime_blocked,
+                    "blocked_by": [
+                        dep for dep in item.depends_on if not self._effective_capabilities.get(dep)
+                    ],
+                    "status": self._capability_status(
+                        item.key, runtime_blocked, item.hot_reloadable
+                    ),
+                }
+            )
+        return catalog
+
+    def _capability_status(self, key: str, runtime_blocked: bool, hot: bool) -> str:
+        if not hot:
+            return "needs_reload"
+        if runtime_blocked:
+            return "runtime_unsupported"
+        return "on" if self._effective_capabilities.get(key) else "off"
+
+    async def set_capability(self, key: str, enabled: bool) -> dict[str, Any]:
+        """切换功能开关：写配置 → 落盘 → 热应用。
+
+        返回结构化结果（``ok`` / ``message`` / 最新状态），供控制台提示。
+        """
+        from .spec.capabilities import capability, set_path
+
+        try:
+            cap = capability(key)
+        except KeyError:
+            return {"ok": False, "message": f"未知功能：{key}"}
+
+        if not cap.hot_reloadable:
+            return {
+                "ok": False,
+                "needs_reload": True,
+                "message": f"「{cap.title}」需要重载插件后生效，已记录到配置。",
+            }
+
+        if enabled:
+            blocked = [dep for dep in cap.depends_on if not self._effective_capabilities.get(dep)]
+            if blocked:
+                return {"ok": False, "message": "前置功能未开启：" + "、".join(blocked)}
+            if cap.runtime_dependent and self._capability_overrides.get(cap.key) is False:
+                return {
+                    "ok": False,
+                    "message": "运行环境不支持该功能（例如未配置嵌入模型提供商）",
+                }
+
+        if not set_path(self._config, key, bool(enabled)):
+            return {"ok": False, "message": "写入配置失败（配置结构异常）"}
+
+        persisted = await self._persist_config()
+        effective = self.refresh_capabilities()
+        actual = bool(effective.get(key))
+        message = f"「{cap.title}」已{'开启' if actual else '关闭'}"
+        if enabled and not actual:
+            message += "（受前置条件或运行环境限制，实际未生效）"
+        if not persisted:
+            message += "；配置落盘失败，重启后可能回到原值"
+        return {
+            "ok": True,
+            "key": key,
+            "enabled": actual,
+            "configured": bool(enabled),
+            "persisted": persisted,
+            "message": message,
+        }
+
+    async def _persist_config(self) -> bool:
+        """把当前配置写入磁盘；普通 dict（测试 / 降级）时返回 False。"""
+        async_saver = getattr(self._config, "save_config_async", None)
+        if callable(async_saver):
+            try:
+                return bool(await async_saver())
+            except Exception as exc:  # noqa: BLE001
+                self._warn("保存配置失败：%s", safe_detail(exc))
+                return False
+        sync_saver = getattr(self._config, "save_config", None)
+        if callable(sync_saver):
+            try:
+                await asyncio.to_thread(sync_saver)
+                return True
+            except Exception as exc:  # noqa: BLE001
+                self._warn("保存配置失败：%s", safe_detail(exc))
+                return False
+        return False
 
     async def _setup_storage(self) -> bool:
         if not self._enabled("memory.enabled") and not self._enabled("journal.enabled"):
@@ -362,6 +579,8 @@ class SuperAstrBotApp:
             config=self._memory_config.retrieval_config(),
             logger=self._logger,
         )
+        # 保存引用：功能开关热切换时需要增删检索路
+        self._retriever = retriever
         lifecycle = MemoryLifecycle(
             db=self._db,
             memories=self._memories,

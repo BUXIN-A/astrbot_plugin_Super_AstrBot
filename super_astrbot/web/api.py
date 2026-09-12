@@ -31,6 +31,8 @@ def register_web_apis(context: Any, app: Any) -> None:
     """注册面板后端接口（大小写两套前缀）。"""
     routes: list[tuple[str, Handler, list[str], str]] = [
         ("overview", _overview(app), ["GET"], "Super_AstrBot 总览与系统诊断"),
+        ("features", _features(app), ["GET"], "功能清单与开关状态"),
+        ("feature-toggle", _feature_toggle(app), ["POST"], "开启/关闭某个功能"),
         ("memories", _memories(app), ["GET"], "记忆列表（支持筛选与分页）"),
         ("memory", _memory_detail(app), ["GET"], "单条记忆详情"),
         ("search", _search(app), ["POST"], "混合检索记忆"),
@@ -123,6 +125,68 @@ def _overview(app: Any) -> Handler:
                 "scheduler": status.get("scheduler"),
                 "memory": stats,
                 "embedding_providers": providers,
+            }
+        )
+
+    return handler
+
+
+# --------------------------------------------------------------------------- #
+# 功能开关
+# --------------------------------------------------------------------------- #
+
+
+def _features(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            features = app.feature_catalog()
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取功能清单失败：{exc}")
+
+        domains: list[str] = []
+        for item in features:
+            if item.get("domain") and item["domain"] not in domains:
+                domains.append(item["domain"])
+
+        return _ok(
+            {
+                "items": features,
+                "domains": domains,
+                "capabilities": dict(app.capabilities),
+            }
+        )
+
+    return handler
+
+
+def _feature_toggle(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        key = str(payload.get("key") or "").strip()
+        if not key:
+            return error_response("缺少参数 key")
+        if not isinstance(payload.get("enabled"), bool):
+            return error_response("enabled 必须是布尔值")
+
+        try:
+            result = await app.set_capability(key, bool(payload["enabled"]))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"切换失败：{exc}")
+
+        if not result.get("ok"):
+            # 依赖未满足 / 需要重载 / 运行环境不支持，均以 400 + 可读信息返回
+            return error_response(
+                str(result.get("message") or "切换失败"),
+                data={"needs_reload": bool(result.get("needs_reload"))},
+            )
+
+        return _ok(
+            {
+                "key": result.get("key"),
+                "enabled": result.get("enabled"),
+                "persisted": result.get("persisted"),
+                "message": result.get("message"),
+                "capabilities": dict(app.capabilities),
             }
         )
 

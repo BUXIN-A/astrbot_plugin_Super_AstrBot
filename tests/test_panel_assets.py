@@ -94,3 +94,28 @@ def test_plugin_i18n_declares_page_title() -> None:
         data = json.loads(_read(path))
         title = data.get("pages", {}).get("dashboard", {}).get("title")
         assert title, f"{locale} 未声明 pages.dashboard.title（WebUI 标签页会显示为 dashboard）"
+
+
+def test_plugin_logo_present() -> None:
+    """AstrBot 要求插件目录下有 logo.png（1:1，推荐 256x256）。"""
+    logo = ROOT / "logo.png"
+    assert logo.is_file(), "缺少 logo.png"
+    data = logo.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "logo.png 不是合法 PNG"
+    assert len(data) > 0
+
+
+def test_panel_uses_plugin_logo() -> None:
+    html = _read(PAGES / "index.html")
+    assert "./logo.svg" in html, "面板品牌区应使用插件图标"
+
+
+def test_feature_toggle_ui_present() -> None:
+    """功能开关界面必须存在且走 bridge。"""
+    html = _read(PAGES / "index.html")
+    js = _read(PAGES / "app.js")
+    assert 'id="feat-list"' in html, "缺少功能开关容器"
+    assert 'data-page="features"' in html, "缺少「功能」导航项"
+    assert "loadFeatures" in js
+    assert "handleFeatureToggle" in js
+    assert "feature-toggle" in js

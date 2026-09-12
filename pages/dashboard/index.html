@@ -10,7 +10,7 @@
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
+        <img class="brand-logo" src="./logo.svg" alt="" width="26" height="26" />
         <span class="brand-text">
           <span class="brand-name">Super_AstrBot</span>
           <span class="brand-sub" data-i18n="shell.subtitle">长期记忆 · 自我学习</span>
@@ -19,6 +19,7 @@
 
       <nav class="nav" id="nav">
         <button class="nav-item" data-page="overview" data-i18n="nav.overview">总览</button>
+        <button class="nav-item" data-page="features" data-i18n="nav.features">功能</button>
         <button class="nav-item" data-page="memories" data-i18n="nav.memories">记忆</button>
         <button class="nav-item" data-page="recall" data-i18n="nav.recall">检索</button>
         <button class="nav-item" data-page="journals" data-i18n="nav.journals">周记</button>
@@ -53,6 +54,17 @@
           <div class="card">
             <h2 data-i18n="overview.recent">最近写入的记忆</h2>
             <div class="table-wrap" id="ov-recent"></div>
+          </div>
+        </section>
+
+        <!-- 功能开关 -->
+        <section class="page" id="page-features">
+          <div class="card">
+            <h2 data-i18n="features.title">功能开关</h2>
+            <p class="muted" data-i18n="features.hint">
+              开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。
+            </p>
+            <div class="feature-list" id="feat-list"></div>
           </div>
         </section>
 

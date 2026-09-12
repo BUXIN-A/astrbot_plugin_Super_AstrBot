@@ -45,6 +45,12 @@ class Capability:
     例如向量检索依赖是否存在可用的 Embedding Provider。
     """
 
+    hot_reloadable: bool = True
+    """是否支持运行时热切换。
+
+    为 ``False`` 时（例如总开关），控制台仍会写入配置，但需要重载插件才生效。
+    """
+
 
 CAPABILITIES: tuple[Capability, ...] = (
     Capability(
@@ -52,7 +58,15 @@ CAPABILITIES: tuple[Capability, ...] = (
         title="插件总开关",
         domain="basic",
         default=True,
-        description="关闭后所有增强能力停止工作，但不卸载插件、不清理数据。",
+        hot_reloadable=False,
+        description="关闭后所有增强能力停止工作，但不卸载插件、不清理数据。需重载插件生效。",
+    ),
+    Capability(
+        key="basic.debug_log",
+        title="调试日志",
+        domain="basic",
+        default=False,
+        description="输出检索路命中、注入字符数、注入方式等细节，用于排障。",
     ),
     Capability(
         key="memory.enabled",
@@ -69,6 +83,22 @@ CAPABILITIES: tuple[Capability, ...] = (
         default=True,
         depends_on=("memory.enabled",),
         description="自动把对话内容沉淀为记忆条目。",
+    ),
+    Capability(
+        key="memory.capture_groups",
+        title="在群聊中采集",
+        domain="memory",
+        default=True,
+        depends_on=("memory.capture",),
+        description="关闭后群聊消息不进入对话缓冲（私聊不受影响）。",
+    ),
+    Capability(
+        key="memory.capture_private",
+        title="在私聊中采集",
+        domain="memory",
+        default=True,
+        depends_on=("memory.capture",),
+        description="关闭后私聊消息不进入对话缓冲（群聊不受影响）。",
     ),
     Capability(
         key="memory.fts_enabled",
@@ -136,6 +166,34 @@ def get_path(config: Mapping[str, Any], path: str, default: Any = None) -> Any:
             continue
         return default
     return node
+
+
+def set_path(config: Any, path: str, value: Any) -> bool:
+    """按点号路径写入嵌套配置，自动创建缺失的中间层。
+
+    仅供控制台的「功能开关」使用；返回是否写入成功。
+    对非 dict/Mapping 的中间层不做覆盖（避免把异常结构写坏）。
+    """
+    parts = path.split(".")
+    if not parts or any(not part for part in parts):
+        return False
+
+    node: Any = config
+    for part in parts[:-1]:
+        if not isinstance(node, MutableMapping):
+            return False
+        child = node.get(part)
+        if child is None:
+            child = {}
+            node[part] = child
+        if not isinstance(child, MutableMapping):
+            return False
+        node = child
+
+    if not isinstance(node, MutableMapping):
+        return False
+    node[parts[-1]] = value
+    return True
 
 
 def _as_bool(value: Any, default: bool) -> bool:

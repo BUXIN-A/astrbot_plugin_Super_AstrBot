@@ -87,6 +87,18 @@ class SuperAstrBot(Star):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("回复采集钩子异常：%s", safe_detail(exc))
 
+    @filter.on_astrbot_loaded()
+    async def _hook_astrbot_loaded(self) -> None:
+        """框架完全加载后复检能力。
+
+        AstrBot 先加载插件、后初始化 ProviderManager，因此插件启动阶段探测不到
+        嵌入提供商；这个钩子在框架就绪后重新探测，让向量检索自动启用。
+        """
+        try:
+            await self._app.on_astrbot_loaded()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("框架加载后的能力复检异常：%s", safe_detail(exc))
+
     # ------------------------------------------------------------------ #
     # 唯一顶层指令
     # ------------------------------------------------------------------ #

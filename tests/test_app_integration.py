@@ -339,3 +339,103 @@ def test_app_sync_schema_options_tolerates_plain_dict_config(tmp_path: Path) -> 
         return result
 
     assert asyncio.run(_run()) is False
+
+
+# --------------------------------------------------------------------------- #
+# 功能开关（控制台）
+# --------------------------------------------------------------------------- #
+
+
+def test_feature_catalog_and_hot_toggle(tmp_path: Path) -> None:
+    async def _run() -> None:
+        app = SuperAstrBotApp(star=FakeStar(), context=FakeContext(), config={}, data_dir=tmp_path)
+        await app.start()
+
+        catalog = {item["key"]: item for item in app.feature_catalog()}
+        assert catalog, "功能清单不应为空"
+        assert catalog["reflection.enabled"]["enabled"] is True
+        assert catalog["basic.enabled"]["status"] == "needs_reload"
+        assert catalog["memory.vector_enabled"]["status"] == "runtime_unsupported"
+
+        # 热切换：关闭自我学习 → 级联关闭周度洞察 + 停用对应调度任务
+        result = await app.set_capability("reflection.enabled", False)
+        assert result["ok"] is True
+        assert result["enabled"] is False
+        caps = app.capabilities
+        assert caps["reflection.enabled"] is False
+        assert caps["journal.weekly_reflection"] is False, "依赖传导应级联关闭"
+        assert app._scheduler.get("reflection-scan").enabled is False
+        assert app._scheduler.get("weekly-insight").enabled is False
+
+        # 依赖未开启时不允许开启
+        blocked = await app.set_capability("journal.weekly_reflection", True)
+        assert blocked["ok"] is False
+        assert "前置功能" in blocked["message"]
+
+        # 总开关需重载
+        needs_reload = await app.set_capability("basic.enabled", False)
+        assert needs_reload["ok"] is False
+        assert needs_reload["needs_reload"] is True
+
+        # 运行环境不支持的能力不允许开启
+        unsupported = await app.set_capability("memory.vector_enabled", True)
+        assert unsupported["ok"] is False
+
+        # 未知 key
+        assert (await app.set_capability("nope.nope", True))["ok"] is False
+
+        # 普通 dict 没有 save_config：流程成功但 persisted=False
+        enabled = await app.set_capability("reflection.enabled", True)
+        assert enabled["ok"] is True
+        assert enabled["enabled"] is True
+        assert enabled["persisted"] is False
+        assert app._scheduler.get("reflection-scan").enabled is True
+
+        await app.shutdown()
+
+    asyncio.run(_run())
+
+
+class MutableEmbeddingContext(FakeContext):
+    """可动态增减嵌入提供商的 Context 替身（模拟 ProviderManager 后初始化）。"""
+
+    def __init__(self) -> None:
+        self.providers: list[object] = []
+
+    def get_all_embedding_providers(self) -> list[object]:
+        return list(self.providers)
+
+    def add_embedding_provider(self, provider: object) -> None:
+        self.providers.append(provider)
+
+
+def test_refresh_capabilities_enables_vector_after_provider_appears(tmp_path: Path) -> None:
+    """回归：ProviderManager 就绪后向量能力必须能自动启用。
+
+    v0.2.0 在服务器上一直显示「向量能力不可用」：插件加载早于 ProviderManager
+    初始化，且探测失败结果被永久缓存。
+    """
+
+    async def _run() -> tuple[dict, list[str], dict, list[str]]:
+        context = MutableEmbeddingContext()
+        app = SuperAstrBotApp(star=FakeStar(), context=context, config={}, data_dir=tmp_path)
+        await app.start()
+
+        before_caps = dict(app.capabilities)
+        before_routes = list(app.memory.route_names)
+
+        # 模拟 ProviderManager 初始化完成
+        context.add_embedding_provider(EmbeddingProviderStub("ollama_embedding", "all-minilm:22m"))
+        after_caps = app.refresh_capabilities()
+        after_routes = list(app.memory.route_names)
+
+        await app.shutdown()
+        return before_caps, before_routes, after_caps, after_routes
+
+    before_caps, before_routes, after_caps, after_routes = asyncio.run(_run())
+    assert before_caps["memory.vector_enabled"] is False
+    assert before_routes == ["keyword"]
+
+    assert after_caps["memory.vector_enabled"] is True, "探测应能恢复，不得永久缓存失败结果"
+    assert "vector" in after_routes
+    assert "keyword" in after_routes

@@ -85,10 +85,12 @@ body {
 
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 4px 6px; }
 
-.brand-mark {
-  width: 26px; height: 26px; flex: none;
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  flex: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--ok));
+  background: var(--panel-2);
 }
 
 .brand-text { display: flex; flex-direction: column; min-width: 0; }
@@ -262,6 +264,68 @@ td.actions .btn { padding: 3px 8px; font-size: 12px; margin-right: 4px; }
   font-size: 11px;
   margin-right: 4px;
 }
+
+/* ---------------- 功能开关 ---------------- */
+
+.feature-list { display: flex; flex-direction: column; gap: 8px; }
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--panel-2);
+}
+.feature-item .info { min-width: 0; }
+.feature-item .name {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.feature-item .key { color: var(--text-dim); font-size: 11px; }
+.feature-item .desc { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
+.feature-item .blocked { color: var(--warn); font-size: 11px; margin-top: 3px; }
+
+/* 纯 CSS 开关：不依赖任何图标库或内联 SVG */
+.switch { position: relative; flex: none; width: 40px; height: 22px; }
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+.switch .thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+  pointer-events: none;
+}
+.switch input:checked ~ .track { background: var(--ok); }
+.switch input:checked ~ .thumb { transform: translateX(18px); }
+.switch input:disabled { cursor: not-allowed; }
+.switch input:disabled ~ .track { opacity: 0.45; }
 
 /* ---------------- Toast 与 Modal ---------------- */
 

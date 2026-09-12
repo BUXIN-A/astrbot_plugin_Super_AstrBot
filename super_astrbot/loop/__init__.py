@@ -14,11 +14,12 @@ from .budget import LLMBudget
 from .concurrency import ConcurrencyGate
 from .scheduler import JobSpec, Scheduler
 from .state_store import MemoryStateStore, StateStore
-from .task_scope import ScopeToken, TaskScope
+from .task_scope import ABANDONED, ScopeToken, TaskScope
 
 __all__ = [
     "TaskScope",
     "ScopeToken",
+    "ABANDONED",
     "Scheduler",
     "JobSpec",
     "ConcurrencyGate",

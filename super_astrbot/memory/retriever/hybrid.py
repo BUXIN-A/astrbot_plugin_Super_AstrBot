@@ -90,6 +90,28 @@ class HybridRetriever:
     def route_names(self) -> list[str]:
         return [str(getattr(route, "name", "unknown")) for route in self._routes]
 
+    def add_route(self, route: object) -> bool:
+        """新增/替换一条检索路（同名视为替换）。
+
+        用于运行时热切换：例如 ProviderManager 就绪后启用向量路，
+        或用户从控制台关闭关键词路。
+        """
+        name = str(getattr(route, "name", ""))
+        if not name:
+            return False
+        self._routes = [item for item in self._routes if str(getattr(item, "name", "")) != name]
+        self._routes.append(route)
+        return True
+
+    def remove_route(self, name: str) -> bool:
+        """移除指定检索路；返回是否真的移除了。"""
+        before = len(self._routes)
+        self._routes = [item for item in self._routes if str(getattr(item, "name", "")) != name]
+        return len(self._routes) != before
+
+    def has_route(self, name: str) -> bool:
+        return any(str(getattr(item, "name", "")) == name for item in self._routes)
+
     async def search(
         self,
         scopes: Sequence[MemoryScope],

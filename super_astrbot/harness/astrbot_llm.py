@@ -238,21 +238,37 @@ class AstrBotEmbeddingGateway:
         self._resolved = False
 
     def _resolve(self) -> None:
-        if self._resolved:
+        """解析嵌入提供商。
+
+        关键：**解析失败时不缓存结论**。AstrBot 的生命周期是「先加载插件、后初始化
+        ProviderManager」，所以插件启动时探测必然是空的；若把这次失败永久缓存，
+        向量能力将永远不可用（这正是 v0.2.0 在服务器上的实际表现：已配置
+        ``ollama_embedding``，却始终显示「向量能力不可用」）。
+        因此这里只在**成功**时置 ``_resolved``，失败允许下次调用重试 ——
+        重试代价仅是几次属性查找。
+        """
+        if self._resolved and self._provider is not None:
             return
-        self._resolved = True
         try:
             if self._preferred_id:
                 candidate = self._context.get_provider_by_id(self._preferred_id)
                 if self._is_embedding(candidate):
                     self._provider = candidate
+                    self._resolved = True
                     return
             for candidate in self._context.get_all_embedding_providers() or []:
                 if self._is_embedding(candidate):
                     self._provider = candidate
+                    self._resolved = True
                     return
         except Exception as exc:  # noqa: BLE001
             self._host.log().debug("解析 Embedding 提供商失败：%s", safe_detail(exc))
+        self._provider = None
+        self._resolved = False
+
+    def refresh(self) -> None:
+        """清除缓存并允许重新解析（ProviderManager 就绪后重新探测时调用）。"""
+        self._resolved = False
         self._provider = None
 
     def _is_embedding(self, candidate: Any) -> bool:

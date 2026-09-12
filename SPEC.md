@@ -67,18 +67,29 @@
 
 `spec/capabilities.py` 为代码化登记表，与 `_conf_schema.json` 的布尔开关一一对应。
 
-| key | 所属域 | 默认 | 前置依赖 | 说明 |
-|---|---|---|---|---|
-| `basic.enabled` | 基础 | on | — | 总开关；关闭时所有钩子直接返回 |
-| `memory.enabled` | 记忆 | on | `basic.enabled` | 长期记忆总开关 |
-| `memory.capture` | 记忆 | on | `memory.enabled` | 自动采集对话写入记忆 |
-| `memory.fts_enabled` | 记忆 | on | `memory.enabled` | 关键词全文检索路 |
-| `memory.vector_enabled` | 记忆 | on | `memory.enabled` + 存在 Embedding Provider | 向量语义检索路；不可用时静默降级 |
-| `reflection.enabled` | 自我学习 | on | `memory.enabled` | 反思式自我学习 |
-| `journal.enabled` | 周记 | on | `basic.enabled` | 周记现实记忆 |
-| `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | 周度洞察生成 |
+| key | 所属域 | 默认 | 前置依赖 | 热切换 | 说明 |
+|---|---|---|---|---|---|
+| `basic.enabled` | 基础 | on | — | ❌ | 总开关；关闭时所有钩子直接返回 |
+| `basic.debug_log` | 基础 | off | — | ✅ | 输出检索打分、注入字符数等排障细节 |
+| `memory.enabled` | 记忆 | on | `basic.enabled` | ✅ | 长期记忆总开关 |
+| `memory.capture` | 记忆 | on | `memory.enabled` | ✅ | 自动采集对话写入记忆 |
+| `memory.capture_groups` | 记忆 | on | `memory.capture` | ✅ | 群聊消息是否进入对话缓冲 |
+| `memory.capture_private` | 记忆 | on | `memory.capture` | ✅ | 私聊消息是否进入对话缓冲 |
+| `memory.fts_enabled` | 记忆 | on | `memory.enabled` | ✅ | 关键词全文检索路 |
+| `memory.vector_enabled` | 记忆 | on | `memory.enabled` + 存在 Embedding Provider | ✅ | 向量语义检索路；不可用时静默降级 |
+| `reflection.enabled` | 自我学习 | on | `memory.enabled` | ✅ | 反思式自我学习 |
+| `journal.enabled` | 周记 | on | `basic.enabled` | ✅ | 周记现实记忆 |
+| `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
 
 **依赖解析规则**：某能力的前置不满足时，该能力视为关闭，并记录一条 `DegradedReason`（只告警一次）。
+
+**热切换规则**：`hot_reloadable=False` 的能力（当前仅 `basic.enabled`）写入配置后**不立即生效**，
+控制台会提示「需重载插件」，并在界面上禁用直接切换；其余能力均可运行时热应用。
+运行时相关能力（`memory.vector_enabled`）还需 `overrides` 通过环境探测，
+环境不支持时控制台禁用开关并说明原因。
+
+**配置写入**：控制台开关经 `spec/capabilities.py: set_path()` 按点号路径写入配置，
+自动创建缺失的中间层，并拒绝覆盖异常结构（返回 `False` 而非破坏配置）。
 
 ---
 
@@ -139,13 +150,16 @@ class EventView:
 
 | 组件 | 契约 |
 |---|---|
-| `TaskScope` | `run(awaitable_factory, *, timeout=None, token=None)`；支持 `cancel()`、`is_stopped()`；**迟到结果必须靠代次令牌丢弃** |
+| `TaskScope` | `run(awaitable_factory, *, timeout=None, token=None)`；支持 `cancel()`、`is_stopped()`；**迟到结果必须靠代次令牌丢弃**；被放弃时返回哨兵 `ABANDONED`（而非 `None`），调用方必须用 `is ABANDONED` 判定，禁止用 `result is None` 推断放弃 |
 | `Token` | `scope_identity + generation`；`is_current(token)` 判定结果是否仍有效 |
 | `Scheduler` | `every(seconds, job, *, key, run_immediately=False)`、`daily_at(hour, minute, job, *, key, weekday=None)`、`start()`、`shutdown()`；**同一 key 幂等**，跨重载不重复触发，且随插件卸载全部取消 |
 | `ConcurrencyGate` | `read(key)` / `write(key)` 异步上下文管理器；同一 key 读共享、写独占 |
 | `Budget` | `try_acquire(purpose) -> bool`；按日计数，超限拒绝；`stats()` 供面板展示 |
 
 **硬性要求**：所有后台任务必须经 `TaskScope` 或 `Scheduler` 创建；插件 `terminate()` 时必须能全部收敛（无游离任务）。
+
+> `ABANDONED` 哨兵的必要性：任务正常结束时也可能返回 `None`，若用 `result is None` 判断放弃，
+> 所有正常任务都会被误判为超时（调度器会误报 WARN 并计入跳过）。哨兵把「放弃」与「正常返回」显式区分开。
 
 ### 4.4 存储契约（`storage/`）
 
@@ -235,12 +249,20 @@ class EventView:
   `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`help`。
   之所以不注册多条顶层/子指令：AstrBot 的指令冲突检测以指令「完整名」为键，
   注册项越少撞名概率越低，也不依赖框架的参数推导行为。
-- 面板（`pages/dashboard`）六个分区：总览、记忆、检索、周记、待审、系统。
+- 面板（`pages/dashboard`）七个分区：总览、记忆、检索、周记、待审、功能、系统。
   前端**只经 `window.AstrBotPluginPage` bridge 请求**，不使用 `fetch`（插件页位于
   无 `allow-same-origin` 的 sandbox iframe，直连请求必然失败）；入口脚本必须
   `type="module"`，确保在 AstrBot 注入 bridge 之后执行。
+- **功能管理界面**（`功能` 分区）：从能力注册表渲染图形化开关，覆盖全部能力项。
+  开关经 `POST feature-toggle` 写配置 → 落盘 → `refresh_capabilities()` 热应用，
+  并回传实际生效状态；界面区分「需重载」（禁用）与「环境不支持」（禁用并说明），
+  前置未开启时给出提示；总览页的能力指示可点击跳转至对应开关。
+- 插件图标：仓库根 `logo.png` 为插件列表图标，面板品牌区与页签使用
+  `pages/dashboard/logo.svg`（矢量，随主题缩放不失真）。
 - 配置页的「嵌入模型提供商」下拉由 `app.sync_schema_options()` 运行时注入（框架的
   `select_provider` 硬编码为对话模型）；无可用嵌入提供商时字段退回文本框。
+  由于 AstrBot **先加载插件、后初始化 `ProviderManager`**，启动期探测必然为空，
+  故嵌入探测**失败不缓存**，并在 `on_astrbot_loaded` 钩子中复检，使向量路自动启用。
 - 所有敏感值（除内容外）只回状态不回原文；面板默认只读优先。
 
 ---
@@ -284,12 +306,13 @@ class EventView:
 | P0 | 规格 + 脚手架 + Harness + Loop + Storage | ✅ 已完成 |
 | P1 | Memory 闭环 + 周记 + 命令 + 面板 | ✅ 已完成 |
 | P1.6 | 修复指令冲突面/嵌入模型下拉/面板加载失败；控制台重建为六分区 | ✅ 已完成（v0.2.0） |
+| P1.7 | 功能管理界面（能力热开关）；修复调度器误报与向量能力永久不可用 | ✅ 已完成（v0.3.0） |
 | P1.5 | Agent 函数工具（`memory_search` / `memory_write`） | 待做（近期） |
 | P2 | 上下文治理（token 估算 / 工具与图片历史占位 / 摘要水位线） | 规划 |
 | P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | 规划 |
 | P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | 规划 |
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | 规划 |
 
-**验收结果**：`pytest tests -q` 104 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
-`node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载与向量路启用
-仍待服务器实测（本地无运行实例）。
+**验收结果**：`pytest tests -q` 119 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+`node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换
+与向量路启用仍待服务器实测（本地无运行实例）。

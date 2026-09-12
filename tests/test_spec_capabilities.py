@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from super_astrbot.spec.capabilities import (
+    capability,
     explain_disabled,
     get_path,
     resolve_capabilities,
+    set_path,
 )
 
 
@@ -57,3 +59,58 @@ def test_string_bool_coercion() -> None:
     assert resolved["memory.enabled"] is False
     resolved_on = resolve_capabilities({"memory": {"enabled": "on"}})
     assert resolved_on["memory.enabled"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 功能开关所需的写路径与元数据
+# --------------------------------------------------------------------------- #
+
+
+def test_set_path_creates_missing_layers() -> None:
+    config: dict = {}
+    assert set_path(config, "memory.enabled", False) is True
+    assert config == {"memory": {"enabled": False}}
+    assert set_path(config, "a.b.c", 1) is True
+    assert config["a"]["b"]["c"] == 1
+
+
+def test_set_path_rejects_broken_structure() -> None:
+    config = {"memory": "not-a-mapping"}
+    assert set_path(config, "memory.enabled", True) is False
+    assert config["memory"] == "not-a-mapping", "不得覆盖异常结构"
+
+
+def test_set_path_rejects_empty_path() -> None:
+    assert set_path({}, "", 1) is False
+    assert set_path({}, "a..b", 1) is False
+
+
+def test_new_capabilities_registered() -> None:
+    for key in ("basic.debug_log", "memory.capture_groups", "memory.capture_private"):
+        assert capability(key).key == key
+
+
+def test_capture_subflags_follow_capture() -> None:
+    resolved = resolve_capabilities({"memory": {"capture": False}})
+    assert resolved["memory.capture"] is False
+    assert resolved["memory.capture_groups"] is False
+    assert resolved["memory.capture_private"] is False
+
+
+def test_hot_reloadable_flags() -> None:
+    # 总开关无法热切换（涉及整条运行时链路），其余功能均可热切换
+    assert capability("basic.enabled").hot_reloadable is False
+    for key in ("memory.enabled", "reflection.enabled", "journal.enabled", "basic.debug_log"):
+        assert capability(key).hot_reloadable is True
+
+
+def test_capability_metadata_complete_for_ui() -> None:
+    """控制台需要 title/domain/description，缺失会导致开关列表空白。"""
+    for key in (
+        "basic.enabled",
+        "memory.enabled",
+        "reflection.enabled",
+        "journal.enabled",
+    ):
+        item = capability(key)
+        assert item.title and item.domain and item.description

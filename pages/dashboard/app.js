@@ -16,11 +16,25 @@ const LOCAL_I18N = {
     "shell.title": "Super_AstrBot 控制台",
     "shell.subtitle": "长期记忆 · 自我学习",
     "nav.overview": "总览",
+    "nav.features": "功能",
     "nav.memories": "记忆",
     "nav.recall": "检索",
     "nav.journals": "周记",
     "nav.reviews": "待审",
     "nav.system": "系统",
+    "features.title": "功能开关",
+    "features.hint": "开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。",
+    "features.empty": "没有可用的功能项。",
+    "features.switchOn": "开",
+    "features.switchOff": "关",
+    "features.needsReload": "需重载",
+    "features.runtimeUnsupported": "环境不支持",
+    "features.blockedBy": "依赖未开启",
+    "domain.basic": "基础",
+    "domain.memory": "记忆",
+    "domain.reflection": "自我学习",
+    "domain.journal": "周记",
+    "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
     "action.query": "查询",
@@ -70,11 +84,25 @@ const LOCAL_I18N = {
     "shell.title": "Super_AstrBot Console",
     "shell.subtitle": "Long-term memory · Self-learning",
     "nav.overview": "Overview",
+    "nav.features": "Features",
     "nav.memories": "Memories",
     "nav.recall": "Recall",
     "nav.journals": "Journal",
     "nav.reviews": "Reviews",
     "nav.system": "System",
+    "features.title": "Feature toggles",
+    "features.hint": "Toggles are written to the plugin config and applied immediately; items marked \"reload\" take effect after reloading the plugin.",
+    "features.empty": "No features available.",
+    "features.switchOn": "On",
+    "features.switchOff": "Off",
+    "features.needsReload": "Reload",
+    "features.runtimeUnsupported": "Unsupported",
+    "features.blockedBy": "Dependencies off",
+    "domain.basic": "Basics",
+    "domain.memory": "Memory",
+    "domain.reflection": "Self-learning",
+    "domain.journal": "Journal",
+    "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
     "action.query": "Query",
@@ -353,16 +381,18 @@ async function loadOverview(force = false) {
     $("footer-version").textContent = `v${data.plugin_version || "?"} · AstrBot ${framework.version || "?"}`;
     $("footer-ready").textContent = data.ready ? `就绪 · ${data.database || ""}` : "未就绪";
 
-    // 能力开关
+    // 能力开关（点击任意一个跳到「功能」页）
     const caps = data.capabilities || {};
-    $("ov-caps").innerHTML = Object.entries(caps)
-      .map(
-        ([key, value]) =>
-          `<span class="pill ${value ? "on" : "off"}" title="${esc(key)}">${esc(
-            key.replace(/^(basic|memory|reflection|journal)\./, "")
-          )}</span>`
-      )
-      .join("");
+    $("ov-caps").innerHTML =
+      Object.entries(caps)
+        .map(
+          ([key, value]) =>
+            `<span class="pill ${value ? "on" : "off"} clickable" data-goto="features" title="${esc(key)}">${esc(
+              key.replace(/^(basic|memory|reflection|journal)\./, "")
+            )}</span>`
+        )
+        .join("") +
+      `<span class="muted clickable" data-goto="features">→ ${esc(t("overview.manageFeatures"))}</span>`;
 
     // 降级原因
     const degraded = data.degraded || [];
@@ -402,6 +432,95 @@ async function loadOverview(force = false) {
     );
   } catch (error) {
     renderError($("ov-recent"), error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：功能开关                                                          */
+/* ---------------------------------------------------------------------- */
+
+const DOMAIN_TITLES = {
+  basic: "domain.basic",
+  memory: "domain.memory",
+  reflection: "domain.reflection",
+  journal: "domain.journal",
+};
+
+function featureStatusPill(item) {
+  if (item.status === "needs_reload") {
+    return `<span class="pill warn">${esc(t("features.needsReload"))}</span>`;
+  }
+  if (item.status === "runtime_unsupported") {
+    return `<span class="pill warn">${esc(t("features.runtimeUnsupported"))}</span>`;
+  }
+  const label = item.enabled ? t("features.switchOn") : t("features.switchOff");
+  return `<span class="pill ${item.enabled ? "on" : "off"}">${esc(label)}</span>`;
+}
+
+function renderFeatureItem(item) {
+  // 「需重载」与「环境不支持」两类不允许在页面上直接切换：
+  // 前者切了也要重载才生效，后者切了会立刻被能力解析回退，徒增困惑。
+  const locked = item.status === "needs_reload" || item.status === "runtime_unsupported";
+  const blocked = (item.blocked_by || []).length
+    ? `<div class="blocked">${esc(`${t("features.blockedBy")}：${item.blocked_by.join("、")}`)}</div>`
+    : "";
+  return `
+    <div class="feature-item">
+      <div class="info">
+        <div class="name">${esc(item.title)} ${featureStatusPill(item)}
+          <span class="key">${esc(item.key)}</span></div>
+        <div class="desc">${esc(item.description || "")}</div>
+        ${blocked}
+      </div>
+      <label class="switch">
+        <input type="checkbox" data-feature="${esc(item.key)}"
+          ${item.enabled ? "checked" : ""} ${locked ? "disabled" : ""} />
+        <span class="track"></span><span class="thumb"></span>
+      </label>
+    </div>`;
+}
+
+async function loadFeatures() {
+  const target = $("feat-list");
+  try {
+    const result = await apiGet("features");
+    const items = result.items || [];
+    if (items.length === 0) {
+      renderEmpty(target, t("features.empty"));
+      return;
+    }
+
+    const groups = new Map();
+    items.forEach((item) => {
+      const domain = item.domain || "other";
+      if (!groups.has(domain)) groups.set(domain, []);
+      groups.get(domain).push(item);
+    });
+
+    const blocks = [];
+    groups.forEach((groupItems, domain) => {
+      const title = DOMAIN_TITLES[domain] ? t(DOMAIN_TITLES[domain]) : domain;
+      blocks.push(`<div class="muted">${esc(title)}</div>`);
+      groupItems.forEach((item) => blocks.push(renderFeatureItem(item)));
+    });
+    target.innerHTML = blocks.join("");
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function handleFeatureToggle(key, enabled, input) {
+  input.disabled = true;
+  try {
+    const result = await apiPost("feature-toggle", { key, enabled });
+    toast(result.message || "已更新", "ok");
+    // 概览页的能力指示与系统页都依赖 overview，清缓存后按需重取
+    state.overview = null;
+    await loadFeatures();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+    input.checked = !enabled;
+    input.disabled = false;
   }
 }
 
@@ -742,6 +861,7 @@ async function openMemoryDetail(id) {
 
 const PAGE_TITLES = {
   overview: "nav.overview",
+  features: "nav.features",
   memories: "nav.memories",
   recall: "nav.recall",
   journals: "nav.journals",
@@ -751,6 +871,7 @@ const PAGE_TITLES = {
 
 const LOADERS = {
   overview: () => loadOverview(true),
+  features: () => loadFeatures(),
   memories: () => loadMemories(),
   journals: () => loadJournals(),
   reviews: () => loadReviews(),
@@ -882,8 +1003,13 @@ function bindEvents() {
     }
   });
 
-  // 事件委托：详情与审批
+  // 事件委托：跳转、详情、审批
   document.addEventListener("click", (event) => {
+    const gotoNode = event.target.closest("[data-goto]");
+    if (gotoNode) {
+      navigate(gotoNode.dataset.goto);
+      return;
+    }
     const memoryNode = event.target.closest("[data-memory]");
     if (memoryNode) {
       openMemoryDetail(memoryNode.dataset.memory);
@@ -893,6 +1019,12 @@ function bindEvents() {
     if (reviewNode) {
       handleReviewAction(reviewNode.dataset.review, reviewNode.dataset.action, reviewNode);
     }
+  });
+
+  // 功能开关（复选框只有 click 无法覆盖键盘操作，用 change 更稳妥）
+  document.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-feature]");
+    if (input) handleFeatureToggle(input.dataset.feature, input.checked, input);
   });
 
   $("modal-close").addEventListener("click", closeModal);

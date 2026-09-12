@@ -22,7 +22,7 @@ from typing import Any, Awaitable, Callable, Dict
 
 from ..spec.errors import safe_detail
 from .state_store import MemoryStateStore, StateStore
-from .task_scope import TaskScope
+from .task_scope import ABANDONED, TaskScope
 
 
 @dataclass
@@ -202,20 +202,25 @@ class Scheduler:
 
     async def _run_job(self, spec: JobSpec, now: float) -> None:
         error: str | None = None
+        abandoned = False
         try:
             result = await self._scope.run(spec.job, timeout=spec.timeout)
+            # 必须用哨兵判断：任务正常结束时也会返回 None
+            abandoned = result is ABANDONED
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - 单个 job 失败不影响调度器
             error = safe_detail(exc)
-            result = None
 
-        not_executed = result is None and error is None
-        if not_executed:
+        if abandoned:
             spec.skipped += 1
             if self._scope.is_stopped():
                 return
-            self._warn("任务 %s 未完成执行（超时或令牌失效），将按失败处理", spec.key)
+            self._warn(
+                "任务 %s 被放弃（超时 %s 秒或令牌失效）",
+                spec.key,
+                f"{spec.timeout:.0f}" if spec.timeout else "未设置",
+            )
 
         spec.runs += 1
         spec.last_run = now

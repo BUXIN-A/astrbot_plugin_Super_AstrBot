@@ -6,6 +6,7 @@ import asyncio
 import time
 
 from super_astrbot.loop import (
+    ABANDONED,
     ConcurrencyGate,
     LLMBudget,
     MemoryStateStore,
@@ -28,11 +29,11 @@ def test_task_scope_returns_result_and_stops() -> None:
 
     value, skipped = asyncio.run(_run())
     assert value == 42
-    assert skipped is None
+    assert skipped is ABANDONED
 
 
 def test_task_scope_token_invalidation() -> None:
-    async def _run() -> tuple[int | None, int | None]:
+    async def _run() -> tuple[int | None, object]:
         scope = TaskScope("t")
         token = scope.token()
 
@@ -46,7 +47,7 @@ def test_task_scope_token_invalidation() -> None:
 
     valid, stale = asyncio.run(_run())
     assert valid == 1
-    assert stale is None
+    assert stale is ABANDONED
 
 
 def test_task_scope_timeout_abandons() -> None:
@@ -59,7 +60,32 @@ def test_task_scope_timeout_abandons() -> None:
 
         return await scope.run(slow, timeout=0.05)
 
-    assert asyncio.run(_run()) is None
+    assert asyncio.run(_run()) is ABANDONED
+
+
+def test_task_scope_distinguishes_none_result_from_abandoned() -> None:
+    """回归：任务正常返回 None 不能被当成「被放弃」。
+
+    v0.2.0 的调度器曾用 ``result is None`` 判断放弃，导致所有正常结束的任务
+    都被误报为「超时或令牌失效」。
+    """
+
+    async def _run() -> tuple[object, object]:
+        scope = TaskScope("t")
+
+        async def returns_none() -> None:
+            return None
+
+        normal = await scope.run(returns_none)
+        token = scope.token()
+        scope.bump_generation()
+        abandoned = await scope.run(returns_none, token=token)
+        return normal, abandoned
+
+    normal, abandoned = asyncio.run(_run())
+    assert normal is None
+    assert normal is not ABANDONED
+    assert abandoned is ABANDONED
 
 
 def test_task_scope_cancel_all_converges() -> None:
@@ -122,6 +148,52 @@ def test_scheduler_interval_advances_next_run() -> None:
     count, first_next = asyncio.run(_run())
     assert count == 1
     assert first_next == 1010.0
+
+
+def test_scheduler_job_returning_none_counts_as_executed() -> None:
+    """回归：与真实任务一样返回 None 的作业不得被记为「跳过」。
+
+    v0.2.0 的服务器日志出现过误报：
+    ``任务 reflection-scan 未完成执行（超时或令牌失效），将按失败处理``。
+    """
+
+    async def _run() -> tuple[int, int, int]:
+        now = time.time()
+        scope = TaskScope("s", poll_interval=0.01)
+        scheduler = Scheduler(scope, store=MemoryStateStore(), clock=lambda: now, tick=1.0)
+        calls: list[int] = []
+
+        async def job() -> None:
+            calls.append(1)
+
+        scheduler.every(10.0, job, key="none-job", run_immediately=True)
+        await scheduler._tick_once(now)
+        spec = scheduler.get("none-job")
+        return len(calls), spec.runs, spec.skipped
+
+    calls, runs, skipped = asyncio.run(_run())
+    assert calls == 1
+    assert runs == 1
+    assert skipped == 0, "正常返回 None 的任务不得被判定为「被放弃」"
+
+
+def test_scheduler_marks_skipped_only_when_abandoned() -> None:
+    async def _run() -> tuple[int, int]:
+        now = time.time()
+        scope = TaskScope("s", poll_interval=0.01)
+        scheduler = Scheduler(scope, store=MemoryStateStore(), clock=lambda: now, tick=1.0)
+
+        async def slow() -> None:
+            await asyncio.sleep(5)
+
+        scheduler.every(10.0, slow, key="slow-job", run_immediately=True, timeout=0.05)
+        await scheduler._tick_once(now)
+        spec = scheduler.get("slow-job")
+        return spec.runs, spec.skipped
+
+    runs, skipped = asyncio.run(_run())
+    assert skipped == 1, "真正被放弃（超时）的任务才计入跳过"
+    assert runs == 1
 
 
 def test_scheduler_persists_state_across_instances() -> None:
