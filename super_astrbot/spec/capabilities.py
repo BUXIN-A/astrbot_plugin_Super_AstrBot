@@ -153,6 +153,17 @@ CAPABILITIES: tuple[Capability, ...] = (
             "会改变所有会话的模型行为，默认关闭；开启后需重载插件生效。"
         ),
     ),
+    Capability(
+        key="context.governance",
+        title="上下文治理",
+        domain="context",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "请求级压缩：估算 token，折叠早期工具结果与图片，必要时把更早的历史压成摘要。"
+            "只影响本次请求、不改写对话历史；默认关闭。"
+        ),
+    ),
 )
 
 _BY_KEY: dict[str, Capability] = {item.key: item for item in CAPABILITIES}

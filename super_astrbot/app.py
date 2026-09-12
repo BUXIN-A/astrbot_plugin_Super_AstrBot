@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from . import __version__
+from .context import ContextConfig, ContextGovernor
 from .harness import (
     MEMORY_TOOL_NAMES,
     Harness,
@@ -109,6 +110,7 @@ class SuperAstrBotApp:
         self._memory_config: MemoryConfig | None = None
         self._journal_config: JournalConfig | None = None
         self._reflection_config: ReflectionConfig | None = None
+        self._context_config: ContextConfig | None = None
 
         self._memories: MemoryRepository | None = None
         self._journals_repo: JournalRepository | None = None
@@ -118,6 +120,7 @@ class SuperAstrBotApp:
         self._memory_service: MemoryService | None = None
         self._journal_service: JournalService | None = None
         self._reflection_service: ReflectionService | None = None
+        self._context_governor: ContextGovernor | None = None
 
         self._effective_capabilities: dict[str, bool] = {}
         self._retriever: Any | None = None
@@ -157,6 +160,10 @@ class SuperAstrBotApp:
     @property
     def reflection_config(self) -> ReflectionConfig | None:
         return self._reflection_config
+
+    @property
+    def context_config(self) -> ContextConfig | None:
+        return self._context_config
 
     @property
     def host(self) -> Any:
@@ -236,6 +243,7 @@ class SuperAstrBotApp:
         self._memory_config = MemoryConfig.from_mapping(self._config)
         self._journal_config = JournalConfig.from_mapping(self._config)
         self._reflection_config = ReflectionConfig.from_mapping(self._config)
+        self._context_config = ContextConfig.from_mapping(self._config)
         self._sync_derived_configs()
 
     def _probe_runtime_overrides(self) -> dict[str, bool]:
@@ -290,6 +298,8 @@ class SuperAstrBotApp:
             self._journal_config.enabled = self._enabled("journal.enabled")
         if self._reflection_config is not None:
             self._reflection_config.enabled = self._enabled("reflection.enabled")
+        if self._context_config is not None:
+            self._context_config.enabled = self._enabled("context.governance")
 
     def _sync_retriever_routes(self) -> None:
         """按当前能力开关增删检索路（热切换）。"""
@@ -623,6 +633,13 @@ class SuperAstrBotApp:
             llm=self._harness.llm,
             logger=self._logger,
         )
+        assert self._context_config is not None
+        self._context_governor = ContextGovernor(
+            config=self._context_config,
+            llm=self._harness.llm,
+            store=self._state_store,
+            logger=self._logger,
+        )
 
     async def _start_background(self) -> None:
         assert self._scheduler is not None and self._memory_service is not None
@@ -779,14 +796,24 @@ class SuperAstrBotApp:
     # ------------------------------------------------------------------ #
 
     async def on_llm_request(self, event: Any, request: Any) -> None:
-        """LLM 请求钩子：召回并注入记忆。"""
-        if not self._ready or self._memory_service is None or request is None:
-            return
-        if not self._enabled("memory.enabled"):
+        """LLM 请求钩子：注入记忆，再做请求级上下文治理。
+
+        两条链路互相独立：记忆走 ``extra_user_content_parts``，上下文治理走 ``contexts``，
+        任一条失败都不影响另一条，也不影响对话本身。
+        """
+        if not self._ready or request is None:
             return
 
         view = to_event_view(event)
         if view.stopped or not view.text.strip():
+            return
+
+        await self._inject_memory(view, request)
+        await self._govern_context(view, request)
+
+    async def _inject_memory(self, view: EventView, request: Any) -> None:
+        """召回并注入长期记忆；失败只降级。"""
+        if self._memory_service is None or not self._enabled("memory.enabled"):
             return
 
         if self._enabled("memory.capture"):
@@ -819,6 +846,21 @@ class SuperAstrBotApp:
             )
         else:
             self._debug("记忆未注入：%s", inject_result.reason)
+
+    async def _govern_context(self, view: EventView, request: Any) -> None:
+        """请求级上下文治理：仅在估算超过阈值时动手。"""
+        governor = self._context_governor
+        if governor is None or not self._enabled("context.governance"):
+            return
+        try:
+            result = await governor.govern(request, session_key=view.umo)
+        except Exception as exc:  # noqa: BLE001 - 治理失败不影响对话
+            self._warn("上下文治理异常：%s", safe_detail(exc))
+            return
+        if result.error:
+            self._warn("上下文治理降级（%s）：%s", result.reason, result.error)
+        elif result.applied:
+            self._debug("上下文治理：%s", result.summary())
 
     async def on_after_message_sent(self, event: Any) -> None:
         """消息发送后钩子：把 Bot 回复放入对话缓冲，作为反思原料。"""
@@ -964,6 +1006,9 @@ class SuperAstrBotApp:
             "memory": memory_stats,
             "scheduler": scheduler,
             "budget": budget,
+            "context": (
+                self._context_governor.snapshot() if self._context_governor is not None else {}
+            ),
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,
             "database": str(self._db.path) if self._db is not None else "",
             "fts": bool(self._db.fts_available) if self._db is not None else False,

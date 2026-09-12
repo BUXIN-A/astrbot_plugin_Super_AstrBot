@@ -35,6 +35,7 @@ const LOCAL_I18N = {
     "domain.reflection": "自我学习",
     "domain.journal": "周记",
     "domain.agent": "Agent 工具",
+    "domain.context": "上下文治理",
     "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
@@ -104,6 +105,7 @@ const LOCAL_I18N = {
     "domain.reflection": "Self-learning",
     "domain.journal": "Journal",
     "domain.agent": "Agent tools",
+    "domain.context": "Context control",
     "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
@@ -447,6 +449,7 @@ const DOMAIN_TITLES = {
   reflection: "domain.reflection",
   journal: "domain.journal",
   agent: "domain.agent",
+  context: "domain.context",
 };
 
 function featureStatusPill(item) {

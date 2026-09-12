@@ -269,6 +269,46 @@
       }
     }
   },
+  "context": {
+    "description": "上下文治理",
+    "type": "object",
+    "hint": "请求级压缩：估算 token，折叠早期工具/图片，必要时为更早的历史生成摘要（默认关闭）",
+    "items": {
+      "enabled": {
+        "description": "启用上下文治理",
+        "type": "bool",
+        "default": false,
+        "hint": "仅在估算超过「触发阈值」时生效；只影响本次请求，不改写对话历史。开启后即时生效，无需重载"
+      },
+      "max_tokens": {
+        "description": "触发阈值与目标上限（token）",
+        "type": "int",
+        "default": 6000,
+        "slider": {"min": 1000, "max": 60000, "step": 500},
+        "hint": "估算未超过该值时不干预；超过后先折叠早期工具/图片，仍超才调用模型做摘要"
+      },
+      "keep_recent": {
+        "description": "保留最近多少条消息原文",
+        "type": "int",
+        "default": 12,
+        "slider": {"min": 2, "max": 100, "step": 1},
+        "hint": "这些消息永不参与压缩，保证模型能看到最近几轮完整对话"
+      },
+      "min_messages": {
+        "description": "少于多少条消息时不治理",
+        "type": "int",
+        "default": 8,
+        "slider": {"min": 4, "max": 100, "step": 1}
+      },
+      "summary_provider_id": {
+        "description": "摘要所用模型（建议用便宜且支持长输入的模型）",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "留空则使用当前会话默认模型"
+      }
+    }
+  },
   "runtime": {
     "description": "运行与性能",
     "type": "object",

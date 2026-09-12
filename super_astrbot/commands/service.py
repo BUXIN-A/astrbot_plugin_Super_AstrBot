@@ -117,6 +117,20 @@ class CommandService:
                 + f"，拒绝 {budget.get('rejected', 0)} 次"
             )
 
+        context = data.get("context") or {}
+        if context:
+            state = "开启" if context.get("enabled") else "关闭"
+            lines.append(
+                f"- 上下文治理：{state}（上限 {context.get('max_tokens', 0)} token，"
+                f"保留最近 {context.get('keep_recent', 0)} 条）"
+            )
+            last = context.get("last") or {}
+            if last.get("applied"):
+                lines.append(
+                    f"  最近一次：{last.get('original_tokens', 0)}→"
+                    f"{last.get('final_tokens', 0)} token（{last.get('reason', '')}）"
+                )
+
         scheduler = data.get("scheduler") or []
         for job in scheduler:
             job_next = job.get("seconds_to_next")
