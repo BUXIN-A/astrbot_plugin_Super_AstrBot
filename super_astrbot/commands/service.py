@@ -29,6 +29,7 @@ HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）�
 /sab approve <编号>   批准一条待审记录
 /sab reject <编号>    驳回一条待审记录
 /sab persona [类型]   查看拟人化学习概况；类型可选 style / jargon / affinity
+/sab graph [UMO]     查看记忆知识图谱概况；可选指定会话
 /sab reset confirm   清空当前会话的记忆与缓冲（不可逆）
 /sab reindex         重建检索索引
 /sab quiet [on|off]  暂停/恢复本会话的主动消息（免打扰）
@@ -103,6 +104,30 @@ class CommandService:
                     journals=memory.get("journals", 0),
                     routes="、".join(memory.get("routes") or []) or "无",
                 )
+            )
+
+        graph = data.get("graph") or {}
+        if graph:
+            lines.append(
+                f"- 知识图谱：{'开启' if graph.get('enabled') else '关闭'}"
+                f"（实体 {graph.get('entities', 0)} 个／关系 {graph.get('relations', 0)} 条／"
+                f"作用域 {graph.get('scopes', 0)} 个）"
+            )
+
+        review = data.get("review") or {}
+        if review:
+            lines.append(
+                f"- 自动审核：{'开启' if review.get('enabled') else '关闭'}"
+                + ("（含模型兜底）" if review.get("use_llm") else "（仅规则）")
+                + f"，待审 {review.get('pending', 0)} 条"
+                f"，已自动处理 {review.get('decided_by_auto', 0)} 条"
+            )
+
+        monitor = data.get("monitor") or {}
+        if monitor:
+            lines.append(
+                f"- 运行指标：待落盘 {monitor.get('pending', 0)} 条，"
+                f"保留 {monitor.get('retention_days', 0)} 天"
             )
 
         degraded = data.get("degraded") or []
@@ -331,6 +356,17 @@ class CommandService:
                     f"群内用语 {cleared.get('jargon', 0)} 条、"
                     f"好感度记录 {cleared.get('affinity', 0)} 条"
                 )
+        graph = self._app.graph_service
+        if graph is not None:
+            try:
+                removed = await graph.clear(scope)
+            except Exception as exc:  # noqa: BLE001
+                extra += f"（图谱清理失败：{safe_detail(exc)}）"
+            else:
+                extra += (
+                    f"，图谱实体 {removed.get('entities', 0)} 个、"
+                    f"关系 {removed.get('relations', 0)} 条"
+                )
         return (
             f"已清空当前作用域：正式记忆 {counts.get('active', 0)} 条，"
             f"对话缓冲 {counts.get('buffered', 0)} 条{extra}。"
@@ -397,6 +433,40 @@ class CommandService:
             return await self._persona_overview(service, view, scope)
         except Exception as exc:  # noqa: BLE001
             return f"读取学习结果失败：{safe_detail(exc)}"
+
+    async def graph(self, view: EventView, arg: str) -> str:
+        """查看记忆知识图谱概况；可选指定会话 UMO。"""
+        service = self._app.graph_service
+        if service is None:
+            return self._not_ready()
+        umo = (arg or "").strip()
+        scope = MemoryScope.for_session(umo) if umo else None
+        try:
+            stats = await service.stats()
+            data = await service.snapshot(scope=scope, limit_nodes=15, limit_edges=20)
+        except Exception as exc:  # noqa: BLE001
+            return f"读取图谱失败：{safe_detail(exc)}"
+
+        lines = [
+            "记忆知识图谱",
+            f"- 开关：{'开启' if self._app.capabilities.get('graph.enabled') else '关闭'}",
+            f"- 实体 {stats.get('entities', 0)} 个、关系 {stats.get('relations', 0)} 条、"
+            f"作用域 {stats.get('scopes', 0)} 个",
+            f"- 范围：{umo or '全部会话'}",
+        ]
+        nodes = data.get("nodes") or []
+        if not nodes:
+            lines.append("- 还没有抽取到实体（写入正式记忆后自动建图）")
+            return "\n".join(lines)
+
+        lines.append("实体（按权重）：")
+        for row in nodes[:10]:
+            lines.append(
+                f"- {row.get('name') or row.get('canonical_name')}"
+                f"（{row.get('entity_type') or 'concept'}，"
+                f"w={float(row.get('weight') or 0):.2f}，证据 {row.get('evidence')}）"
+            )
+        return "\n".join(lines)
 
     async def _persona_overview(self, service: Any, view: EventView, scope: MemoryScope) -> str:
         snapshot = service.snapshot()
@@ -489,6 +559,7 @@ class CommandService:
             "reindex": lambda: self.reindex(view),
             "quiet": lambda: self.quiet(view, args[0] if args else ""),
             "persona": lambda: self.persona(view, args[0] if args else ""),
+            "graph": lambda: self.graph(view, args[0] if args else ""),
         }
         handler = handlers.get(action)
         if handler is None:

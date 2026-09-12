@@ -17,6 +17,7 @@ from typing import Any, Mapping
 
 from . import __version__
 from .context import ContextConfig, ContextGovernor
+from .graph import GraphConfig, GraphService
 from .group import GroupChatService, GroupConfig
 from .harness import (
     GROUP_FILTER_AVAILABLE,
@@ -38,6 +39,7 @@ from .harness.protocols import EventView
 from .journal import JournalConfig, JournalService
 from .learning import ReflectionConfig, ReflectionService
 from .loop import ConcurrencyGate, LLMBudget, Scheduler, TaskScope
+from .maibot import MaiBotConfig, MaiBotService
 from .memory import (
     AgentMemoryBackend,
     HybridRetriever,
@@ -47,6 +49,36 @@ from .memory import (
     MemoryService,
     VectorRetriever,
 )
+from .memory.retriever import GraphRetriever
+from .monitor import (
+    METRIC_GRAPH_ENTITIES,
+    METRIC_GRAPH_INDEXED,
+    METRIC_GROUP_INTERJECT,
+    METRIC_INJECT_BLOCKS,
+    METRIC_INJECT_CHARS,
+    METRIC_LLM_BUDGET_BLOCKED,
+    METRIC_LLM_CALLS,
+    METRIC_LLM_ERRORS,
+    METRIC_LLM_LATENCY_MS,
+    METRIC_LLM_TOKENS,
+    METRIC_MEMORY_TOTAL,
+    METRIC_MEMORY_WRITES,
+    METRIC_PERSONA_LEARNED,
+    METRIC_PROACTIVE_SENT,
+    METRIC_PROACTIVE_SKIPPED,
+    METRIC_RETRIEVAL_CALLS,
+    METRIC_RETRIEVAL_HITS,
+    METRIC_RETRIEVAL_LATENCY_MS,
+    METRIC_REVIEW_AUTO_APPROVED,
+    METRIC_REVIEW_AUTO_REJECTED,
+    METRIC_REVIEW_PENDING,
+    METRIC_SCHEDULER_DURATION_MS,
+    METRIC_SCHEDULER_FAILURES,
+    METRIC_SCHEDULER_RUNS,
+    MonitorService,
+    observe,
+    record,
+)
 from .persona import PersonaConfig, PersonaService, summarize_reviews
 from .proactive import (
     TRACK_DAILY,
@@ -55,6 +87,7 @@ from .proactive import (
     ProactiveConfig,
     ProactiveService,
 )
+from .review import AutoReviewService, ReviewConfig
 from .spec.capabilities import explain_disabled, resolve_capabilities
 from .spec.errors import StorageError, safe_detail
 from .spec.scopes import MemoryScope, ScopeType, retrieval_scopes
@@ -62,16 +95,18 @@ from .storage import (
     CURRENT_VERSION,
     AffinityRepository,
     Database,
+    GraphRepository,
     JargonRepository,
     JournalRepository,
     MemoryRepository,
+    MetricSeriesRepository,
     ReflectionRepository,
     ReviewRepository,
     SqliteStateStore,
     StyleRepository,
     VectorRepository,
 )
-from .support import truncate
+from .support import PromptOverrides, truncate
 
 _DB_FILENAME = "super_astrbot.db"
 _SKIP_CAPTURE_PREFIXES = ("/", "!", "#", ".")
@@ -96,10 +131,18 @@ _JOB_PROACTIVE_DAILY = "proactive-daily"
 _JOB_PROACTIVE_IDLE = "proactive-idle"
 _PROACTIVE_JOB_TIMEOUT = 300.0
 """主动交互任务超时（秒）：逐个会话生成 + 发送，给足余量但不无限占用。"""
-
 _JOB_JARGON_SCAN = "persona-jargon-scan"
 _JARGON_JOB_TIMEOUT = 300.0
 """黑话扫描任务超时（秒）：一次批量推断 + 若干次写入。"""
+
+_JOB_REVIEW_AUTO = "review-auto"
+_REVIEW_JOB_TIMEOUT = 300.0
+"""自动审核任务超时（秒）：一批规则判定 + 可能的模型兜底。"""
+
+_JOB_MONITOR_FLUSH = "monitor-flush"
+_MONITOR_FLUSH_INTERVAL = 60.0
+"""指标落盘间隔（秒）：内存聚合按小时桶，只需分钟级批量写入。"""
+
 
 _STYLE_PAIR_TTL = 300.0
 """风格配对的有效期（秒）：用户消息与 Bot 回复超过该间隔就不再配对成样本。"""
@@ -146,6 +189,9 @@ class SuperAstrBotApp:
         self._group_config: GroupConfig | None = None
         self._proactive_config: ProactiveConfig | None = None
         self._persona_config: PersonaConfig | None = None
+        self._graph_config: GraphConfig | None = None
+        self._review_config: ReviewConfig | None = None
+        self._maibot_config: MaiBotConfig | None = None
 
         self._memories: MemoryRepository | None = None
         self._journals_repo: JournalRepository | None = None
@@ -154,6 +200,8 @@ class SuperAstrBotApp:
         self._style_repo: StyleRepository | None = None
         self._jargon_repo: JargonRepository | None = None
         self._affinity_repo: AffinityRepository | None = None
+        self._graph_repo: GraphRepository | None = None
+        self._metrics_repo: MetricSeriesRepository | None = None
 
         self._memory_service: MemoryService | None = None
         self._journal_service: JournalService | None = None
@@ -162,6 +210,10 @@ class SuperAstrBotApp:
         self._group_service: GroupChatService | None = None
         self._proactive_service: ProactiveService | None = None
         self._persona_service: PersonaService | None = None
+        self._graph_service: GraphService | None = None
+        self._auto_review_service: AutoReviewService | None = None
+        self._maibot_service: MaiBotService | None = None
+        self._monitor_service: MonitorService | None = None
         self._group_gate: Any | None = None
         """当前注入给 harness 的门控闭包（卸载时按对象身份清除，避免误清新实例）。"""
 
@@ -228,6 +280,26 @@ class SuperAstrBotApp:
         return self._persona_config
 
     @property
+    def graph_service(self) -> GraphService | None:
+        return self._graph_service
+
+    @property
+    def graph_config(self) -> GraphConfig | None:
+        return self._graph_config
+
+    @property
+    def auto_review_service(self) -> AutoReviewService | None:
+        return self._auto_review_service
+
+    @property
+    def monitor_service(self) -> MonitorService | None:
+        return self._monitor_service
+
+    @property
+    def maibot_service(self) -> MaiBotService | None:
+        return self._maibot_service
+
+    @property
     def host(self) -> Any:
         return self._harness.host if self._harness is not None else None
 
@@ -237,6 +309,25 @@ class SuperAstrBotApp:
     def _persona_any(self) -> bool:
         return any(
             self._enabled(key) for key in ("persona.style", "persona.jargon", "persona.affinity")
+        )
+
+    def _needs_storage(self) -> bool:
+        """是否需要初始化持久层。
+
+        运行监控的指标要落盘才有趋势可看，因此只要总开关开着就初始化数据库——
+        数据库位于本插件自己的数据目录，未启用其它能力时也只是建一张空表。
+        """
+        if self._enabled("basic.enabled"):
+            return True
+        return any(
+            self._enabled(key)
+            for key in (
+                "memory.enabled",
+                "journal.enabled",
+                "graph.enabled",
+                "review.auto",
+                "maibot.enabled",
+            )
         )
 
     # ------------------------------------------------------------------ #
@@ -301,6 +392,14 @@ class SuperAstrBotApp:
                 self._warn("拟人化学习进度落盘失败：%s", safe_detail(exc))
             self._persona_service = None
 
+        if self._monitor_service is not None:
+            # 指标在内存里按小时桶聚合，卸载前落盘，否则最后一个窗口的数据会丢。
+            try:
+                await self._monitor_service.flush()
+            except Exception as exc:  # noqa: BLE001
+                self._warn("运行指标落盘失败：%s", safe_detail(exc))
+            self._monitor_service = None
+
         if self._db is not None:
             try:
                 await self._db.close()
@@ -325,6 +424,9 @@ class SuperAstrBotApp:
         self._group_config = GroupConfig.from_mapping(self._config)
         self._proactive_config = ProactiveConfig.from_mapping(self._config)
         self._persona_config = PersonaConfig.from_mapping(self._config)
+        self._graph_config = GraphConfig.from_mapping(self._config)
+        self._review_config = ReviewConfig.from_mapping(self._config)
+        self._maibot_config = MaiBotConfig.from_mapping(self._config)
         self._sync_derived_configs()
 
     def _probe_runtime_overrides(self) -> dict[str, bool]:
@@ -389,6 +491,12 @@ class SuperAstrBotApp:
             self._persona_config.style.enabled = self._enabled("persona.style")
             self._persona_config.jargon.enabled = self._enabled("persona.jargon")
             self._persona_config.affinity.enabled = self._enabled("persona.affinity")
+        if self._graph_config is not None:
+            self._graph_config.enabled = self._enabled("graph.enabled")
+        if self._review_config is not None:
+            self._review_config.enabled = self._enabled("review.auto")
+        if self._maibot_config is not None:
+            self._maibot_config.enabled = self._enabled("maibot.enabled")
         self._sync_group_gate()
 
     def _sync_group_gate(self) -> None:
@@ -434,18 +542,68 @@ class SuperAstrBotApp:
         else:
             retriever.remove_route(VectorRetriever.name)
 
+        if self._graph_service is not None and self._enabled("graph.enabled"):
+            retriever.add_route(GraphRetriever(self._graph_service, logger=self._logger))
+        else:
+            retriever.remove_route(GraphRetriever.name)
+
     def _sync_scheduler_jobs(self) -> None:
         """按能力开关启停定时任务。"""
         if self._scheduler is None:
             return
         self._scheduler.set_enabled(
             "memory-maintenance",
-            self._enabled("memory.enabled") or self._enabled("persona.style"),
+            self._enabled("memory.enabled")
+            or self._enabled("persona.style")
+            or self._enabled("graph.enabled")
+            or self._enabled("maibot.enabled"),
         )
         self._scheduler.set_enabled("reflection-scan", self._enabled("reflection.enabled"))
         self._scheduler.set_enabled("weekly-insight", self._enabled("journal.weekly_reflection"))
         self._sync_proactive_jobs()
         self._sync_persona_jobs()
+        self._sync_review_jobs()
+        self._sync_monitor_jobs()
+
+    def _sync_review_jobs(self) -> None:
+        """增删自动审核任务（支持热切换与周期调整）。"""
+        scheduler = self._scheduler
+        config = self._review_config
+        if scheduler is None or config is None or self._auto_review_service is None:
+            return
+
+        interval = max(60.0, float(config.interval_minutes) * 60.0)
+        job = scheduler.get(_JOB_REVIEW_AUTO)
+        if not self._enabled("review.auto"):
+            scheduler.remove(_JOB_REVIEW_AUTO)
+        elif job is None or job.interval != interval:
+            scheduler.every(
+                interval,
+                self._job_review_auto,
+                key=_JOB_REVIEW_AUTO,
+                timeout=_REVIEW_JOB_TIMEOUT,
+            )
+        else:
+            scheduler.set_enabled(_JOB_REVIEW_AUTO, True)
+
+    def _sync_monitor_jobs(self) -> None:
+        """指标落盘任务：只要持久层可用就常驻（监控不是可选能力）。
+
+        与其它任务一样保持「已存在则不动」：重新 ``every`` 会新建 JobSpec 并把统计清零。
+        """
+        scheduler = self._scheduler
+        if scheduler is None or self._monitor_service is None:
+            return
+        if scheduler.get(_JOB_MONITOR_FLUSH) is None:
+            scheduler.every(
+                _MONITOR_FLUSH_INTERVAL,
+                self._job_monitor_flush,
+                key=_JOB_MONITOR_FLUSH,
+                timeout=60.0,
+                run_immediately=False,
+            )
+        else:
+            scheduler.set_enabled(_JOB_MONITOR_FLUSH, True)
 
     def _sync_persona_jobs(self) -> None:
         """增删黑话扫描任务（支持热切换）。"""
@@ -670,12 +828,8 @@ class SuperAstrBotApp:
         return False
 
     async def _setup_storage(self) -> bool:
-        if (
-            not self._enabled("memory.enabled")
-            and not self._enabled("journal.enabled")
-            and not self._persona_any()
-        ):
-            self._info("记忆、周记与拟人化学习均未启用，跳过持久层初始化。")
+        if not self._needs_storage():
+            self._info("所有依赖持久层的功能均未启用，跳过持久层初始化。")
             return False
 
         try:
@@ -705,6 +859,8 @@ class SuperAstrBotApp:
         self._style_repo = StyleRepository(db)
         self._jargon_repo = JargonRepository(db)
         self._affinity_repo = AffinityRepository(db)
+        self._graph_repo = GraphRepository(db)
+        self._metrics_repo = MetricSeriesRepository(db)
         self._info("数据库就绪（schema v%s，FTS=%s）", CURRENT_VERSION, db.fts_available)
         return True
 
@@ -732,6 +888,7 @@ class SuperAstrBotApp:
                 embedding_provider_id=str(
                     get_path(self._config, "memory.embedding_provider_id", "") or ""
                 ),
+                llm_observer=self._on_llm_call,
             )
         except Exception as exc:  # noqa: BLE001 - Harness 失败则整体不可用
             self._error("Harness 初始化失败：%s", safe_detail(exc))
@@ -759,7 +916,9 @@ class SuperAstrBotApp:
             "super-astrbot", poll_interval=max(0.01, poll_ms / 1000.0), logger=self._logger
         )
         assert self._state_store is not None
-        self._scheduler = Scheduler(self._scope, store=self._state_store, logger=self._logger)
+        self._scheduler = Scheduler(
+            self._scope, store=self._state_store, logger=self._logger, observer=self._on_job
+        )
         self._gate = ConcurrencyGate(logger=self._logger)
 
         # --- 检索路（分层自适应） ---
@@ -783,12 +942,25 @@ class SuperAstrBotApp:
         )
         # 保存引用：功能开关热切换时需要增删检索路
         self._retriever = retriever
+        # 图谱服务先于记忆生命周期创建：生命周期只依赖 GraphIndexer 协议，
+        # 由这里注入具体实现，memory 域因此无需 import graph 域。
+        assert self._graph_repo is not None
+        assert self._graph_config is not None
+        self._graph_service = GraphService(
+            config=self._graph_config,
+            entities=self._graph_repo,
+            llm=self._harness.llm,
+            observer=self._on_graph_indexed,
+            logger=self._logger,
+        )
+
         lifecycle = MemoryLifecycle(
             db=self._db,
             memories=self._memories,
             vectors=VectorRepository(self._db),
             embedding=self._harness.embedding,
             config=self._memory_config,
+            graph_indexer=self._graph_service,
             logger=self._logger,
         )
 
@@ -841,6 +1013,15 @@ class SuperAstrBotApp:
         assert self._persona_config is not None
         assert self._style_repo is not None and self._jargon_repo is not None
         assert self._affinity_repo is not None and self._reviews_repo is not None
+        # MaiBot 增强：表达样本的「按发送者个性化」由它提供额外作用域。
+        assert self._maibot_config is not None
+        self._maibot_service = MaiBotService(
+            config=self._maibot_config,
+            styles=self._style_repo,
+            graph=self._graph_repo,
+            clock=self._harness.host.now,
+            logger=self._logger,
+        )
         self._persona_service = PersonaService(
             config=self._persona_config,
             patterns=self._style_repo,
@@ -850,9 +1031,27 @@ class SuperAstrBotApp:
             llm=self._harness.llm,
             injector=self._harness.persona_injector,
             store=self._state_store,
+            extra_scope=self._maibot_service.user_scope,
             clock=self._harness.host.now,
             logger=self._logger,
         )
+        assert self._review_config is not None
+        self._auto_review_service = AutoReviewService(
+            config=self._review_config,
+            reviews=self._reviews_repo,
+            approve=self._auto_approve,
+            reject=self._auto_reject,
+            llm=self._harness.llm,
+            clock=self._harness.host.now,
+            logger=self._logger,
+        )
+        assert self._metrics_repo is not None
+        self._monitor_service = MonitorService(
+            metrics=self._metrics_repo,
+            logger=self._logger,
+        )
+        # 检索路在能力解析之后统一增删：图谱路依赖上面刚创建的服务实例。
+        self._sync_retriever_routes()
         self._sync_group_gate()
 
     async def _start_background(self) -> None:
@@ -895,11 +1094,8 @@ class SuperAstrBotApp:
                 timeout=300.0,
             )
 
-        # 5) 主动交互双轨（能力开启时才注册）
-        self._sync_proactive_jobs()
-
-        # 6) 黑话扫描（能力开启时才注册）
-        self._sync_persona_jobs()
+        # 5) 按能力开关统一启停（主动交互 / 黑话扫描 / 自动审核 / 指标落盘）
+        self._sync_scheduler_jobs()
 
         await self._scheduler.start()
         self._info(
@@ -1050,6 +1246,11 @@ class SuperAstrBotApp:
             self._warn("记忆召回失败：%s", safe_detail(exc))
             return
 
+        record(METRIC_RETRIEVAL_CALLS)
+        observe(METRIC_RETRIEVAL_LATENCY_MS, result.elapsed_ms)
+        if result.items:
+            record(METRIC_RETRIEVAL_HITS, total=float(len(result.items)))
+
         if not result.items:
             self._debug("未召回记忆（%s）", result.route_summary)
             return
@@ -1061,6 +1262,8 @@ class SuperAstrBotApp:
             return
 
         if inject_result.applied:
+            record(METRIC_INJECT_BLOCKS, count=max(1, int(inject_result.parts or 1)))
+            record(METRIC_INJECT_CHARS, total=float(inject_result.chars or 0))
             self._debug(
                 "注入 %s 条记忆（%s，%s 字符，%s）",
                 len(result.items),
@@ -1127,6 +1330,7 @@ class SuperAstrBotApp:
             self._warn("拟人化学习注入失败：%s", safe_detail(exc))
             return
         if detail:
+            record(METRIC_INJECT_BLOCKS)
             self._debug("拟人化学习注入：%s", detail)
 
     async def _learn_style(self, view: EventView, reply_text: str) -> None:
@@ -1146,6 +1350,7 @@ class SuperAstrBotApp:
             self._warn("风格学习失败：%s", safe_detail(exc))
             return
         if outcome.stored or outcome.pending:
+            record(METRIC_PERSONA_LEARNED)
             self._debug("风格学习（%s）：%s", view.umo, outcome.reason)
 
     async def on_group_message(self, event: Any) -> None:
@@ -1171,6 +1376,7 @@ class SuperAstrBotApp:
         if decision.action == "silent":
             self._debug("群聊静默（%s）：%s", view.umo, decision.reason)
         elif decision.action == "interject":
+            record(METRIC_GROUP_INTERJECT)
             self._debug(
                 "群聊插话（%s）：%s，合并 %s 条", view.umo, decision.reason, decision.merged
             )
@@ -1229,6 +1435,7 @@ class SuperAstrBotApp:
         async def _task() -> None:
             try:
                 await self._memory_service.buffer_episode(scope, line, now=timestamp)
+                record(METRIC_MEMORY_WRITES)
             except Exception as exc:  # noqa: BLE001
                 self._warn("写入对话缓冲失败：%s", safe_detail(exc))
 
@@ -1244,11 +1451,24 @@ class SuperAstrBotApp:
 
     async def _job_maintenance(self) -> None:
         stats: dict[str, Any] = {}
+        # MaiBot 增强开启时由它统一承担「风格 + 图谱」的衰减，各域只做容量淘汰，
+        # 否则同一份权重会被衰减两次。
+        unified_decay = (
+            self._maibot_service is not None
+            and self._enabled("maibot.enabled")
+            and self._maibot_service.decay_enabled()
+        )
         if self._memory_service is not None and self._enabled("memory.enabled"):
             async with self._gate.write("__maintenance__") if self._gate else _NullGate():
                 stats = await self._memory_service.maintain()
         if self._persona_service is not None and self._enabled("persona.style"):
-            stats["persona"] = await self._persona_service.maintain()
+            stats["persona"] = await self._persona_service.maintain(with_decay=not unified_decay)
+        if self._graph_service is not None and self._enabled("graph.enabled"):
+            stats["graph"] = await self._graph_service.maintain(with_decay=not unified_decay)
+        if unified_decay and self._maibot_service is not None:
+            stats["maibot"] = await self._maibot_service.maintain()
+        if self._monitor_service is not None:
+            stats["metrics_purged"] = await self._monitor_service.purge()
         self._info("每日维护完成：%s", stats)
 
     async def _job_reflection_scan(self) -> None:
@@ -1288,6 +1508,8 @@ class SuperAstrBotApp:
             self._warn("反思执行异常（%s）：%s", scope.key, safe_detail(exc))
             return
         self._info("反思（%s）：%s", scope.key, outcome.summary())
+        if outcome.produced:
+            record(METRIC_MEMORY_WRITES, count=int(outcome.produced))
 
     async def _job_weekly_insight(self) -> None:
         if self._reflection_service is None or self._journals_repo is None:
@@ -1321,6 +1543,8 @@ class SuperAstrBotApp:
             return
         attempts = await service.run_track(kind)
         sent = [item for item in attempts if item.sent]
+        record(METRIC_PROACTIVE_SENT, count=len(sent))
+        record(METRIC_PROACTIVE_SKIPPED, count=max(0, len(attempts) - len(sent)))
         if sent:
             self._info("主动交互（%s）：成功发送 %s 个会话", kind, len(sent))
 
@@ -1341,6 +1565,83 @@ class SuperAstrBotApp:
                 continue
             if outcome.ran:
                 self._info("黑话扫描（%s）：%s", scope.key, outcome.summary())
+
+    # ------------------------------------------------------------------ #
+    # 运行监控埋点
+    # ------------------------------------------------------------------ #
+
+    def _on_llm_call(
+        self, purpose: str, ok: bool, duration_ms: float, usage: Any, blocked: bool
+    ) -> None:
+        """LLM 网关回调：调用次数/耗时/token/错误/预算拒绝。"""
+        record(METRIC_LLM_CALLS)
+        record(METRIC_LLM_LATENCY_MS, total=duration_ms)
+        if blocked:
+            record(METRIC_LLM_BUDGET_BLOCKED)
+        elif not ok:
+            record(METRIC_LLM_ERRORS)
+        tokens = int(getattr(usage, "total", 0) or 0) if usage is not None else 0
+        if tokens:
+            record(METRIC_LLM_TOKENS, total=float(tokens))
+
+    def _on_job(self, key: str, ok: bool, duration_ms: float) -> None:
+        """调度器回调：任务运行次数/失败次数/耗时。"""
+        record(METRIC_SCHEDULER_RUNS)
+        record(METRIC_SCHEDULER_DURATION_MS, total=duration_ms)
+        if not ok:
+            record(METRIC_SCHEDULER_FAILURES)
+
+    def _on_graph_indexed(self, entities: int) -> None:
+        """图谱索引回调。"""
+        record(METRIC_GRAPH_INDEXED, count=max(0, int(entities)))
+
+    async def _refresh_gauges(self) -> None:
+        """刷新 gauge 型指标（当前值，而非累计值）。"""
+        if self._memories is not None:
+            try:
+                total = await self._memories.count_all(status="active")
+                record(METRIC_MEMORY_TOTAL, gauge=float(total))
+            except Exception as exc:  # noqa: BLE001 - 指标刷新失败不影响主流程
+                self._debug("刷新记忆总量指标失败：%s", safe_detail(exc))
+        if self._reviews_repo is not None:
+            try:
+                pending = await self._reviews_repo.count_all_pending()
+                record(METRIC_REVIEW_PENDING, gauge=float(pending))
+            except Exception as exc:  # noqa: BLE001
+                self._debug("刷新待审指标失败：%s", safe_detail(exc))
+        if self._graph_service is not None and self._enabled("graph.enabled"):
+            try:
+                stats = await self._graph_service.stats()
+                record(METRIC_GRAPH_ENTITIES, gauge=float(stats.get("entities") or 0))
+            except Exception as exc:  # noqa: BLE001
+                self._debug("刷新图谱指标失败：%s", safe_detail(exc))
+
+    async def _job_monitor_flush(self) -> None:
+        """把内存指标批量落盘（小时桶，分钟级刷新足够）。"""
+        service = self._monitor_service
+        if service is None:
+            return
+        await self._refresh_gauges()
+        written = await service.flush()
+        if written:
+            self._debug("运行指标落盘：%s 行", written)
+
+    async def _job_review_auto(self) -> None:
+        """自动审核：规则先审，必要时模型兜底。"""
+        service = self._auto_review_service
+        if service is None or not self._enabled("review.auto"):
+            return
+        try:
+            outcome = await service.run_once()
+        except Exception as exc:  # noqa: BLE001 - 审核失败不影响其它任务
+            self._warn("自动审核异常：%s", safe_detail(exc))
+            return
+        if outcome.approved:
+            record(METRIC_REVIEW_AUTO_APPROVED, count=outcome.approved)
+        if outcome.rejected:
+            record(METRIC_REVIEW_AUTO_REJECTED, count=outcome.rejected)
+        if outcome.scanned:
+            self._info("自动审核：%s", outcome.summary())
 
     # ------------------------------------------------------------------ #
     # 待审队列（统一入口）
@@ -1381,6 +1682,28 @@ class SuperAstrBotApp:
             return False
         return await self._reviews_repo.set_status(review_id, "rejected", at=time.time())
 
+    async def _auto_approve(self, review_id: int) -> tuple[bool, str]:
+        """自动审核的批准回调：复用统一审批入口，并补写判定者留痕。"""
+        handled, message = await self.approve_review(review_id)
+        if handled:
+            await self._mark_decided_by(review_id)
+        return handled, message
+
+    async def _auto_reject(self, review_id: int) -> bool:
+        """自动审核的驳回回调：复用统一驳回入口，并补写判定者留痕。"""
+        rejected = await self.reject_review(review_id)
+        if rejected:
+            await self._mark_decided_by(review_id)
+        return rejected
+
+    async def _mark_decided_by(self, review_id: int) -> None:
+        if self._reviews_repo is None:
+            return
+        try:
+            await self._reviews_repo.mark_decided_by(review_id, "auto")
+        except Exception as exc:  # noqa: BLE001 - 留痕失败不影响审批结果
+            self._debug("写入自动审核留痕失败：%s", safe_detail(exc))
+
     # ------------------------------------------------------------------ #
     # 对外状态
     # ------------------------------------------------------------------ #
@@ -1416,6 +1739,27 @@ class SuperAstrBotApp:
                 }
             except Exception as exc:  # noqa: BLE001
                 persona["counts"] = {"error": safe_detail(exc)}
+        graph: dict[str, Any] = {}
+        if self._graph_service is not None:
+            graph = {"enabled": self._enabled("graph.enabled")}
+            try:
+                graph.update(await self._graph_service.stats())
+            except Exception as exc:  # noqa: BLE001
+                graph["error"] = safe_detail(exc)
+        review: dict[str, Any] = {}
+        if self._auto_review_service is not None:
+            review = {
+                "enabled": self._enabled("review.auto"),
+                "use_llm": bool(self._review_config and self._review_config.use_llm),
+            }
+            try:
+                review.update(await self._auto_review_service.stats())
+            except Exception as exc:  # noqa: BLE001
+                review["error"] = safe_detail(exc)
+        monitor: dict[str, Any] = {}
+        if self._monitor_service is not None:
+            monitor = await self._monitor_service.snapshot()
+        maibot = self._maibot_service.snapshot() if self._maibot_service is not None else {}
         if umo:
             if self._group_service is not None:
                 group = {**group, "session": self._group_service.session_snapshot(umo)}
@@ -1446,6 +1790,10 @@ class SuperAstrBotApp:
             "group": group,
             "proactive": proactive,
             "persona": persona,
+            "graph": graph,
+            "review": review,
+            "monitor": monitor,
+            "maibot": maibot,
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,
             "database": str(self._db.path) if self._db is not None else "",
             "fts": bool(self._db.fts_available) if self._db is not None else False,
@@ -1460,6 +1808,11 @@ class SuperAstrBotApp:
         self._info("Super_AstrBot 已就绪；生效能力：%s", "、".join(enabled) or "无")
         for key, reason in self._degraded_reasons:
             self._info("能力未生效：%s（%s）", key, reason)
+        if PromptOverrides.REJECTED:
+            self._warn(
+                "以下自定义提示词因缺少必填占位符被忽略，已回退内置默认：%s",
+                "、".join(sorted(PromptOverrides.REJECTED)),
+            )
         if self._enabled("group.enabled") and not GROUP_FILTER_AVAILABLE:
             self._warn(
                 "群聊语义已开启，但当前 AstrBot 缺少 custom_filter/EventMessageType 符号，"

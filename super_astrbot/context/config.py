@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_int, as_str, get_path
+from ..support import PromptOverrides
 
 DEFAULT_MAX_TOKENS = 6000
 DEFAULT_KEEP_RECENT = 12
@@ -26,6 +27,8 @@ class ContextConfig:
     keep_recent: int = DEFAULT_KEEP_RECENT
     min_messages: int = DEFAULT_MIN_MESSAGES
     summary_provider_id: str = ""
+    prompts: PromptOverrides = field(default_factory=PromptOverrides)
+    """用户自定义提示词（留空即用内置默认）。"""
 
     @property
     def protected_messages(self) -> int:
@@ -34,7 +37,7 @@ class ContextConfig:
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "ContextConfig":
-        return cls(
+        result = cls(
             enabled=as_bool(get_path(config, "context.enabled", False), False),
             max_tokens=as_int(
                 get_path(config, "context.max_tokens", DEFAULT_MAX_TOKENS),
@@ -56,3 +59,5 @@ class ContextConfig:
             ),
             summary_provider_id=as_str(get_path(config, "context.summary_provider_id", "")),
         )
+        result.prompts = PromptOverrides(config)
+        return result

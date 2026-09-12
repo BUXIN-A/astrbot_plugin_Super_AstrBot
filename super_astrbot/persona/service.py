@@ -55,6 +55,7 @@ class PersonaService:
         llm: LlmGateway,
         injector: Injector,
         store: StateStore,
+        extra_scope: Callable[[EventView], MemoryScope | None] | None = None,
         clock: Callable[[], float] | None = None,
         logger: Any | None = None,
     ) -> None:
@@ -63,6 +64,8 @@ class PersonaService:
         self._injector = injector
         self._logger = logger
         self._clock = clock or (lambda: 0.0)
+        self._extra_scope = extra_scope
+        """额外的学习/注入作用域解析（MaiBot 增强的「按发送者个性化」）。"""
 
         self._style = StyleService(
             config=config.style,
@@ -77,6 +80,7 @@ class PersonaService:
             reviews=reviews,
             llm=llm,
             store=store,
+            prompts=config.prompts,
             clock=clock,
             logger=logger,
         )
@@ -84,6 +88,7 @@ class PersonaService:
             config=config.affinity,
             affinities=affinities,
             llm=llm,
+            prompts=config.prompts,
             clock=clock,
             logger=logger,
         )
@@ -111,7 +116,23 @@ class PersonaService:
     async def learn_style(
         self, view: EventView, *, user_text: str, reply_text: str, now: float | None = None
     ) -> StyleOutcome:
-        return await self._style.learn(view, user_text=user_text, reply_text=reply_text, now=now)
+        return await self._style.learn(
+            view,
+            user_text=user_text,
+            reply_text=reply_text,
+            now=now,
+            extra_scope=self.extra_scope(view),
+        )
+
+    def extra_scope(self, view: EventView) -> MemoryScope | None:
+        """额外的个性化作用域；未启用时返回 ``None``（失败也降级为 ``None``）。"""
+        if self._extra_scope is None:
+            return None
+        try:
+            return self._extra_scope(view)
+        except Exception as exc:  # noqa: BLE001 - 解析失败只降级为不做个性化
+            self._debug("个性化作用域解析失败：%s", exc)
+            return None
 
     async def observe_user(self, view: EventView, text: str) -> None:
         """用户消息到达后更新黑话候选与好感度（调用方应放到后台任务）。"""
@@ -142,7 +163,9 @@ class PersonaService:
         blocks: list[str] = []
 
         if self._config.style.enabled:
-            selection = await self._style.select(scope, view.text)
+            selection = await self._style.select(
+                scope, view.text, extra_scope=self.extra_scope(view)
+            )
             block = self._style.render_block(selection)
             if block:
                 blocks.append(block)
@@ -194,8 +217,10 @@ class PersonaService:
     # 维护与查询
     # ------------------------------------------------------------------ #
 
-    async def maintain(self, *, now: float | None = None) -> dict[str, Any]:
-        return await self._style.maintain(now=now)
+    async def maintain(
+        self, *, now: float | None = None, with_decay: bool = True
+    ) -> dict[str, Any]:
+        return await self._style.maintain(now=now, with_decay=with_decay)
 
     async def flush(self) -> None:
         """把内存态的学习进度落盘（插件卸载前调用）。"""
@@ -258,6 +283,7 @@ class PersonaService:
             "style": self._style.snapshot(),
             "jargon": self._jargon.snapshot(),
             "affinity": self._affinity.snapshot(),
+            "user_scope": self._extra_scope is not None,
         }
 
     def _debug(self, message: str, *args: Any) -> None:

@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_float, as_int, as_str, get_path
+from ..support import PromptOverrides
 
 DEFAULT_STYLE_APPROVAL = True
 """风格样本默认需人工审批：错误样本会直接改变 Bot 的说话方式。"""
@@ -195,14 +196,18 @@ class PersonaConfig:
     style: StyleConfig
     jargon: JargonConfig
     affinity: AffinityConfig
+    prompts: PromptOverrides = field(default_factory=PromptOverrides)
+    """用户自定义提示词（留空即用内置默认）。"""
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "PersonaConfig":
-        return cls(
+        result = cls(
             style=StyleConfig.from_mapping(config),
             jargon=JargonConfig.from_mapping(config),
             affinity=AffinityConfig.from_mapping(config),
         )
+        result.prompts = PromptOverrides(config)
+        return result
 
     @property
     def any_enabled(self) -> bool:

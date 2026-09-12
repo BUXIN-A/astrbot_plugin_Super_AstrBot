@@ -78,9 +78,20 @@ class StyleService:
     # ------------------------------------------------------------------ #
 
     async def learn(
-        self, view: EventView, *, user_text: str, reply_text: str, now: float | None = None
+        self,
+        view: EventView,
+        *,
+        user_text: str,
+        reply_text: str,
+        now: float | None = None,
+        extra_scope: MemoryScope | None = None,
     ) -> StyleOutcome:
-        """记录一组「用户提问 → Bot 回答」表达模式。"""
+        """记录一组「用户提问 → Bot 回答」表达模式。
+
+        ``extra_scope`` 非空时（MaiBot 增强的「按发送者个性化」）会**同时**写入
+        会话作用域与该作用域：前者表达「这个群的说话方式」，后者表达「这个人怎么说话」，
+        两者在注入时按相似度统一挑选。
+        """
         if not self._config.enabled:
             return self._skip("风格模仿未启用")
 
@@ -94,25 +105,38 @@ class StyleService:
             return self._skip("会话标识为空")
 
         moment = self._clock() if now is None else now
-        scope = MemoryScope.for_session(view.umo)
+        scopes = self._learn_scopes(view, extra_scope)
 
         if self._config.approval_required:
-            await self._reviews.add(
-                scope_type=scope.scope_type.value,
-                scope_id=scope.scope_id,
-                origin=SOURCE_STYLE,
-                payload={
-                    "situation": truncate(situation, 200),
-                    "expression": truncate(expression, self._config.max_bot_chars),
-                },
-                created_at=moment,
-            )
-            self._stats["pending"] += 1
-            return StyleOutcome(pending=True, reason="已进入待审队列")
+            payload = {
+                "situation": truncate(situation, 200),
+                "expression": truncate(expression, self._config.max_bot_chars),
+            }
+            for scope in scopes:
+                await self._reviews.add(
+                    scope_type=scope.scope_type.value,
+                    scope_id=scope.scope_id,
+                    origin=SOURCE_STYLE,
+                    payload=payload,
+                    created_at=moment,
+                )
+            self._stats["pending"] += len(scopes)
+            return StyleOutcome(pending=True, reason=f"已进入待审队列（{len(scopes)} 个作用域）")
 
-        pattern_id = await self._store(scope, situation, expression, now=moment)
+        pattern_id: int | None = None
+        for scope in scopes:
+            stored = await self._store(scope, situation, expression, now=moment)
+            pattern_id = pattern_id if pattern_id is not None else stored
         self._stats["learned"] += 1
         return StyleOutcome(stored=True, pattern_id=pattern_id, reason="已写入")
+
+    def _learn_scopes(
+        self, view: EventView, extra_scope: MemoryScope | None
+    ) -> tuple[MemoryScope, ...]:
+        session_scope = MemoryScope.for_session(view.umo)
+        if extra_scope is None or extra_scope == session_scope:
+            return (session_scope,)
+        return (session_scope, extra_scope)
 
     async def _store(
         self, scope: MemoryScope, situation: str, expression: str, *, now: float
@@ -147,15 +171,24 @@ class StyleService:
     # ------------------------------------------------------------------ #
 
     async def select(
-        self, scope: MemoryScope, query: str, *, now: float | None = None
+        self,
+        scope: MemoryScope,
+        query: str,
+        *,
+        now: float | None = None,
+        extra_scope: MemoryScope | None = None,
     ) -> StyleSelection:
-        """按「与当前消息的相似度 × 权重」选出少量 few-shot 示例。"""
+        """按「与当前消息的相似度 × 权重」选出少量 few-shot 示例。
+
+        ``extra_scope`` 非空时把该作用域一并纳入候选（个性化模仿）。
+        """
         if not self._config.enabled or not query.strip():
             return StyleSelection()
 
-        rows = await self._patterns.list_active(
-            retrieval_scopes(scope), limit=max(10, self._config.max_patterns)
-        )
+        scopes = list(retrieval_scopes(scope))
+        if extra_scope is not None and extra_scope not in scopes:
+            scopes.extend(item for item in retrieval_scopes(extra_scope) if item not in scopes)
+        rows = await self._patterns.list_active(scopes, limit=max(10, self._config.max_patterns))
         if not rows:
             return StyleSelection()
 
@@ -164,10 +197,16 @@ class StyleService:
             return StyleSelection()
 
         scored: list[tuple[float, float, dict[str, Any]]] = []
+        seen: set[tuple[str, str]] = set()
         for row in rows:
+            key = (str(row.get("situation") or ""), str(row.get("expression") or ""))
+            # 同一组问答可能同时存在于会话与用户作用域，去重后只注入一次。
+            if key in seen:
+                continue
             similarity = jaccard(query_tokens, tokenize(str(row.get("situation") or "")))
             if similarity < self._config.min_similarity:
                 continue
+            seen.add(key)
             weight = float(row.get("weight") or 1.0)
             scored.append((similarity, weight, row))
         if not scored:
@@ -207,16 +246,24 @@ class StyleService:
     # 维护与查询
     # ------------------------------------------------------------------ #
 
-    async def maintain(self, *, now: float | None = None) -> dict[str, Any]:
-        """每日衰减 + 逐作用域容量淘汰。"""
+    async def maintain(
+        self, *, now: float | None = None, with_decay: bool = True
+    ) -> dict[str, Any]:
+        """每日衰减 + 逐作用域容量淘汰。
+
+        ``with_decay=False`` 时只做容量淘汰：MaiBot 增强开启后衰减由该域统一承担，
+        避免同一份权重被衰减两次。
+        """
         if not self._config.enabled:
             return {"decayed": 0, "trimmed": 0}
         moment = self._clock() if now is None else now
-        half_life = max(1.0, self._config.half_life_days)
-        factor = 0.5 ** (1.0 / half_life)
-        archived = await self._patterns.apply_decay(
-            factor=factor, floor=self._config.weight_floor, at=moment
-        )
+        archived = 0
+        if with_decay:
+            half_life = max(1.0, self._config.half_life_days)
+            factor = 0.5 ** (1.0 / half_life)
+            archived = await self._patterns.apply_decay(
+                factor=factor, floor=self._config.weight_floor, at=moment
+            )
 
         trimmed = 0
         for scope_type, scope_id in await self._patterns.all_scopes():

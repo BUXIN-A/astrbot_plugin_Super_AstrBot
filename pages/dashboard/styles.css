@@ -398,3 +398,43 @@ td.actions .btn { padding: 3px 8px; font-size: 12px; margin-right: 4px; }
   .nav { flex-direction: row; }
   .sidebar-footer { display: none; }
 }
+
+/* ---------------- 图谱与监控 ---------------- */
+
+.graph-stage {
+  position: relative;
+  height: 460px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#gp-canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+
+.graph-tip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  min-width: 96px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.graph-tip .tip-name { font-weight: 650; margin-bottom: 2px; }
+.graph-tip .tip-row { display: flex; justify-content: space-between; gap: 12px; color: var(--text-dim); }
+
+.chart { width: 100%; height: 240px; display: block; }
+.chart .grid { stroke: currentColor; opacity: 0.15; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.chart .area { fill: url(#mt-grad); }
+.chart .stop-a { stop-color: var(--accent); stop-opacity: 0.35; }
+.chart .stop-b { stop-color: var(--accent); stop-opacity: 0; }
+.chart text { font-size: 10px; fill: currentColor; opacity: 0.6; }
+
+/* 品牌图标按主题切换：暗色用白色字形，亮色用深色字形（同一矢量、两种填充）。 */
+[data-theme="dark"] .logo-light,
+[data-theme="light"] .logo-dark { display: none; }

@@ -22,6 +22,8 @@ const LOCAL_I18N = {
     "nav.journals": "周记",
     "nav.reviews": "待审",
     "nav.persona": "学习",
+    "nav.graph": "图谱",
+    "nav.monitor": "监控",
     "nav.system": "系统",
     "features.title": "功能开关",
     "features.hint": "开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。",
@@ -40,6 +42,9 @@ const LOCAL_I18N = {
     "domain.group": "群聊语义",
     "domain.proactive": "主动交互",
     "domain.persona": "拟人化学习",
+    "domain.graph": "记忆图谱",
+    "domain.review": "自动审核",
+    "domain.maibot": "MaiBot 增强",
     "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
@@ -80,6 +85,33 @@ const LOCAL_I18N = {
     "persona.jargons": "群内用语",
     "persona.affinity": "好感度",
     "persona.approval": "需审批",
+    "graph.title": "记忆图谱",
+    "graph.hint": "实体与关系从长期记忆中抽取并按作用域隔离；填写 UMO 只查看对应会话的图谱。",
+    "graph.umo": "会话 UMO（可选）",
+    "graph.limit": "节点上限",
+    "graph.query": "查询",
+    "graph.layout": "环形布局 · 滚轮缩放 · 拖拽平移",
+    "graph.enabled": "开关",
+    "graph.nodes": "节点",
+    "graph.edges": "关系",
+    "graph.empty": "暂无图谱数据",
+    "graph.truncated": "数据已截断（可提高节点上限）",
+    "graph.detail": "节点详情",
+    "monitor.title": "运行监控",
+    "monitor.hint": "聚合最近的运行指标与自动审核情况，指标名形如 llm.calls、retrieval.calls。",
+    "monitor.range": "时间范围",
+    "monitor.bucket": "粒度",
+    "monitor.metric": "指标",
+    "monitor.trend": "趋势",
+    "monitor.summary": "指标汇总",
+    "monitor.review": "自动审核",
+    "monitor.empty": "该区间暂无数据",
+    "monitor.hour": "小时",
+    "monitor.day": "天",
+    "monitor.live": "实时指标",
+    "monitor.pending": "待处理",
+    "monitor.decidedAuto": "自动通过",
+    "monitor.retention": "保留天数",
     "reviews.title": "待审记录",
     "reviews.disabled": "待审队列包含反思产出与拟人化学习结果，批准后才会生效。",
     "system.framework": "框架与环境",
@@ -103,6 +135,8 @@ const LOCAL_I18N = {
     "nav.journals": "Journal",
     "nav.reviews": "Reviews",
     "nav.persona": "Learning",
+    "nav.graph": "Graph",
+    "nav.monitor": "Monitor",
     "nav.system": "System",
     "features.title": "Feature toggles",
     "features.hint": "Toggles are written to the plugin config and applied immediately; items marked \"reload\" take effect after reloading the plugin.",
@@ -121,6 +155,9 @@ const LOCAL_I18N = {
     "domain.group": "Group semantics",
     "domain.proactive": "Proactive chat",
     "domain.persona": "Persona learning",
+    "domain.graph": "Knowledge graph",
+    "domain.review": "Auto review",
+    "domain.maibot": "MaiBot boost",
     "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
@@ -161,6 +198,33 @@ const LOCAL_I18N = {
     "persona.jargons": "Group jargon",
     "persona.affinity": "Affinity",
     "persona.approval": "Needs review",
+    "graph.title": "Knowledge graph",
+    "graph.hint": "Entities and relations are extracted from long-term memory and isolated by scope; set an UMO to view one session only.",
+    "graph.umo": "Session UMO (optional)",
+    "graph.limit": "Node limit",
+    "graph.query": "Query",
+    "graph.layout": "Ring layout · scroll to zoom · drag to pan",
+    "graph.enabled": "Enabled",
+    "graph.nodes": "Nodes",
+    "graph.edges": "Relations",
+    "graph.empty": "No graph data",
+    "graph.truncated": "Truncated (raise the node limit)",
+    "graph.detail": "Node detail",
+    "monitor.title": "Monitor",
+    "monitor.hint": "Aggregates recent runtime metrics and auto-review status; metric names look like llm.calls, retrieval.calls.",
+    "monitor.range": "Range",
+    "monitor.bucket": "Bucket",
+    "monitor.metric": "Metric",
+    "monitor.trend": "Trend",
+    "monitor.summary": "Metric totals",
+    "monitor.review": "Auto review",
+    "monitor.empty": "No data in this window",
+    "monitor.hour": "Hour",
+    "monitor.day": "Day",
+    "monitor.live": "Live metrics",
+    "monitor.pending": "Pending",
+    "monitor.decidedAuto": "Auto-approved",
+    "monitor.retention": "Retention (days)",
     "reviews.title": "Pending reviews",
     "reviews.disabled": "The queue holds reflection results and persona learnings; they take effect only after approval.",
     "system.framework": "Framework",
@@ -475,6 +539,9 @@ const DOMAIN_TITLES = {
   group: "domain.group",
   proactive: "domain.proactive",
   persona: "domain.persona",
+  graph: "domain.graph",
+  review: "domain.review",
+  maibot: "domain.maibot",
 };
 
 function featureStatusPill(item) {
@@ -956,6 +1023,616 @@ async function openMemoryDetail(id) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* 章节：图谱                                                              */
+/* ---------------------------------------------------------------------- */
+
+const GRAPH_COLORS = {
+  person: "#4c8dff",
+  place: "#3fb950",
+  org: "#d29922",
+  event: "#f85149",
+  concept: "#a371f7",
+  thing: "#39c5cf",
+};
+
+const graphState = {
+  data: null,
+  layout: new Map(), // 归一化坐向 + 外圈标记，按 id 排序保证刷新不抖动
+  view: { scale: 1, offsetX: 0, offsetY: 0 },
+  size: { width: 0, height: 0 },
+  activeId: null,
+  hoverId: null,
+  neighbors: new Set(),
+  drag: { active: false, x: 0, y: 0, moved: false },
+};
+
+function graphFont() {
+  return 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
+}
+
+function graphColor(type) {
+  return GRAPH_COLORS[String(type || "").toLowerCase()] || "#8b949e";
+}
+
+function graphThemeColor(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+/** 稳定环形布局：按 id 排序后均匀铺在圆周上，孤立节点放到外圈。 */
+function buildGraphLayout(nodes) {
+  const sorted = [...(nodes || [])].sort((a, b) => Number(a.id) - Number(b.id));
+  const layout = new Map();
+  const place = (list, outer) => {
+    const total = list.length || 1;
+    list.forEach((node, index) => {
+      const angle = (Math.PI * 2 * index) / total - Math.PI / 2;
+      layout.set(String(node.id), { ux: Math.cos(angle), uy: Math.sin(angle), outer });
+    });
+  };
+  place(sorted.filter((node) => Number(node.degree || 0) > 0), false);
+  place(sorted.filter((node) => Number(node.degree || 0) <= 0), true);
+  graphState.layout = layout;
+}
+
+function graphRings() {
+  const half = Math.min(graphState.size.width, graphState.size.height) / 2;
+  const main = Math.max(24, half - 40);
+  return { main, outer: Math.max(main + 12, half - 12) };
+}
+
+function graphNodeScreen(node) {
+  const { width, height } = graphState.size;
+  const rings = graphRings();
+  const layout = graphState.layout.get(String(node.id));
+  const cx = width / 2;
+  const cy = height / 2;
+  let wx = cx;
+  let wy = cy;
+  if (layout) {
+    const radius = layout.outer ? rings.outer : rings.main;
+    wx = cx + layout.ux * radius;
+    wy = cy + layout.uy * radius;
+  }
+  const { scale, offsetX, offsetY } = graphState.view;
+  return {
+    x: wx * scale + offsetX,
+    y: wy * scale + offsetY,
+    radius: 5 + Math.min(8, Number(node.degree || 0)),
+  };
+}
+
+function graphNodeLabel(node) {
+  return String(node.label || node.name || node.canonical_name || `#${node.id}`);
+}
+
+function truncateLabel(text, limit = 8) {
+  const value = String(text || "");
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+/** 原生 Canvas 2D 绘图：无任何外部图表库。 */
+function drawGraph(data) {
+  const canvas = $("gp-canvas");
+  const stage = canvas ? canvas.parentElement : null;
+  if (!canvas || !stage) return;
+  const rect = stage.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  graphState.size = { width, height };
+
+  const textColor = graphThemeColor("--text-dim", "#98a1b0");
+  const accent = graphThemeColor("--accent", "#4c8dff");
+  const nodes = (data && data.nodes) || [];
+  const edges = (data && data.edges) || [];
+
+  if (nodes.length === 0) {
+    ctx.fillStyle = textColor;
+    ctx.font = `13px ${graphFont()}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(t("graph.empty"), width / 2, height / 2);
+    return;
+  }
+
+  const nodeMap = new Map(nodes.map((node) => [String(node.id), node]));
+  const focus = graphState.activeId;
+  const scale = graphState.view.scale;
+
+  // 边：半透明灰线，缩放 > 1 时才画关系标签
+  edges.forEach((edge) => {
+    const src = nodeMap.get(String(edge.src_entity_id));
+    const dst = nodeMap.get(String(edge.dst_entity_id));
+    if (!src || !dst) return;
+    const a = graphNodeScreen(src);
+    const b = graphNodeScreen(dst);
+    const related =
+      focus && graphState.neighbors.has(String(src.id)) && graphState.neighbors.has(String(dst.id));
+    ctx.globalAlpha = focus ? (related ? 0.9 : 0.12) : 0.55;
+    ctx.strokeStyle = focus && related ? accent : "#8b949e";
+    ctx.lineWidth = 0.6 + Math.min(2, Number(edge.weight || 0));
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    if (scale > 1 && edge.relation) {
+      ctx.globalAlpha = focus ? (related ? 0.8 : 0.1) : 0.6;
+      ctx.fillStyle = textColor;
+      ctx.font = `10px ${graphFont()}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(truncateLabel(edge.relation, 8), (a.x + b.x) / 2, (a.y + b.y) / 2 - 4);
+    }
+  });
+  ctx.globalAlpha = 1;
+
+  // 节点：半径随度数增长，颜色按实体类型映射
+  nodes.forEach((node) => {
+    const pos = graphNodeScreen(node);
+    const key = String(node.id);
+    const faded = focus && !graphState.neighbors.has(key);
+    ctx.globalAlpha = faded ? 0.2 : 1;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, pos.radius, 0, Math.PI * 2);
+    ctx.fillStyle = graphColor(node.entity_type);
+    ctx.fill();
+    if (key === focus) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = accent;
+      ctx.stroke();
+    }
+    ctx.fillStyle = textColor;
+    ctx.font = `${Math.max(9, Math.min(13, 11 * scale))}px ${graphFont()}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(truncateLabel(graphNodeLabel(node)), pos.x, pos.y + pos.radius + 4);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function graphHitTest(mx, my) {
+  if (!graphState.data) return null;
+  let best = null;
+  let bestDistance = Infinity;
+  (graphState.data.nodes || []).forEach((node) => {
+    const pos = graphNodeScreen(node);
+    const distance = Math.hypot(pos.x - mx, pos.y - my);
+    if (distance <= pos.radius + 8 && distance < bestDistance) {
+      best = node;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+function showGraphTip(node, clientX, clientY) {
+  const tip = $("gp-tip");
+  const stage = document.querySelector(".graph-stage");
+  if (!tip || !stage) return;
+  tip.innerHTML =
+    `<div class="tip-name">${esc(graphNodeLabel(node))}</div>` +
+    `<div class="tip-row"><span>类型</span><span>${esc(node.entity_type || "—")}</span></div>` +
+    `<div class="tip-row"><span>权重</span><span>${esc(num(node.weight))}</span></div>` +
+    `<div class="tip-row"><span>证据</span><span>${esc(node.evidence ?? "—")}</span></div>`;
+  tip.hidden = false;
+  const rect = stage.getBoundingClientRect();
+  let left;
+  let top;
+  if (typeof clientX === "number" && typeof clientY === "number") {
+    left = clientX - rect.left + 12;
+    top = clientY - rect.top + 12;
+  } else {
+    const pos = graphNodeScreen(node);
+    left = pos.x + 14;
+    top = pos.y + 14;
+  }
+  left = Math.max(4, Math.min(left, rect.width - tip.offsetWidth - 4));
+  top = Math.max(4, Math.min(top, rect.height - tip.offsetHeight - 4));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function hideGraphTip() {
+  const tip = $("gp-tip");
+  if (tip) tip.hidden = true;
+}
+
+/** 高亮某节点及其一跳邻居，并在提示卡里展示详情。 */
+function focusGraphNode(id) {
+  const data = graphState.data;
+  if (!data) return;
+  const key = String(id);
+  const node = (data.nodes || []).find((item) => String(item.id) === key);
+  if (!node) return;
+  const neighbors = new Set([key]);
+  (data.edges || []).forEach((edge) => {
+    const src = String(edge.src_entity_id);
+    const dst = String(edge.dst_entity_id);
+    if (src === key) neighbors.add(dst);
+    if (dst === key) neighbors.add(src);
+  });
+  graphState.activeId = key;
+  graphState.neighbors = neighbors;
+  showGraphTip(node);
+  drawGraph(data);
+}
+
+async function loadGraph() {
+  const meta = $("gp-meta");
+  const nodesEl = $("gp-nodes");
+  const edgesEl = $("gp-edges");
+  try {
+    const umo = $("gp-umo").value.trim();
+    const limitNodes = Number($("gp-limit").value) || 120;
+    const data = await apiGet("graph", { umo, limit_nodes: limitNodes });
+    graphState.data = data;
+    graphState.activeId = null;
+    graphState.hoverId = null;
+    graphState.neighbors = new Set();
+    graphState.view = { scale: 1, offsetX: 0, offsetY: 0 };
+    hideGraphTip();
+
+    const stats = data.stats || {};
+    const parts = [
+      `${t("graph.enabled")}：${data.enabled ? t("features.switchOn") : t("features.switchOff")}`,
+      `${t("graph.nodes")}：${stats.entities ?? 0}`,
+      `${t("graph.edges")}：${stats.relations ?? 0}`,
+      `作用域：${stats.scopes ?? 0}`,
+    ];
+    if (data.truncated) parts.push(t("graph.truncated"));
+    meta.textContent = parts.join("　|　");
+
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    const labelOf = (id) => {
+      const found = nodes.find((node) => String(node.id) === String(id));
+      return found ? graphNodeLabel(found) : `#${id}`;
+    };
+
+    renderTable(
+      nodesEl,
+      [
+        {
+          title: t("graph.nodes"),
+          render: (row) =>
+            `<span class="clickable" data-node="${esc(row.id)}">${esc(graphNodeLabel(row))}</span>`,
+        },
+        { title: "类型", render: (row) => esc(row.entity_type || "—") },
+        { title: "权重", className: "num", render: (row) => esc(num(row.weight)) },
+        { title: "证据", className: "num", render: (row) => esc(row.evidence ?? "—") },
+        { title: "度数", className: "num", render: (row) => esc(row.degree ?? 0) },
+        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
+      ],
+      nodes,
+      { emptyText: t("graph.empty") }
+    );
+
+    renderTable(
+      edgesEl,
+      [
+        { title: "起点", render: (row) => esc(labelOf(row.src_entity_id)) },
+        { title: "关系", render: (row) => esc(row.relation || "—") },
+        { title: "终点", render: (row) => esc(labelOf(row.dst_entity_id)) },
+        { title: "权重", className: "num", render: (row) => esc(num(row.weight)) },
+        { title: "置信度", className: "num", render: (row) => esc(num(row.confidence)) },
+      ],
+      edges,
+      { emptyText: t("graph.empty") }
+    );
+
+    buildGraphLayout(nodes);
+    drawGraph(data);
+  } catch (error) {
+    meta.textContent = "";
+    renderError(nodesEl, error);
+    renderError(edgesEl, error);
+  }
+}
+
+function bindGraphCanvas() {
+  const canvas = $("gp-canvas");
+  if (!canvas) return;
+
+  canvas.addEventListener(
+    "wheel",
+    (event) => {
+      if (!graphState.data) return;
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = event.clientX - rect.left;
+      const my = event.clientY - rect.top;
+      const view = graphState.view;
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const next = Math.min(3, Math.max(0.3, view.scale * factor));
+      const ratio = next / view.scale;
+      view.offsetX = mx - (mx - view.offsetX) * ratio;
+      view.offsetY = my - (my - view.offsetY) * ratio;
+      view.scale = next;
+      drawGraph(graphState.data);
+    },
+    { passive: false }
+  );
+
+  canvas.addEventListener("mousedown", (event) => {
+    if (event.button !== 0 || !graphState.data) return;
+    event.preventDefault();
+    graphState.drag = { active: true, x: event.clientX, y: event.clientY, moved: false };
+    canvas.style.cursor = "grabbing";
+  });
+
+  canvas.addEventListener("mousemove", (event) => {
+    if (!graphState.data) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = event.clientX - rect.left;
+    const my = event.clientY - rect.top;
+    const drag = graphState.drag;
+    if (drag.active) {
+      const dx = event.clientX - drag.x;
+      const dy = event.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      graphState.view.offsetX += dx;
+      graphState.view.offsetY += dy;
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      hideGraphTip();
+      drawGraph(graphState.data);
+      return;
+    }
+    const hit = graphHitTest(mx, my);
+    if (hit) {
+      graphState.hoverId = String(hit.id);
+      showGraphTip(hit, event.clientX, event.clientY);
+      canvas.style.cursor = "pointer";
+    } else {
+      graphState.hoverId = null;
+      hideGraphTip();
+      canvas.style.cursor = "grab";
+    }
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    graphState.hoverId = null;
+    hideGraphTip();
+    if (!graphState.drag.active) canvas.style.cursor = "grab";
+  });
+
+  window.addEventListener("mouseup", (event) => {
+    const drag = graphState.drag;
+    if (!drag.active) return;
+    const wasClick = !drag.moved;
+    drag.active = false;
+    canvas.style.cursor = "grab";
+    if (wasClick) {
+      const rect = canvas.getBoundingClientRect();
+      const hit = graphHitTest(event.clientX - rect.left, event.clientY - rect.top);
+      if (hit) focusGraphNode(hit.id);
+    }
+  });
+}
+
+function observeGraphResize() {
+  const stage = document.querySelector(".graph-stage");
+  if (!stage) return;
+  if (typeof ResizeObserver === "function") {
+    const observer = new ResizeObserver(() => {
+      if (graphState.data) drawGraph(graphState.data);
+    });
+    observer.observe(stage);
+  } else {
+    window.addEventListener("resize", () => {
+      if (graphState.data) drawGraph(graphState.data);
+    });
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：监控                                                              */
+/* ---------------------------------------------------------------------- */
+
+const MONITOR_LIVE_METRICS = [
+  ["LLM 调用", "llm.calls"],
+  ["LLM 失败", "llm.errors"],
+  ["检索次数", "retrieval.calls"],
+  ["注入字符", "inject.chars"],
+  ["任务运行", "scheduler.runs"],
+  ["任务失败", "scheduler.failures"],
+];
+
+function metricBucketValue(bucket) {
+  if (!bucket) return null;
+  const total = Number(bucket.total || 0);
+  if (total > 0) return total;
+  return Number(bucket.count || 0);
+}
+
+function metricValue(source, name) {
+  return source ? metricBucketValue(source[name]) : null;
+}
+
+function fillMetricOptions(names) {
+  const select = $("mt-metric");
+  if (!select) return;
+  const signature = names.join(",");
+  if (select.dataset.signature === signature) return;
+  const current = select.value;
+  select.dataset.signature = signature;
+  select.innerHTML = names
+    .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`)
+    .join("");
+  if (names.includes(current)) select.value = current;
+}
+
+/** 累计量型指标（字符数/耗时/token/命中）用 total 更合适。 */
+function metricUsesTotal(name) {
+  return /\.(chars|ms|tokens|hits|duration_ms)$/.test(String(name || ""));
+}
+
+function renderMonitorLive(data) {
+  const live = data.live || {};
+  const totals = data.totals || {};
+  const pairs = MONITOR_LIVE_METRICS.map(([label, name]) => {
+    let value = metricValue(live, name);
+    if (value === null) value = metricValue(totals, name);
+    return [label, value === null ? "—" : value];
+  });
+  renderStats($("mt-live"), pairs);
+}
+
+function renderMonitorChart(data, chosen) {
+  const svg = $("mt-chart");
+  const legend = $("mt-legend");
+  if (!svg) return;
+  const series = ((data.series || {})[chosen] || []).slice();
+  if (!chosen || series.length === 0) {
+    svg.innerHTML = `<text x="400" y="120" text-anchor="middle">${esc(t("monitor.empty"))}</text>`;
+    if (legend) legend.textContent = "";
+    return;
+  }
+
+  const W = 800;
+  const H = 240;
+  const padX = 12;
+  const padTop = 14;
+  const plotBottom = H - 24;
+  const count = series.length;
+  const useTotal = metricUsesTotal(chosen);
+  const values = series.map((point) => Number(useTotal ? point.total : point.count) || 0);
+  const top = Math.max(...values) > 0 ? Math.max(...values) * 1.1 : 1; // 全 0 时留基线，避免除零
+  const xFor = (index) => (count === 1 ? W / 2 : padX + (index / (count - 1)) * (W - padX * 2));
+  const yFor = (value) => plotBottom - (value / top) * (plotBottom - padTop);
+  const points = values.map((value, index) => `${xFor(index).toFixed(1)},${yFor(value).toFixed(1)}`);
+
+  const grid = [padTop, (padTop + plotBottom) / 2, plotBottom]
+    .map(
+      (y) =>
+        `<line class="grid" x1="${padX}" y1="${y.toFixed(1)}" x2="${W - padX}" y2="${y.toFixed(1)}" />`
+    )
+    .join("");
+
+  const labelIndexes = [...new Set(count === 1 ? [0] : [0, Math.floor((count - 1) / 2), count - 1])];
+  const labels = labelIndexes
+    .map((index) => {
+      const ts = series[index] && series[index].bucket_ts;
+      const anchor = index === 0 ? "start" : index === count - 1 ? "end" : "middle";
+      const x = index === 0 ? padX : index === count - 1 ? W - padX : xFor(index);
+      return `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}">${esc(fmtTime(ts))}</text>`;
+    })
+    .join("");
+
+  const area = `${padX},${plotBottom} ${points.join(" ")} ${W - padX},${plotBottom}`;
+
+  svg.innerHTML =
+    `<defs><linearGradient id="mt-grad" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop class="stop-a" offset="0%" /><stop class="stop-b" offset="100%" /></linearGradient></defs>` +
+    `${grid}` +
+    `<polygon class="area" points="${area}" />` +
+    `<polyline class="line" points="${points.join(" ")}" />` +
+    `${labels}`;
+
+  const sum = values.reduce((acc, value) => acc + value, 0);
+  if (legend) {
+    legend.innerHTML =
+      `<span class="pill info">${esc(chosen)}</span>` +
+      `<span class="muted"> ${esc(useTotal ? "Σ total" : "Σ count")}：${esc(sum)}</span>`;
+  }
+}
+
+function renderMonitorTotals(data) {
+  const rows = Object.entries(data.totals || {}).map(([name, bucket]) => {
+    const count = Number((bucket || {}).count || 0);
+    const total = Number((bucket || {}).total || 0);
+    return { name, count, total, avg: count > 0 ? total / count : null };
+  });
+  renderTable(
+    $("mt-totals"),
+    [
+      { title: t("monitor.metric"), render: (row) => esc(row.name) },
+      { title: "次数", className: "num", render: (row) => esc(row.count) },
+      { title: "合计", className: "num", render: (row) => esc(row.total) },
+      {
+        title: "均值",
+        className: "num",
+        render: (row) => esc(row.avg === null ? "—" : num(row.avg)),
+      },
+    ],
+    rows,
+    { emptyText: t("monitor.empty") }
+  );
+}
+
+function renderMonitorReview(data) {
+  const target = $("mt-review");
+  if (!target) return;
+  const review = data.review || {};
+  const flag = (value) => (value ? t("features.switchOn") : t("features.switchOff"));
+  const kv = (label, value) =>
+    `<div class="kv"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div></div>`;
+  target.innerHTML = [
+    kv(t("monitor.review"), flag(review.enabled)),
+    kv("LLM", flag(review.use_llm)),
+    kv("审核待处理", review.pending ?? 0),
+    kv(t("monitor.decidedAuto"), review.decided_by_auto ?? 0),
+    kv(t("monitor.pending"), data.pending ?? 0),
+    kv(t("monitor.retention"), data.retention_days ?? "—"),
+  ].join("");
+}
+
+async function loadMonitor(isRetry = false) {
+  const meta = $("mt-meta");
+  const rangeSelect = $("mt-range");
+  try {
+    const rangeHours = Number(rangeSelect.value) || 24;
+    const bucketSeconds = Number($("mt-bucket").value) || 3600;
+    const requested = $("mt-metric").value || "";
+    const data = await apiGet("monitor", {
+      range_hours: rangeHours,
+      bucket_seconds: bucketSeconds,
+      metrics: requested,
+    });
+
+    const names = Array.isArray(data.metrics) ? data.metrics : [];
+    fillMetricOptions(names);
+    const select = $("mt-metric");
+    const chosen = names.includes(requested) ? requested : names[0] || "";
+    select.value = chosen;
+
+    const series = (data.series || {})[chosen] || [];
+    // 首次未指定指标时，若后端只回传所选指标的曲线，补一次请求
+    if (!isRetry && chosen && series.length === 0) {
+      await loadMonitor(true);
+      return;
+    }
+
+    const option = rangeSelect.selectedOptions[0];
+    const rangeLabel = option ? option.textContent : `${rangeHours}h`;
+    meta.textContent =
+      `${t("monitor.range")}：${rangeLabel}　|　` +
+      `${t("monitor.bucket")}：${bucketSeconds >= 86400 ? t("monitor.day") : t("monitor.hour")}　|　` +
+      `${t("monitor.metric")}：${chosen || "—"}`;
+
+    renderMonitorLive(data);
+    renderMonitorChart(data, chosen);
+    renderMonitorTotals(data);
+    renderMonitorReview(data);
+  } catch (error) {
+    meta.textContent = "";
+    renderError($("mt-live"), error);
+    renderError($("mt-totals"), error);
+    const svg = $("mt-chart");
+    if (svg) svg.innerHTML = "";
+    const legend = $("mt-legend");
+    if (legend) legend.textContent = "";
+  }
+}
+
+/* ---------------------------------------------------------------------- */
 /* 路由与事件绑定                                                          */
 /* ---------------------------------------------------------------------- */
 
@@ -967,6 +1644,8 @@ const PAGE_TITLES = {
   journals: "nav.journals",
   reviews: "nav.reviews",
   persona: "nav.persona",
+  graph: "nav.graph",
+  monitor: "nav.monitor",
   system: "nav.system",
 };
 
@@ -977,6 +1656,8 @@ const LOADERS = {
   journals: () => loadJournals(),
   reviews: () => loadReviews(),
   persona: () => loadPersona(),
+  graph: () => loadGraph(),
+  monitor: () => loadMonitor(),
   system: () => loadSystem(true),
 };
 
@@ -1093,6 +1774,19 @@ function bindEvents() {
     if (event.key === "Enter") loadPersona();
   });
 
+  // 图谱
+  $("gp-query").addEventListener("click", loadGraph);
+  $("gp-umo").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loadGraph();
+  });
+  bindGraphCanvas();
+
+  // 监控
+  $("mt-query").addEventListener("click", () => loadMonitor());
+  ["mt-range", "mt-bucket", "mt-metric"].forEach((id) => {
+    $(id).addEventListener("change", () => loadMonitor());
+  });
+
   // 维护
   $("btn-reindex").addEventListener("click", async () => {
     const button = $("btn-reindex");
@@ -1121,6 +1815,11 @@ function bindEvents() {
     const memoryNode = event.target.closest("[data-memory]");
     if (memoryNode) {
       openMemoryDetail(memoryNode.dataset.memory);
+      return;
+    }
+    const nodeItem = event.target.closest("[data-node]");
+    if (nodeItem) {
+      focusGraphNode(nodeItem.dataset.node);
       return;
     }
     const reviewNode = event.target.closest("[data-review]");
@@ -1157,6 +1856,7 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  observeGraphResize();
 
   // 主题：本地记忆优先，其次跟随 Dashboard
   let theme = null;

@@ -11,7 +11,16 @@ import json
 import re
 from typing import Any, Sequence
 
-from ..support import truncate
+from ..support import PromptOverrides, render, truncate
+
+PROMPT_JARGON_SYSTEM = "jargon_system"
+PROMPT_JARGON_TEMPLATE = "jargon_template"
+PROMPT_AFFINITY_SYSTEM = "affinity_system"
+PROMPT_AFFINITY_TEMPLATE = "affinity_template"
+"""配置键：与 `_conf_schema.json` 的 `prompts.*` 一一对应。"""
+
+_JARGON_REQUIRED = ("candidates",)
+_AFFINITY_REQUIRED = ("message",)
 
 JARGON_SYSTEM = (
     "你是一个群聊语言分析助手。你的任务是判断给定词条是否属于该群聊的「内部用语」，"
@@ -88,7 +97,23 @@ JARGON_BLOCK_HEADER = (
 AFFINITY_BLOCK_HEADER = "[SuperAstrBot 社交参考 · 以下是你与对方的关系状态，用于把握语气]"
 
 
-def build_jargon_prompt(candidates: Sequence[tuple[str, Sequence[str]]]) -> str:
+def jargon_system(overrides: PromptOverrides | None = None) -> str:
+    """黑话推断系统提示词：配置优先、内置兜底。"""
+    if overrides is None:
+        return JARGON_SYSTEM
+    return overrides.get(PROMPT_JARGON_SYSTEM, JARGON_SYSTEM)
+
+
+def affinity_system(overrides: PromptOverrides | None = None) -> str:
+    """好感度判定系统提示词：配置优先、内置兜底。"""
+    if overrides is None:
+        return AFFINITY_SYSTEM
+    return overrides.get(PROMPT_AFFINITY_SYSTEM, AFFINITY_SYSTEM)
+
+
+def build_jargon_prompt(
+    candidates: Sequence[tuple[str, Sequence[str]]], *, overrides: PromptOverrides | None = None
+) -> str:
     """``candidates`` 为 ``[(词, 例句列表)]``。"""
 
     lines: list[str] = []
@@ -96,11 +121,21 @@ def build_jargon_prompt(candidates: Sequence[tuple[str, Sequence[str]]]) -> str:
         lines.append(f"- term: {term}")
         for sample in samples:
             lines.append(f"  例句：{truncate(sample, 120)}")
-    return _JARGON_TEMPLATE.format(candidates="\n".join(lines))
+    template = _JARGON_TEMPLATE
+    if overrides is not None:
+        template = overrides.get(
+            PROMPT_JARGON_TEMPLATE, _JARGON_TEMPLATE, required=_JARGON_REQUIRED
+        )
+    return render(template, candidates="\n".join(lines))
 
 
-def build_affinity_prompt(message: str) -> str:
-    return _AFFINITY_TEMPLATE.format(message=truncate(message, 300))
+def build_affinity_prompt(message: str, *, overrides: PromptOverrides | None = None) -> str:
+    template = _AFFINITY_TEMPLATE
+    if overrides is not None:
+        template = overrides.get(
+            PROMPT_AFFINITY_TEMPLATE, _AFFINITY_TEMPLATE, required=_AFFINITY_REQUIRED
+        )
+    return render(template, message=truncate(message, 300))
 
 
 def _strip_fences(text: str) -> str:

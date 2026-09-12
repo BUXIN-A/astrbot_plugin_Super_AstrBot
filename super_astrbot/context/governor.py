@@ -36,7 +36,7 @@ from ..spec.capabilities import as_int
 from ..spec.errors import LlmError, safe_detail
 from ..support import estimate_messages_tokens, truncate
 from .config import MAX_SUMMARY_CHARS, ContextConfig
-from .prompts import SUMMARY_SYSTEM, build_summary_prompt
+from .prompts import build_summary_prompt, summary_system
 
 CHECKPOINT_ROLE = "_checkpoint"
 TOOL_PLACEHOLDER = "[早期工具结果已省略]"
@@ -433,9 +433,12 @@ class ContextGovernor:
         try:
             result = await self._llm.chat(
                 prompt=build_summary_prompt(
-                    material, previous=previous, max_chars=MAX_SUMMARY_CHARS
+                    material,
+                    previous=previous,
+                    max_chars=MAX_SUMMARY_CHARS,
+                    overrides=self._config.prompts,
                 ),
-                system_prompt=SUMMARY_SYSTEM,
+                system_prompt=summary_system(self._config.prompts),
                 provider_id=self._config.summary_provider_id or None,
                 session_key=session_key or None,
                 purpose="context_summary",

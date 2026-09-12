@@ -11,9 +11,11 @@ from .db import Database, SqliteStateStore, Transaction
 from .migrations import CURRENT_VERSION, MIGRATIONS, Migration
 from .repositories import (
     AffinityRepository,
+    GraphRepository,
     JargonRepository,
     JournalRepository,
     MemoryRepository,
+    MetricSeriesRepository,
     ReflectionRepository,
     ReviewRepository,
     StyleRepository,
@@ -36,5 +38,7 @@ __all__ = [
     "StyleRepository",
     "JargonRepository",
     "AffinityRepository",
+    "GraphRepository",
+    "MetricSeriesRepository",
     "row_to_dict",
 ]

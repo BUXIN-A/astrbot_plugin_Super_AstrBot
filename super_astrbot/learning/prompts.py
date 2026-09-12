@@ -14,7 +14,17 @@ import re
 from typing import Any
 
 from ..memory import ALL_KINDS, KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE
-from ..support import truncate
+from ..support import PromptOverrides, render, truncate
+
+PROMPT_REFLECTION_SYSTEM = "reflection_system"
+PROMPT_REFLECTION_TEMPLATE = "reflection_template"
+PROMPT_WEEKLY_SYSTEM = "weekly_system"
+PROMPT_WEEKLY_TEMPLATE = "weekly_template"
+"""配置键：与 `_conf_schema.json` 的 `prompts.*` 一一对应。"""
+
+_REFLECTION_REQUIRED = ("transcript", "max_facts")
+_WEEKLY_REQUIRED = ("material", "max_facts")
+"""必填占位符：缺任意一个就回退内置模板（见 `support/prompts.py` 的说明）。"""
 
 REFLECTION_SYSTEM = (
     "你是一个严谨的长期记忆整理助手。你需要从对话片段中提炼出**值得长期记住**的信息，"
@@ -73,12 +83,40 @@ _WEEKLY_TEMPLATE = """以下是用户最近一周的周记（现实生活记录�
 """
 
 
-def build_reflection_prompt(transcript: str, *, max_facts: int) -> str:
-    return _REFLECTION_TEMPLATE.format(transcript=transcript, max_facts=max_facts)
+def reflection_system(overrides: PromptOverrides | None = None) -> str:
+    """反思系统提示词：配置优先、内置兜底。"""
+    if overrides is None:
+        return REFLECTION_SYSTEM
+    return overrides.get(PROMPT_REFLECTION_SYSTEM, REFLECTION_SYSTEM)
 
 
-def build_weekly_prompt(material: str, *, max_facts: int) -> str:
-    return _WEEKLY_TEMPLATE.format(material=material, max_facts=max_facts)
+def weekly_system(overrides: PromptOverrides | None = None) -> str:
+    """周度洞察系统提示词：未单独配置时沿用反思系统提示词。"""
+    if overrides is None:
+        return REFLECTION_SYSTEM
+    return overrides.get(PROMPT_WEEKLY_SYSTEM, REFLECTION_SYSTEM)
+
+
+def build_reflection_prompt(
+    transcript: str, *, max_facts: int, overrides: PromptOverrides | None = None
+) -> str:
+    template = _REFLECTION_TEMPLATE
+    if overrides is not None:
+        template = overrides.get(
+            PROMPT_REFLECTION_TEMPLATE, _REFLECTION_TEMPLATE, required=_REFLECTION_REQUIRED
+        )
+    return render(template, transcript=transcript, max_facts=max_facts)
+
+
+def build_weekly_prompt(
+    material: str, *, max_facts: int, overrides: PromptOverrides | None = None
+) -> str:
+    template = _WEEKLY_TEMPLATE
+    if overrides is not None:
+        template = overrides.get(
+            PROMPT_WEEKLY_TEMPLATE, _WEEKLY_TEMPLATE, required=_WEEKLY_REQUIRED
+        )
+    return render(template, material=material, max_facts=max_facts)
 
 
 def _strip_fences(text: str) -> str:

@@ -19,9 +19,9 @@ from ..harness.protocols import EventView, LlmGateway
 from ..spec.errors import LlmError, safe_detail
 from ..spec.scopes import MemoryScope, retrieval_scopes
 from ..storage import AffinityRepository
-from ..support import truncate
+from ..support import PromptOverrides, truncate
 from .config import AffinityConfig
-from .prompts import AFFINITY_SYSTEM, build_affinity_prompt, parse_affinity_verdict
+from .prompts import affinity_system, build_affinity_prompt, parse_affinity_verdict
 
 MOOD_POSITIVE = "positive"
 MOOD_NEGATIVE = "negative"
@@ -157,12 +157,14 @@ class AffinityService:
         config: AffinityConfig,
         affinities: AffinityRepository,
         llm: LlmGateway,
+        prompts: PromptOverrides | None = None,
         clock: Callable[[], float] | None = None,
         logger: Any | None = None,
     ) -> None:
         self._config = config
         self._affinities = affinities
         self._llm = llm
+        self._prompts = prompts
         self._clock = clock or (lambda: 0.0)
         self._logger = logger
         self._stats = {"updated": 0, "llm_calls": 0, "skipped": 0}
@@ -251,8 +253,8 @@ class AffinityService:
             return ""
         try:
             result = await self._llm.chat(
-                prompt=build_affinity_prompt(text),
-                system_prompt=AFFINITY_SYSTEM,
+                prompt=build_affinity_prompt(text, overrides=self._prompts),
+                system_prompt=affinity_system(self._prompts),
                 provider_id=self._config.provider_id or None,
                 timeout=self._config.timeout_seconds,
                 purpose="affinity",

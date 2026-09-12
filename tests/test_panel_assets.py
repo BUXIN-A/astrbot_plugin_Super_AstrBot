@@ -109,7 +109,10 @@ def test_plugin_logo_present() -> None:
 
 def test_panel_uses_plugin_logo() -> None:
     html = _read(PAGES / "index.html")
-    assert "./logo.svg" in html, "面板品牌区应使用插件图标"
+    # 品牌区按主题切换两套矢量图标（同一图形、深浅两种填充）。
+    assert "./logo-light.svg" in html, "面板品牌区应使用浅色主题图标"
+    assert "./logo-dark.svg" in html, "面板品牌区应使用深色主题图标"
+    assert (PAGES / "logo.svg").exists(), "同名兜底图标应保留"
 
 
 def test_feature_toggle_ui_present() -> None:

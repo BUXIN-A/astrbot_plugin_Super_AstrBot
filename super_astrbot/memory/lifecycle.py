@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Sequence
+from typing import Any, Protocol, Sequence, runtime_checkable
 from uuid import uuid4
 
 from ..spec.scopes import MemoryScope, ScopeType
@@ -34,6 +34,21 @@ _ARCHIVE_AFTER_DAYS = 90.0
 """无访问、低重要度的记忆在该天数后被归档（不再参与检索）。"""
 
 
+@runtime_checkable
+class GraphIndexer(Protocol):
+    """记忆写入后建图谱的业务回调。
+
+    ``memory`` 域不 import ``graph`` 域——只依赖本协议，由装配层把图谱服务注入进来。
+    约定：实现方自己判断能力开关、自己吞异常，调用方不因图谱失败而受影响。
+    """
+
+    async def index_memory(
+        self, scope: MemoryScope, *, memory_id: int, content: str, now: float | None = None
+    ) -> Any: ...
+
+    async def clear_memories(self, memory_ids: Sequence[int]) -> int: ...
+
+
 class MemoryLifecycle:
     """记忆的写入与维护。"""
 
@@ -45,6 +60,7 @@ class MemoryLifecycle:
         vectors: VectorRepository,
         embedding: Any | None,
         config: MemoryConfig,
+        graph_indexer: GraphIndexer | None = None,
         logger: Any | None = None,
     ) -> None:
         self._db = db
@@ -52,6 +68,7 @@ class MemoryLifecycle:
         self._vectors = vectors
         self._embedding = embedding
         self._config = config
+        self._graph_indexer = graph_indexer
         self._logger = logger
 
     # ------------------------------------------------------------------ #
@@ -89,7 +106,13 @@ class MemoryLifecycle:
         try:
             await self._db.advance_write_op(op_id, "index", {"memory_id": memory_id})
             await self._apply_indexes(
-                memory_id, draft.content, draft.status, now, index=index, with_vector=with_vector
+                memory_id,
+                draft.content,
+                draft.status,
+                now,
+                scope=MemoryScope(ScopeType.parse(draft.scope_type), draft.scope_id),
+                index=index,
+                with_vector=with_vector,
             )
             await self._db.finish_write_op(op_id)
         except Exception as exc:  # noqa: BLE001 - 索引失败不影响记忆本体可用
@@ -110,6 +133,7 @@ class MemoryLifecycle:
         status: str,
         now: float,
         *,
+        scope: MemoryScope | None = None,
         index: bool = True,
         with_vector: bool = True,
     ) -> None:
@@ -126,6 +150,23 @@ class MemoryLifecycle:
                     vector,
                     at=now,  # type: ignore[union-attr]
                 )
+        await self._index_graph(scope, memory_id, content, now=now)
+
+    async def _index_graph(
+        self, scope: MemoryScope | None, memory_id: int, content: str, *, now: float
+    ) -> None:
+        """把记忆交给图谱索引（未启用时注入的实现会直接返回）。
+
+        图谱只是增强，因此这里单独兜底：失败不写进 ``write_ops``，也不影响记忆可用性。
+        """
+        if self._graph_indexer is None or scope is None:
+            return
+        try:
+            await self._graph_indexer.index_memory(
+                scope, memory_id=memory_id, content=content, now=now
+            )
+        except Exception as exc:  # noqa: BLE001 - 图谱失败只降级
+            self._warn("图谱索引失败（memory=%s）：%s", memory_id, exc)
 
     def _vector_ready(self) -> bool:
         return bool(
@@ -167,6 +208,11 @@ class MemoryLifecycle:
         # 索引与向量批量删除：逐条删除会产生 2N 次 SQL。
         await self._memories.delete_index_many(ids)
         await self._vectors.delete_many(ids)
+        if self._graph_indexer is not None:
+            try:
+                await self._graph_indexer.clear_memories(ids)
+            except Exception as exc:  # noqa: BLE001 - 图谱清理失败不影响状态变更
+                self._warn("图谱关联清理失败：%s", exc)
         return count
 
     async def purge_buffer(self, scopes: Sequence[MemoryScope], *, now: float | None = None) -> int:
@@ -267,6 +313,13 @@ class MemoryLifecycle:
                     continue
                 await self._memories.index_tokens(item.id, " ".join(tokenize(item.content)))
                 stats["indexed"] += 1
+                if self._graph_indexer is not None:
+                    await self._index_graph(
+                        MemoryScope(ScopeType.parse(item.scope_type), item.scope_id),
+                        item.id,
+                        item.content,
+                        now=moment,
+                    )
                 if vector_ready:
                     vector = await self._embedding.embed(item.content)  # type: ignore[union-attr]
                     if vector:
@@ -328,7 +381,13 @@ class MemoryLifecycle:
             item = MemoryItem.from_row(record)
             if item.status == STATUS_ACTIVE:
                 try:
-                    await self._apply_indexes(memory_id, item.content, item.status, time.time())
+                    await self._apply_indexes(
+                        memory_id,
+                        item.content,
+                        item.status,
+                        time.time(),
+                        scope=MemoryScope(ScopeType.parse(item.scope_type), item.scope_id),
+                    )
                     repaired += 1
                 except Exception as exc:  # noqa: BLE001
                     self._warn("修复记忆 %s 索引失败：%s", memory_id, exc)

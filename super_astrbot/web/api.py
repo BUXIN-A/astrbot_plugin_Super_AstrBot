@@ -19,6 +19,7 @@ from typing import Any, Awaitable, Callable
 
 from astrbot.api.web import error_response, json_response, request
 
+from ..monitor import CORE_METRICS, MAX_RANGE_HOURS
 from ..spec.scopes import MemoryScope
 
 PLUGIN_NAME = "astrbot_plugin_Super_AstrBot"
@@ -42,6 +43,8 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("reviews", _reviews(app), ["GET"], "待审队列"),
         ("review-action", _review_action(app), ["POST"], "审批待审记录"),
         ("persona", _persona(app), ["GET"], "拟人化学习数据（风格 / 黑话 / 好感度）"),
+        ("graph", _graph(app), ["GET"], "知识图谱子图（可视化用）"),
+        ("monitor", _monitor(app), ["GET"], "运行监控指标与时间序列"),
         ("maintenance", _maintenance(app), ["POST"], "维护操作（重建索引）"),
     ]
     for prefix in (f"/{PLUGIN_NAME}", f"/{PLUGIN_NAME_LOWER}"):
@@ -500,6 +503,134 @@ def _persona(app: Any) -> Handler:
                     }
                     for row in affinity
                 ],
+            }
+        )
+
+    return handler
+
+
+# --------------------------------------------------------------------------- #
+# 知识图谱与运行监控
+# --------------------------------------------------------------------------- #
+
+
+def _graph(app: Any) -> Handler:
+    async def handler() -> Any:
+        service = app.graph_service
+        if service is None:
+            return _not_ready()
+
+        umo = _str_param("umo").strip()
+        limit_nodes = _int_param("limit_nodes", 120, low=10, high=300)
+        limit_edges = _int_param("limit_edges", 240, low=10, high=600)
+        raw_memory_id = request.query.get("memory_id", None, type=int)
+
+        try:
+            if raw_memory_id is not None:
+                data = await service.memory_subgraph(
+                    int(raw_memory_id), limit_nodes=limit_nodes, limit_edges=limit_edges
+                )
+            else:
+                scope = MemoryScope.for_session(umo) if umo else None
+                data = await service.snapshot(
+                    scope=scope, limit_nodes=limit_nodes, limit_edges=limit_edges
+                )
+            stats = await service.stats()
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取图谱失败：{exc}")
+
+        nodes = [
+            {
+                "id": row.get("id"),
+                "label": row.get("name") or row.get("canonical_name") or "",
+                "name": row.get("name"),
+                "canonical_name": row.get("canonical_name"),
+                "entity_type": row.get("entity_type"),
+                "scope": f"{row.get('scope_type')}:{row.get('scope_id')}",
+                "weight": round(float(row.get("weight") or 0.0), 4),
+                "evidence": row.get("evidence"),
+                "degree": row.get("degree", 0),
+            }
+            for row in data.get("nodes") or []
+        ]
+        edges = [
+            {
+                "id": row.get("id"),
+                "src_entity_id": row.get("src_entity_id"),
+                "dst_entity_id": row.get("dst_entity_id"),
+                "relation": row.get("relation"),
+                "weight": round(float(row.get("weight") or 0.0), 4),
+                "confidence": round(float(row.get("confidence") or 0.0), 4),
+            }
+            for row in data.get("edges") or []
+        ]
+        return _ok(
+            {
+                "enabled": app.capabilities.get("graph.enabled", False),
+                "stats": stats,
+                "nodes": nodes,
+                "edges": edges,
+                "truncated": bool(data.get("truncated")),
+                "umo": umo,
+            }
+        )
+
+    return handler
+
+
+def _monitor(app: Any) -> Handler:
+    async def handler() -> Any:
+        service = app.monitor_service
+        if service is None:
+            return _not_ready()
+
+        range_hours = _int_param("range_hours", 24, low=1, high=MAX_RANGE_HOURS)
+        raw_bucket = request.query.get("bucket_seconds", None, type=int)
+        # 只提供小时/天两种粒度：更细的粒度由内存桶实时值承担。
+        bucket = 86400 if (raw_bucket or 3600) >= 86400 else 3600
+        raw_metrics = _str_param("metrics")
+        metrics = [item.strip() for item in raw_metrics.split(",") if item.strip()] or list(
+            CORE_METRICS
+        )
+
+        try:
+            window = await service.overview(hours=range_hours)
+            series = await service.trends(
+                metrics=metrics, range_hours=range_hours, bucket_seconds=bucket
+            )
+            snapshot = await service.snapshot()
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取监控数据失败：{exc}")
+
+        review: dict[str, Any] = {}
+        auto = app.auto_review_service
+        if auto is not None:
+            try:
+                review = await auto.stats()
+                review["enabled"] = bool(app.capabilities.get("review.auto", False))
+            except Exception as exc:  # noqa: BLE001 - 监控页不应因单个区块失败而整体报错
+                review = {"error": str(exc)}
+
+        graph: dict[str, Any] = {}
+        graph_service = app.graph_service
+        if graph_service is not None:
+            try:
+                graph = await graph_service.stats()
+            except Exception as exc:  # noqa: BLE001
+                graph = {"error": str(exc)}
+
+        return _ok(
+            {
+                "window_hours": range_hours,
+                "bucket_seconds": bucket,
+                "live": window.get("live") or {},
+                "totals": window.get("totals") or {},
+                "metrics": window.get("metrics") or [],
+                "series": series.get("series") or {},
+                "pending": snapshot.get("pending") or 0,
+                "retention_days": snapshot.get("retention_days"),
+                "review": review,
+                "graph": graph,
             }
         )
 

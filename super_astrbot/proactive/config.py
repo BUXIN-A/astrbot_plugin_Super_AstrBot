@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_int, as_str, as_str_tuple, get_path
+from ..support import PromptOverrides
 
 DEFAULT_DAILY_TIME = "10:00"
 DEFAULT_DAILY_MAX = 1
@@ -63,6 +64,8 @@ class ProactiveConfig:
     material_memories: int = DEFAULT_MATERIAL_MEMORIES
     material_journals: int = DEFAULT_MATERIAL_JOURNALS
     provider_id: str = ""
+    prompts: PromptOverrides = field(default_factory=PromptOverrides)
+    """用户自定义提示词（留空即用内置默认）。"""
 
     def in_quiet_hours(self, hour: int) -> bool:
         """当前小时是否处于免打扰时段。"""
@@ -78,7 +81,7 @@ class ProactiveConfig:
         hour, minute = parse_daily_time(
             get_path(config, "proactive.daily_time", DEFAULT_DAILY_TIME)
         )
-        return cls(
+        result = cls(
             enabled=as_bool(get_path(config, "proactive.enabled", False), False),
             targets=as_str_tuple(get_path(config, "proactive.targets", [])),
             daily_enabled=as_bool(get_path(config, "proactive.daily_enabled", True), True),
@@ -141,3 +144,5 @@ class ProactiveConfig:
             ),
             provider_id=as_str(get_path(config, "proactive.provider_id", "")),
         )
+        result.prompts = PromptOverrides(config)
+        return result

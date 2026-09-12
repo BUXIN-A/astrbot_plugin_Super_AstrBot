@@ -136,10 +136,13 @@ def create_harness(
     budget: Any | None = None,
     llm_timeout: float = 45.0,
     embedding_provider_id: str = "",
+    llm_observer: Any | None = None,
 ) -> Harness:
     """构建 Harness 容器。"""
     host = AstrBotHost(star, context, config)
-    llm = AstrBotLlmGateway(context, host, timeout=llm_timeout, budget=budget)
+    llm = AstrBotLlmGateway(
+        context, host, timeout=llm_timeout, budget=budget, observer=llm_observer
+    )
     embedding = AstrBotEmbeddingGateway(context, host, provider_id=embedding_provider_id)
     injector = AstrBotInjector(host)
     persona_injector = AstrBotInjector(

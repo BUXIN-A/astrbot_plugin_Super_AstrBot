@@ -43,6 +43,10 @@
     │    learning 反思式自我学习        context   请求级上下文治理
     │    group    群聊语义（读空气）     proactive 主动交互（双轨调度）
     │    persona  拟人化学习（风格/黑话/好感度）
+    │    graph    记忆知识图谱（实体 / 关系 / 检索增强）
+    │    review   自动审核（规则优先 + 模型兜底）
+    │    monitor  运行监控（内存指标 + 小时桶时序）
+    │    maibot   MaiBot 增强（发送者个性化 + 统一时间衰减）
     │    commands 指令门面              web       面板 API
     │
 ┌───▼──────────────────────────────────────────────────────────┐
@@ -84,12 +88,19 @@
 | `journal.enabled` | 周记 | on | `basic.enabled` | ✅ | 周记现实记忆 |
 | `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
 | `agent.memory_tools` | Agent 工具 | **off** | `memory.enabled` | ❌ | 向模型暴露记忆检索/写入函数工具（见第 9 节） |
-| `context.governance` | 上下文治理 | **off** | `basic.enabled` | ✅ | 请求级 token 治理：占位压缩 + 历史摘要（见第 10 节） |
+| `context.enabled` | 上下文治理 | **off** | `basic.enabled` | ✅ | 请求级 token 治理：占位压缩 + 历史摘要（见第 10 节） |
 | `group.enabled` | 群聊语义 | **off** | `basic.enabled` | ✅ | 读空气插话 + 冷却配额 + 并发合并（见第 11 节） |
 | `proactive.enabled` | 主动交互 | **off** | `basic.enabled` | ✅ | 双轨调度主动消息 + 免打扰（见第 12 节） |
 | `persona.style` | 拟人化学习 | **off** | `basic.enabled` | ✅ | 风格模仿：邻接对样本 + few-shot 注入（见第 13 节） |
 | `persona.jargon` | 拟人化学习 | **off** | `basic.enabled` | ✅ | 群内用语：统计预筛 + 词义推断 + 理解注入（见第 13 节） |
 | `persona.affinity` | 拟人化学习 | **off** | `basic.enabled` | ✅ | 社交好感度：规则判定 + 模型兜底 + 语气指引（见第 13 节） |
+| `graph.enabled` | 知识图谱 | **off** | `memory.enabled` | ✅ | 实体关系抽取 + 图谱关联召回 + 可视化（见第 14 节） |
+| `review.auto` | 自动审核 | **off** | `basic.enabled` | ✅ | 规则优先、模型兜底地自动处理待审队列（见第 15 节） |
+| `maibot.enabled` | MaiBot 增强 | **off** | `basic.enabled` | ✅ | 表达样本按发送者个性化 + 学习产物统一衰减（见第 18 节） |
+
+> **能力键即配置路径**：`Capability.key` 必须与 `_conf_schema.json` 中的实际字段路径完全一致。
+> 否则会出现「配置页勾选不生效、面板开关写入的键被框架当作脏键清理」这类静默不一致
+> （`tests/test_prompts_config.py::test_every_capability_key_is_declared_in_conf_schema` 会拦住它）。
 
 **依赖解析规则**：某能力的前置不满足时，该能力视为关闭，并记录一条 `DegradedReason`（只告警一次）。
 
@@ -227,9 +238,11 @@ class EventView:
 | `memory_links` | 记忆关联（预留图谱） | `src_id`, `dst_id`, `relation`, `weight` |
 | `journals` | 周记 | `id`, `scope_type`, `scope_id`, `content`, `tags`(JSON), `emotion`, `event_time`, `created_at` |
 | `reflection_logs` | 反思运行记录 | `id`, `scope_type`, `scope_id`, `started_at`, `finished_at`, `status`, `produced`, `error` |
-| `pending_reviews` | 待审记忆（审批模式） | `id`, `payload`(JSON), `created_at`, `status` |
+| `pending_reviews` | 待审记忆（审批模式） | `id`, `scope_type`, `scope_id`, `origin`, `payload`(JSON), `status`, `created_at`, `decided_at`, `decided_by`（`auto` 表示自动审核） |
 | `write_ops` | 可恢复写日志 | `op_id`, `step`, `payload`(JSON), `status`, `updated_at` |
 | `kv_state` | 运行状态（节流/游标/幂等） | `key`, `value`(JSON), `updated_at` |
+| `graph_entities` / `graph_relations` / `memory_entities` | 知识图谱（实体 / 关系 / 记忆关联） | 见第 14 节 |
+| `metric_series` | 运行监控小时桶时序 | `(bucket_ts, metric, scope_type, scope_id)`, `count`, `total`, `last_value` |
 
 **作用域语义**：`scope_type ∈ {session, user, global}`；`scope_id` 为对应 umo / user_id / `"*"`。检索时按「当前会话 + 当前用户 + 全局」三层并集召回。
 
@@ -256,12 +269,13 @@ class EventView:
 
 1. **关键词路**：对查询做分词（jieba 可用则用，否则字符 bigram），在 `memory_index` 做 FTS5 匹配，得到 `rank_kw`。
 2. **向量路**（可选）：将查询向量化后与 `memory_vectors` 做暴力余弦，得到 `rank_vec`；无可用 Embedding Provider 或未启用时该路返回空。
-3. **融合**：RRF：`score = Σ 1/(k + rank_i)`，k 取配置 `fusion_rrf_k`。
-4. **加权**：`final = w_rel · norm(rrf) + w_imp · importance + w_rec · recency`，其中 `recency = 0.5 ^ (age_days / half_life_days)`。
-5. **后处理**：过滤 `final < min_score`；按 `dedup_similarity` 做词袋去重；周记来源额外加 `journal.retrieval_boost`；截断到 `top_k`。
-6. **可观测**：每条结果附带 `score_breakdown`，供 `/sab why` 与面板排查。
+3. **图谱路**（可选）：查询词命中实体后取关联记忆（可选二跳邻居），得到 `rank_graph`；未启用知识图谱时该路被移除（见第 14 节）。
+4. **融合**：RRF：`score = Σ 1/(k + rank_i)`，k 取配置 `fusion_rrf_k`。
+5. **加权**：`final = w_rel · norm(rrf) + w_imp · importance + w_rec · recency`，其中 `recency = 0.5 ^ (age_days / half_life_days)`。
+6. **后处理**：过滤 `final < min_score`；按 `dedup_similarity` 做词袋去重；周记来源额外加 `journal.retrieval_boost`；截断到 `top_k`。
+7. **可观测**：每条结果附带 `score_breakdown`，供 `/sab why` 与面板排查。
 
-**降级要求**：向量路异常/不可用时，检索必须仍能返回关键词路结果，不得整体失败。
+**降级要求**：任一路（向量/图谱）异常或不可用时，检索必须仍能返回其余路结果，不得整体失败。
 
 ### 6.2 注入规格
 
@@ -659,15 +673,235 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 
 ---
 
-## 14. 可观测性与运维
+## 14. 记忆知识图谱规格
+
+目标：把散落的记忆组织成**实体—关系**网络，让「顺着线索想起另一条记忆」成为一条正式的召回路径，
+并让使用者能直观看到 Bot 到底把什么连在了一起。
+
+### 14.1 建模
+
+| 表 | 含义 |
+|---|---|
+| `graph_entities` | 实体节点：`(scope_type, scope_id, canonical_name)` 唯一，重复出现只累加证据与权重 |
+| `graph_relations` | 实体关系：`(scope_type, scope_id, src, dst, relation)` 唯一（唯一索引而非复合主键，避免与 rowid 主键冲突） |
+| `memory_entities` | 记忆 ↔ 实体的多对多关联（图谱召回的落脚点） |
+
+作用域与记忆一致：`session` / `user` / `global`。删除或归档记忆时解除其关联；
+失去全部关联且无边相连的实体由维护任务回收。
+
+### 14.2 抽取
+
+- **零成本（默认）**：`support.text.tokenize` 分词 → 过滤长度/纯数字/长英文 → 取前 N 个作为实体，
+  相邻候选连成 `共现` 关系。**不调用模型**，因此可以默认开启而不增加成本。
+- **模型（可选）**：一次调用输出 `{"entities": [...], "relations": [...]}`，严格校验（字段类型、
+  长度上限、类型白名单）后落地；**解析失败一律降级为零成本结果或空**，绝不写坏数据。
+- `extractor` 取值 `deterministic` / `llm` / `both`（模型为主、零成本补充）。
+- 触发时机：**记忆写入时同步挂接**（`MemoryLifecycle` 通过 `GraphIndexer` 协议回调图谱域），
+  单条记忆失败只记日志，不影响记忆本体；`/sab reindex` 会重建图谱。
+
+### 14.3 检索增强
+
+图谱作为第 3 条检索路（`GraphRetriever`，`name="graph"`）接入既有 `HybridRetriever`：
+
+1. 查询分词 → 规范化后**精确匹配实体**；
+2. 取这些实体关联的正式记忆作为直接命中；
+3. `expansion_hops >= 2` 时再取一跳邻居实体关联的记忆，权重乘 `second_hop_weight`；
+4. 输出按权重降序的候选，交给既有的 **RRF 融合 + 多因子加权 + 词袋去重**。
+
+因此图谱路**不改变融合层**，也不会突破既有 `top_k` 与注入预算；关闭能力时该路被移除。
+
+### 14.4 维护与可视化
+
+- 每日维护：权重按半衰期衰减 → 逐作用域按权重保留上限 → 回收孤立实体与弱关系。
+- 面板「图谱」分区：原生 Canvas 2D 自绘（无 CDN），稳定环形布局、缩放/平移/节点高亮，
+  可留空 UMO 看全量，也可按会话过滤；节点/关系表格便于核对数据。
+- 接口 `GET /graph`（`umo` / `memory_id` / `limit_nodes` / `limit_edges`）。
+
+### 14.5 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `graph.enabled` | **false** | 总开关（热切换） |
+| `graph.extractor` | deterministic | 抽取方式 |
+| `graph.max_entities` / `graph.max_relations` | 8 / 8 | 单条记忆抽取上限 |
+| `graph.min_term_chars` / `graph.max_term_chars` | 2 / 12 | 实体候选长度范围 |
+| `graph.max_entities_per_scope` | 2000 | 每作用域实体上限 |
+| `graph.expansion_hops` / `graph.expansion_limit` / `graph.second_hop_weight` | 1 / 24 / 0.4 | 扩展跳数、邻居上限、二跳折扣 |
+| `graph.half_life_days` / `graph.weight_floor` / `graph.prune_min_weight` | 30 / 0.05 / 0.1 | 衰减与剪枝 |
+| `graph.provider_id` | 空 | 抽取所用模型（仅 `extractor` 含 llm 时使用） |
+
+### 14.6 硬性约束
+
+1. **默认关闭，关闭即零副作用**：不抽取、不加检索路、不注册维护任务；
+2. **零成本路径不调模型**：`deterministic` 模式下一次模型调用都不产生；
+3. **坏数据不入库**：模型产出必须通过字段校验，解析失败降级而非写入空/脏节点；
+4. **不阻断主链路**：索引失败只记日志，记忆写入本身照常返回；
+5. **图不无限膨胀**：唯一约束 + 权重上限 + 每日衰减与剪枝共同兜底。
+
+---
+
+## 15. 自动审核规格
+
+对应「自动学习」中的**自动审核**诉求：让待审队列不再必须逐条人工点击，同时保持**人工优先、全程留痕**。
+
+### 15.1 判定链（自上而下短路）
+
+| 顺序 | 条件 | 结果 |
+|---|---|---|
+| 1 | 能力关闭 | 不参与 |
+| 2 | payload 无法解析 | `unsure`：交模型或人工，**不擅自驳回** |
+| 3 | 文本长度 < `auto_min_chars` / > `auto_max_chars` | 自动**驳回** |
+| 4 | 命中敏感词（内置提示词注入/违规词表 ∪ `auto_blocked_words`） | 自动**驳回** |
+| 5 | payload 带 `confidence` 且 < `auto_min_confidence` | `unsure` |
+| 6 | 同字符连续重复或无实义（去空白标点后过短） | 自动**驳回** |
+| 7 | 其余 | `unsure` → 若 `auto_use_llm` 为真则交模型裁决 |
+
+### 15.2 模型兜底
+
+仅在第 7 步发生，提示词要求只输出 `{"verdict": "approve|reject|unsure", "confidence": ..., "reason": ...}`；
+解析失败、置信度不足（< 0.6）、模型不可用或预算耗尽 → **保持待审**（宁可不动，也不误判）。
+
+### 15.3 留痕与人工优先
+
+- 自动处理的记录写入 `decided_by='auto'`，可用 `count_decided` 统计；
+- 审批动作**复用统一入口**（`app.approve_review` / `reject_review`），因此拟人化学习与反思的落地逻辑
+  与人工审批完全一致；
+- 仓储的状态更新带 `status='pending'` 条件：人工抢在自动之前处理时，自动写入会静默失败，**人工结论优先**；
+- 未批准的学习结果永远不会影响对话（与第 13 节同一道闸门）。
+
+### 15.4 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `review.auto` | **false** | 总开关（热切换） |
+| `review.auto_use_llm` | true | 规则不确定时是否调用模型兜底（可关闭以做到零成本） |
+| `review.auto_provider_id` | 空 | 兜底所用模型 |
+| `review.auto_interval_minutes` / `review.auto_batch_limit` | 30 / 20 | 扫描周期与单批条数 |
+| `review.auto_min_chars` / `review.auto_max_chars` | 6 / 400 | 长度门槛 |
+| `review.auto_min_confidence` | 0.6 | 带置信度来源的自动通过门槛 |
+| `review.auto_reject_sensitive` / `review.auto_blocked_words` | true / 空 | 敏感内容策略 |
+
+---
+
+## 16. 运行监控规格
+
+目标：让「插件在干什么、花了多少、有没有出错」变成可见数据，而不是只能翻日志。
+
+### 16.1 两层结构
+
+- **内存层**（`monitor/metrics.py`）：埋点只做纯内存累加，按**小时桶**聚合，零 I/O、零 `await`
+  （无让出点即天然原子）；条目数超上限时丢弃最旧的一半，保证长跑不膨胀。
+- **落盘层**（`monitor/service.py`）：定时任务（60s）把内存桶 `drain` 后批量 UPSERT 到 `metric_series`，
+  并按保留期清理。落盘失败**丢弃该批**而不重放，避免与累加语义叠加导致数值翻倍。
+
+### 16.2 指标与埋点
+
+| 指标 | 埋点位置 |
+|---|---|
+| `llm.calls` / `llm.errors` / `llm.latency_ms` / `llm.tokens` / `llm.budget_blocked` | LLM 网关的调用观察者（依赖倒置注入，harness 不反向依赖业务域） |
+| `scheduler.runs` / `scheduler.failures` / `scheduler.duration_ms` | 调度器任务观察者 |
+| `retrieval.calls` / `retrieval.latency_ms` / `retrieval.hits` | 记忆召回返回后 |
+| `inject.blocks` / `inject.chars` | 记忆与拟人化注入成功时 |
+| `memory.writes` / `memory.total` | 缓冲与反思写入、每日维护刷新 gauge |
+| `review.pending` / `review.auto_approved` / `review.auto_rejected` | 自动审核与 gauge 刷新 |
+| `persona.learned` / `graph.indexed` / `graph.entities` | 拟人化学习与图谱索引回调 |
+| `proactive.sent` / `proactive.skipped` / `group.interject` | 主动交互与群聊决策 |
+
+### 16.3 面板与接口
+
+- 「监控」分区：时间范围（1h/24h/7d/30d）与粒度（小时/天）可切，折线图用**内联 SVG 自绘**（无 CDN，
+  天然支持主题色）；另有核心指标卡片、区间累计表与自动审核状态块。
+- 接口 `GET /monitor`（`range_hours` / `bucket_seconds` / `metrics`），返回 `live`（当前小时即时值）、
+  `totals`（区间累计）、`series`（按桶聚合的序列）与 `pending` / `retention_days`。
+
+### 16.4 硬性约束
+
+1. **旁路能力**：监控自身异常绝不外溢——服务层所有公开方法吞异常并返回空结构；
+2. **不做逐事件写库**：小时桶 + 批量 UPSERT，写入量不随消息量线性增长；
+3. **有保留期**：默认 30 天，防止时序表无限增长；
+4. **埋点零 await**：内存累加不产生让出点，避免并发交错。
+
+---
+
+## 17. 提示词定制规格
+
+目标：把原先硬编码的提示词交给使用者按需覆盖，同时**不让坏模板污染模型输入**。
+
+### 17.1 覆盖规则
+
+- 配置分组 `prompts.*`，每项默认空字符串；**空即用内置默认**。
+- 面板以多行文本框（`type: "text"`）呈现，`hint` 写明该模板**必须保留的占位符**。
+- 解析（`support/prompts.py: PromptOverrides`）：
+  1. 模板为空 → 用默认；
+  2. 花括号不配对 → 视为无效，**回退默认**并记入 `REJECTED`；
+  3. 缺少任意必填占位符 → 同上；
+  4. 合法 → 使用，渲染时用 `format_map` + 兜底映射，未知占位符**原样保留**而非抛异常。
+- 启动时对 `REJECTED` 统一告警一次，使用者能立刻发现自己的模板没生效。
+
+### 17.2 覆盖范围
+
+| 配置键 | 覆盖对象 | 必填占位符 |
+|---|---|---|
+| `reflection_system` / `reflection_template` | 反思系统提示词与模板 | `{transcript}` `{max_facts}` |
+| `weekly_system` / `weekly_template` | 周度洞察 | `{material}` `{max_facts}` |
+| `summary_system` / `summary_template` / `summary_update_template` | 上下文摘要（首次 / 增量） | `{material}` `{max_chars}` / `{previous}` `{material}` `{max_chars}` |
+| `proactive_system` / `proactive_template` | 主动消息（两轨共用模板） | `{target}` `{material}` `{period}` `{max_chars}` `{avoid}` |
+| `jargon_system` / `jargon_template` | 群内用语推断 | `{candidates}` |
+| `affinity_system` / `affinity_template` | 好感度判定 | `{message}` |
+| `graph_system` / `graph_template` | 图谱抽取 | `{content}` `{max_entities}` `{max_relations}` |
+| `auto_review_system` / `auto_review_template` | 自动审核 | `{origin}` `{content}` `{max_chars}` |
+
+### 17.3 硬性约束
+
+1. **坏模板不生效**（回退默认）且**不抛异常**，绝不影响对话；
+2. 结构化产出（JSON）的解析与校验仍在代码里，**不因模板可配置而放松**；
+3. 自定义模板的占位符缺失只告警，不阻断插件启动。
+
+---
+
+## 18. MaiBot 增强规格
+
+复刻 MaiBot（开源群聊智能体）中与本插件互补的两块思路，作为**可选增强**（默认关闭）。
+
+### 18.1 表达模式按发送者个性化
+
+- 开启后，表达样本除「会话作用域」外**额外**写入「发送者作用域」（`user`），
+  注入时两个作用域的候选按相似度统一挑选并按 (场景, 表达) 去重；
+- 审批开关沿用 `persona.style_approval_required`，即**每个作用域各产生一条待审记录**，
+  仍是「未批准不影响对话」；
+- 关闭时行为与未开启完全一致。
+
+### 18.2 学习产物统一时间衰减
+
+- 由本域统一承担**风格样本与图谱实体/关系**的半衰期衰减、容量裁剪与剪枝，
+  半衰期与权重下限在此集中配置；各子能力此时只做容量淘汰，**不做二次衰减**；
+- 关闭时由各子能力各自维护（保持原有行为）。
+
+### 18.3 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `maibot.enabled` | **false** | 总开关（热切换） |
+| `maibot.expression_user_scope` | true | 表达样本按发送者个性化 |
+| `maibot.time_decay` | true | 由本域统一承担时间衰减 |
+| `maibot.time_decay_half_life_days` / `time_decay_weight_floor` | 30 / 0.05 | 统一衰减参数 |
+| `maibot.style_keep` / `graph_keep` / `prune_min_weight` | 200 / 2000 / 0.1 | 容量与剪枝 |
+
+> 说明：本域只做「衰减 + 容量控制」，不参与写入；`enable_*` 式的服务替换（self_learning 的做法）
+> 与本插件既有分层冲突，故未采纳，仅借鉴其算法思路。
+
+---
+
+## 19. 可观测性与运维
 
 - 日志统一经 `Host.log()`；关键路径分级，`debug_log` 开启才输出检索打分细节。
 - 命令采用**单一顶层入口** `sab`（别名 `superastrbot`），子命令由
   `commands/parser.py` 自行解析：`status`、`search`、`why`、`remember`、`journal`、
-  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`quiet`、`persona`、`help`。
+  `journals`、`review`、`approve`、`reject`、`reset`、`reindex`、`quiet`、`persona`、
+  `graph`、`help`。
   之所以不注册多条顶层/子指令：AstrBot 的指令冲突检测以指令「完整名」为键，
   注册项越少撞名概率越低，也不依赖框架的参数推导行为。
-- 面板（`pages/dashboard`）八个分区：总览、记忆、检索、周记、待审、学习、功能、系统。
+- 面板（`pages/dashboard`）十个分区：总览、记忆、检索、周记、待审、学习、图谱、监控、功能、系统。
   前端**只经 `window.AstrBotPluginPage` bridge 请求**，不使用 `fetch`（插件页位于
   无 `allow-same-origin` 的 sandbox iframe，直连请求必然失败）；入口脚本必须
   `type="module"`，确保在 AstrBot 注入 bridge 之后执行。
@@ -675,8 +909,9 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
   开关经 `POST feature-toggle` 写配置 → 落盘 → `refresh_capabilities()` 热应用，
   并回传实际生效状态；界面区分「需重载」（禁用）与「环境不支持」（禁用并说明），
   前置未开启时给出提示；总览页的能力指示可点击跳转至对应开关。
-- 插件图标：仓库根 `logo.png` 为插件列表图标，面板品牌区与页签使用
-  `pages/dashboard/logo.svg`（矢量，随主题缩放不失真）。
+- 插件图标：仓库根 `logo.png` 为插件列表图标（亮色主题版，深色字形）；
+  面板品牌区按主题切换 `pages/dashboard/logo-light.svg`（浅色主题）与
+  `logo-dark.svg`（深色主题），`logo.svg` 作为同名兜底保留。
 - 配置页的「嵌入模型提供商」下拉由 `app.sync_schema_options()` 运行时注入（框架的
   `select_provider` 硬编码为对话模型）；无可用嵌入提供商时字段退回文本框。
   由于 AstrBot **先加载插件、后初始化 `ProviderManager`**，启动期探测必然为空，
@@ -691,13 +926,21 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
   `/sab persona` 与面板「学习」分区按会话展示表达样本、群内用语与好感度明细，
   待审数量与「待审」分区共用同一份数据。黑话扫描任务以 `persona-jargon-scan` 注册到
   `Scheduler`，同样出现在后台任务列表里。
+- 知识图谱经 `status()` 的 `graph` 字段暴露（开关、实体/关系/作用域数量）；
+  `/sab graph [UMO]` 与面板「图谱」分区（Canvas 自绘）展示子图、节点与关系明细。
+- 自动审核经 `status()` 的 `review` 字段暴露（开关、是否启用模型兜底、待审数量、自动处理数量）；
+  定时任务以 `review-auto` 注册到 `Scheduler`。
+- 运行监控经 `status()` 的 `monitor` 字段暴露（待落盘行数、保留期）；
+  指标落盘任务以 `monitor-flush` 注册到 `Scheduler`，面板「监控」分区提供范围/粒度切换与自绘折线图。
+- MaiBot 增强经 `status()` 的 `maibot` 字段暴露（开关、是否个性化、是否统一衰减、半衰期）。
 - 群消息 handler 只在能力开启时才参与唤醒判定；能力开启但框架缺少 `custom_filter` 符号时，
   启动日志给出一次明确告警（该能力降级为不可用，其余功能不受影响）。
+- 自定义提示词若因缺少必填占位符被忽略，启动时统一告警一次（见第 17 节）。
 - 所有敏感值（除内容外）只回状态不回原文；面板默认只读优先。
 
 ---
 
-## 15. 借鉴来源与合规
+## 20. 借鉴来源与合规
 
 本插件的设计思路来源于仓库上一级 `docs/Super_AstrBot_项目学习分析文档.md` 所分析的开源项目，**仅借鉴设计思路与公开 API 用法，不复制其源码**。若后续引入任何第三方代码或资源，必须：
 
@@ -718,10 +961,15 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | 表达模式邻接对抽取 + 时间衰减 + 容量控制 | self_learning | `persona/style.py`（零 LLM 的 user→bot 配对、指数衰减与权重淘汰） |
 | 统计预筛 + 模型语义判定降本 | self_learning | `persona/jargon.py`（词频先行、批量推断，不复制其三步对比法） |
 | 审查制写入 + 好感度数值模型 | self_learning | `persona/service.py` + `persona/affinity.py`（复用 `pending_reviews`；不做跨用户总量再分配） |
+| 实体归一化 + 模板化关系装配 + 图谱作为独立检索路 | livingmemory（`entity_resolver` / `graph_extractor` / `graph_retriever`） | `graph/` + `memory/retriever/graph.py`（借鉴「实体唯一 + 模板化关系 + 图路并入融合」，未复制代码，也未引入其 shadow 重建与 3D 资产） |
+| 自研 Canvas 图谱渲染、无 CDN、主题自适应 | livingmemory（`graph-2d.js` 等） | `pages/dashboard/app.js` 图谱分区（简化为稳定环形布局，未引入 Worker 与模型资产） |
+| 分级闸门：便宜规则先筛、模型只判不确定项 | self_learning（`jargon_statistical_filter` → `jargon_miner`） | `review/service.py` 的规则优先 + 模型兜底 |
+| 人工结论优先于自动结论 | self_learning（`is_complete` 短路） | `ReviewRepository.set_status` 的 `status='pending'` 条件 + `mark_decided_by` 留痕 |
+| 表达模式个性化 + 学习产物时间衰减 | self_learning（`MaiBot_Enhancement`） | `maibot/` + `persona/style.py`（只借鉴算法思路，未采纳其「服务替换」式接入） |
 
 ---
 
-## 16. 验收标准（MVP）
+## 21. 验收标准（MVP）
 
 1. 插件可在 AstrBot ≥ 4.24.2 正常加载、卸载、重载，无残留任务与残留 handler。
 2. 未配置 Embedding Provider 时插件正常可用（自动降级），配置后自动启用向量路。
@@ -743,12 +991,23 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
     注入使用独立边界标记，不覆盖记忆注入、不写入对话历史。
 12. `tests/` 覆盖：能力依赖解析、FTS 检索、RRF 融合、加权排序、注入清理、调度幂等、迁移幂等、
     Agent 工具、token 估算与上下文治理、群聊决策与合并、主动交互守卫与竞态、
-    拟人化学习（样本过滤/选择与衰减、候选统计与推断、规则与兜底判定、审批分流）。
-13. `ruff check .` 与 `ruff format .` 通过。
+    拟人化学习（样本过滤/选择与衰减、候选统计与推断、规则与兜底判定、审批分流）、
+    图谱抽取/扩展/剪枝、自动审核规则与模型兜底、指标桶与落盘、提示词覆盖与回退、
+    能力键与配置 schema 一致性。
+13. 知识图谱：关闭时不抽取、不加检索路；开启后零成本模式**不调用模型**即可建图，
+    检索能通过实体关联召回记忆；模型产出不可解析时降级而非写入脏数据；孤立实体与弱关系会被清理。
+14. 自动审核：关闭时不参与；开启后规则明确合格/不合格的记录被自动处理并留痕 `decided_by=auto`，
+    规则不确定时（启用兜底）才调用模型，模型失败或置信度不足时**保持待审**；
+    人工先处理过的记录不会被自动结论覆盖。
+15. 运行监控：埋点为纯内存累加，指标按小时桶批量落盘并有保留期；单项查询失败不影响面板整体；
+    关闭插件时内存指标会先落盘再退出。
+16. 提示词定制：自定义模板通过占位符校验后生效，缺失占位符或花括号非法时**回退内置默认**并告警，
+    任何情况下都不因模板问题抛异常或改变结构化产出的校验强度。
+17. `ruff check .` 与 `ruff format .` 通过。
 
 ---
 
-## 17. 迭代路线
+## 22. 迭代路线
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -762,8 +1021,10 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | P3 | 群聊语义（读空气决策 / 注意力 / 冷却 / 并发合并） | ✅ 已完成（v0.6.0） |
 | P4 | 主动交互（双轨调度 / 竞态保护 / 免打扰） | ✅ 已完成（v0.6.0） |
 | P5 | 拟人化学习（风格 few-shot / 黑话 / 好感度，审查制） | ✅ 已完成（v0.7.0） |
+| P6 | 配置纠偏（能力键与 schema 对齐）、提示词可定制、知识图谱、自动审核、运行监控、MaiBot 增强、主题图标 | ✅ 已完成（v0.8.0） |
 
-**验收结果**：`pytest tests -q` 233 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
+**验收结果**：`pytest tests -q` 267 项全部通过；`ruff check .` 无告警；`ruff format .` 已应用；
 `node --check pages/dashboard/app.js` 通过。真实 AstrBot 环境下的面板数据加载、功能开关切换、
-向量路启用、Agent 工具调用、上下文治理触发效果、群聊插话分寸、主动消息发送时机，
-以及拟人化学习的学习质量与审查流程仍待服务器实测（本地无运行实例）。
+向量路启用、Agent 工具调用、上下文治理触发效果、群聊插话分寸、主动消息发送时机、
+拟人化学习的学习质量与审查流程、图谱建图质量与可视化、自动审核判定准确性、
+监控指标与趋势展示仍待服务器实测（本地无运行实例）。

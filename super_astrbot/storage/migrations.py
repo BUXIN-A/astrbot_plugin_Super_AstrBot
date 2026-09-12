@@ -202,6 +202,85 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX IF NOT EXISTS idx_affinity_scope ON affinity_state(scope_type, scope_id)",
         ),
     ),
+    Migration(
+        version=3,
+        description="知识图谱、运行监控时序、自动审核留痕",
+        statements=(
+            # ---------------- 知识图谱：实体 ----------------
+            """
+            CREATE TABLE IF NOT EXISTS graph_entities (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type     TEXT    NOT NULL,
+                scope_id       TEXT    NOT NULL,
+                name           TEXT    NOT NULL,
+                canonical_name TEXT    NOT NULL,
+                entity_type    TEXT    NOT NULL DEFAULT 'concept',
+                weight         REAL    NOT NULL DEFAULT 1.0,
+                confidence     REAL    NOT NULL DEFAULT 0.7,
+                evidence       INTEGER NOT NULL DEFAULT 1,
+                source         TEXT    NOT NULL DEFAULT 'deterministic',
+                created_at     REAL    NOT NULL,
+                updated_at     REAL    NOT NULL,
+                status         TEXT    NOT NULL DEFAULT 'active'
+            )
+            """,
+            # 同一作用域内同名实体只保留一条（归并证据与权重），避免同义实体把图撑散。
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_unique ON graph_entities(scope_type, scope_id, canonical_name)",
+            "CREATE INDEX IF NOT EXISTS idx_entity_name ON graph_entities(canonical_name)",
+            "CREATE INDEX IF NOT EXISTS idx_entity_scope ON graph_entities(scope_type, scope_id, status)",
+            # ---------------- 知识图谱：实体关系 ----------------
+            """
+            CREATE TABLE IF NOT EXISTS graph_relations (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type    TEXT    NOT NULL,
+                scope_id      TEXT    NOT NULL,
+                src_entity_id INTEGER NOT NULL,
+                dst_entity_id INTEGER NOT NULL,
+                relation      TEXT    NOT NULL,
+                weight        REAL    NOT NULL DEFAULT 1.0,
+                confidence    REAL    NOT NULL DEFAULT 0.7,
+                evidence      INTEGER NOT NULL DEFAULT 1,
+                source        TEXT    NOT NULL DEFAULT 'cooccur',
+                created_at    REAL    NOT NULL,
+                updated_at    REAL    NOT NULL,
+                status        TEXT    NOT NULL DEFAULT 'active'
+            )
+            """,
+            # 复合唯一索引而非复合主键：SQLite 不允许同时存在 rowid 主键与复合主键，
+            # 而 ``ON CONFLICT(...)`` 只需要一个唯一约束即可生效。
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_relation_unique ON graph_relations(scope_type, scope_id, src_entity_id, dst_entity_id, relation)",
+            "CREATE INDEX IF NOT EXISTS idx_relation_src ON graph_relations(scope_type, scope_id, src_entity_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_relation_dst ON graph_relations(scope_type, scope_id, dst_entity_id, status)",
+            # ---------------- 知识图谱：记忆 ↔ 实体 ----------------
+            """
+            CREATE TABLE IF NOT EXISTS memory_entities (
+                memory_id  INTEGER NOT NULL,
+                entity_id  INTEGER NOT NULL,
+                weight     REAL    NOT NULL DEFAULT 1.0,
+                created_at REAL    NOT NULL,
+                PRIMARY KEY (memory_id, entity_id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_memory_entities_entity ON memory_entities(entity_id)",
+            # ---------------- 运行监控：小时桶时序 ----------------
+            """
+            CREATE TABLE IF NOT EXISTS metric_series (
+                bucket_ts  INTEGER NOT NULL,
+                metric     TEXT    NOT NULL,
+                scope_type TEXT    NOT NULL DEFAULT '',
+                scope_id   TEXT    NOT NULL DEFAULT '',
+                count      INTEGER NOT NULL DEFAULT 0,
+                total      REAL    NOT NULL DEFAULT 0,
+                last_value REAL    NOT NULL DEFAULT 0,
+                PRIMARY KEY (bucket_ts, metric, scope_type, scope_id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_metric_lookup ON metric_series(metric, bucket_ts DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_metric_scope ON metric_series(scope_type, scope_id, bucket_ts DESC)",
+            # ---------------- 自动审核留痕 ----------------
+            "ALTER TABLE pending_reviews ADD COLUMN decided_by TEXT NOT NULL DEFAULT ''",
+        ),
+    ),
 )
 """迁移列表。当前 schema 版本 = 最后一项的 version。"""
 

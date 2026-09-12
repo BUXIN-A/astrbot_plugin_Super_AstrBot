@@ -25,7 +25,7 @@ from ..spec.errors import LlmError, safe_detail
 from ..support import normalize_text, truncate
 from .config import ProactiveConfig
 from .materials import MaterialSource
-from .prompts import PROACTIVE_SYSTEM, build_proactive_prompt
+from .prompts import build_proactive_prompt, proactive_system
 
 _DAILY_COUNT_PREFIX = "proactive:sent:"
 _LAST_PREFIX = "proactive:last:"
@@ -206,11 +206,12 @@ class ProactiveService:
             hour=time.localtime(now).tm_hour,
             max_chars=self._config.max_chars,
             last_text=await self._last_text(umo),
+            overrides=self._config.prompts,
         )
         try:
             result = await self._llm.chat(
                 prompt=prompt,
-                system_prompt=PROACTIVE_SYSTEM,
+                system_prompt=proactive_system(self._config.prompts),
                 provider_id=self._config.provider_id or None,
                 session_key=umo,
                 purpose="proactive",

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_int, as_str, get_path
+from ..support import PromptOverrides
 
 MODE_ROUNDS = "rounds"
 MODE_INTERVAL = "interval"
@@ -27,6 +28,8 @@ class ReflectionConfig:
     max_facts_per_run: int = 5
     cooldown_minutes: int = 60
     timeout_seconds: float = 90.0
+    prompts: PromptOverrides = field(default_factory=PromptOverrides)
+    """用户自定义提示词（留空即用内置默认）。"""
 
     @property
     def max_facts(self) -> int:
@@ -40,7 +43,7 @@ class ReflectionConfig:
         base_timeout = as_int(
             get_path(config, "runtime.llm_timeout_seconds", 45), 45, low=5, high=300
         )
-        return cls(
+        result = cls(
             enabled=as_bool(get_path(config, "reflection.enabled", True), True),
             mode=mode,
             trigger_rounds=as_int(
@@ -63,3 +66,5 @@ class ReflectionConfig:
             # 反思输出较长，给 2 倍超时并封顶，避免单个任务长期占用预算。
             timeout_seconds=float(min(180, max(20, base_timeout * 2))),
         )
+        result.prompts = PromptOverrides(config)
+        return result

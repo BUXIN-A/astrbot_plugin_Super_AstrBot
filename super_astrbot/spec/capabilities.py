@@ -154,7 +154,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
     ),
     Capability(
-        key="context.governance",
+        key="context.enabled",
         title="上下文治理",
         domain="context",
         default=False,
@@ -217,6 +217,39 @@ CAPABILITIES: tuple[Capability, ...] = (
         description=(
             "按交互类型累积对每个用户的好感度，随时间回归基线，"
             "并按档位给出语气指引。规则优先、模型兜底；默认关闭。"
+        ),
+    ),
+    Capability(
+        key="graph.enabled",
+        title="记忆知识图谱",
+        domain="graph",
+        default=False,
+        depends_on=("memory.enabled",),
+        description=(
+            "从记忆内容抽取实体与关系建图（零成本共现为主，可选模型增强），"
+            "检索时把图中相邻记忆一并召回，并在面板提供图谱可视化。默认关闭。"
+        ),
+    ),
+    Capability(
+        key="review.auto",
+        title="自动审核",
+        domain="review",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "按规则先审待审队列，规则不确定时（可配置）交由模型裁决；"
+            "自动通过的记录带留痕、可审计，人工审批始终优先。默认关闭。"
+        ),
+    ),
+    Capability(
+        key="maibot.enabled",
+        title="MaiBot 增强",
+        domain="maibot",
+        default=False,
+        depends_on=("basic.enabled",),
+        description=(
+            "MaiBot 风格的扩展学习：表达模式按发送者个性化、学习产物统一时间衰减。"
+            "与拟人化学习、知识图谱配合使用；默认关闭。"
         ),
     ),
 )

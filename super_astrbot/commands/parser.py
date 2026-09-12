@@ -44,6 +44,8 @@ _ACTION_ALIASES: dict[str, str] = {
     "学习": "persona",
     "拟人化": "persona",
     "人格": "persona",
+    "图谱": "graph",
+    "知识图谱": "graph",
 }
 
 

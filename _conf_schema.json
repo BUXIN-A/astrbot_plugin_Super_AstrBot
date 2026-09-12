@@ -220,8 +220,7 @@
       "admin_only_write": {
         "description": "周记仅管理员可写",
         "type": "bool",
-        "default": false,
-        "condition": {"basic.enabled": true}
+        "default": false
       },
       "retrieval_boost": {
         "description": "周记召回加权",
@@ -611,6 +610,343 @@
         "type": "bool",
         "default": true,
         "hint": "关闭后只累积数值，不影响 Bot 语气"
+      }
+    }
+  },
+  "graph": {
+    "description": "记忆知识图谱",
+    "type": "object",
+    "hint": "从记忆内容抽取实体与关系建图；检索时把图中相邻记忆一并召回，面板提供可视化（默认关闭）",
+    "items": {
+      "enabled": {
+        "description": "启用记忆知识图谱",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后会为每条正式记忆抽取实体与关系。零成本抽取不调用模型；默认关闭"
+      },
+      "extractor": {
+        "description": "抽取方式",
+        "type": "string",
+        "default": "deterministic",
+        "options": ["deterministic", "llm", "both"],
+        "labels": ["仅零成本（分词共现，不调模型）", "仅模型抽取（质量高但每条记忆一次调用）", "零成本 + 模型（模型为主，零成本补充）"]
+      },
+      "max_entities": {
+        "description": "单条记忆最多抽取的实体数",
+        "type": "int",
+        "default": 8,
+        "slider": {"min": 1, "max": 30, "step": 1},
+        "hint": "单条记忆最多抽取的实体数"
+      },
+      "max_relations": {
+        "description": "单条记忆最多抽取的关系数",
+        "type": "int",
+        "default": 8,
+        "slider": {"min": 1, "max": 30, "step": 1}
+      },
+      "min_term_chars": {
+        "description": "实体词最短字符数",
+        "type": "int",
+        "default": 2,
+        "slider": {"min": 2, "max": 8, "step": 1}
+      },
+      "max_term_chars": {
+        "description": "实体词最长字符数",
+        "type": "int",
+        "default": 12,
+        "slider": {"min": 4, "max": 32, "step": 1}
+      },
+      "max_entities_per_scope": {
+        "description": "每个作用域最多保留的实体数",
+        "type": "int",
+        "default": 2000,
+        "slider": {"min": 100, "max": 50000, "step": 100}
+      },
+      "expansion_hops": {
+        "description": "检索扩展跳数",
+        "type": "int",
+        "default": 1,
+        "slider": {"min": 1, "max": 2, "step": 1},
+        "hint": "检索扩展跳数：2 会把「相邻实体的记忆」也纳入召回，召回更全但噪声略增"
+      },
+      "expansion_limit": {
+        "description": "扩展召回条数上限",
+        "type": "int",
+        "default": 24,
+        "slider": {"min": 1, "max": 200, "step": 1}
+      },
+      "second_hop_weight": {
+        "description": "二跳命中权重折扣",
+        "type": "float",
+        "default": 0.4,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "hint": "二跳命中的权重折扣"
+      },
+      "half_life_days": {
+        "description": "权重衰减半衰期（天）",
+        "type": "float",
+        "default": 30.0,
+        "slider": {"min": 1.0, "max": 365.0, "step": 1.0},
+        "hint": "实体与关系权重的衰减半衰期"
+      },
+      "weight_floor": {
+        "description": "权重下限",
+        "type": "float",
+        "default": 0.05,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.01}
+      },
+      "prune_min_weight": {
+        "description": "弱关系清理阈值",
+        "type": "float",
+        "default": 0.1,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.01},
+        "hint": "低于该权重的弱关系会在每日维护时清理"
+      },
+      "provider_id": {
+        "description": "抽取所用模型",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "抽取所用模型（仅 extractor 含 llm 时使用）；留空用会话默认模型"
+      }
+    }
+  },
+  "review": {
+    "description": "自动审核",
+    "type": "object",
+    "hint": "按规则先审待审队列，规则拿不准时（可开关）交由模型裁决；自动通过会留痕，人工审批始终优先（默认关闭）",
+    "items": {
+      "auto": {
+        "description": "启用自动审核",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后定时扫描待审队列并自动批准合格记录；默认关闭"
+      },
+      "auto_use_llm": {
+        "description": "规则无法判定时调用模型兜底",
+        "type": "bool",
+        "default": true,
+        "hint": "规则无法判定时是否调用模型兜底；关闭则规则拿不准的一律保持待审（零成本）"
+      },
+      "auto_provider_id": {
+        "description": "自动审核所用模型",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "自动审核所用模型；留空用会话默认模型"
+      },
+      "auto_interval_minutes": {
+        "description": "扫描周期（分钟）",
+        "type": "int",
+        "default": 30,
+        "slider": {"min": 5, "max": 1440, "step": 5},
+        "hint": "扫描周期"
+      },
+      "auto_batch_limit": {
+        "description": "单次最多处理条数",
+        "type": "int",
+        "default": 20,
+        "slider": {"min": 1, "max": 200, "step": 1},
+        "hint": "单次最多处理多少条"
+      },
+      "auto_min_chars": {
+        "description": "记录最短字符数",
+        "type": "int",
+        "default": 6,
+        "slider": {"min": 2, "max": 100, "step": 1},
+        "hint": "短于该长度的记录直接驳回"
+      },
+      "auto_max_chars": {
+        "description": "记录最长字符数",
+        "type": "int",
+        "default": 400,
+        "slider": {"min": 50, "max": 2000, "step": 10},
+        "hint": "长于该长度的记录直接驳回"
+      },
+      "auto_min_confidence": {
+        "description": "自动通过的最低置信度",
+        "type": "float",
+        "default": 0.6,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "hint": "带置信度字段的来源低于该值时不自动通过"
+      },
+      "auto_reject_sensitive": {
+        "description": "命中敏感内容直接驳回",
+        "type": "bool",
+        "default": true,
+        "hint": "命中提示词注入 / 违规内容时直接驳回"
+      },
+      "auto_blocked_words": {
+        "description": "额外敏感词",
+        "type": "list",
+        "default": [],
+        "hint": "额外的敏感词，命中即驳回；例如 [\"测试词\"]"
+      }
+    }
+  },
+  "maibot": {
+    "description": "MaiBot 增强",
+    "type": "object",
+    "hint": "复刻 MaiBot 风格的两项扩展：表达模式按发送者个性化、学习产物统一时间衰减（默认关闭）",
+    "items": {
+      "enabled": {
+        "description": "启用 MaiBot 增强",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后启用下列 MaiBot 风格扩展；默认关闭"
+      },
+      "expression_user_scope": {
+        "description": "表达样本按发送者维度学习",
+        "type": "bool",
+        "default": true,
+        "hint": "表达样本额外按「发送者」维度学习与注入，使 Bot 能模仿特定群友的说话方式"
+      },
+      "time_decay": {
+        "description": "统一时间衰减",
+        "type": "bool",
+        "default": true,
+        "hint": "由本域统一承担风格样本与知识图谱的时间衰减；开启后请勿再让各子能力重复衰减"
+      },
+      "time_decay_half_life_days": {
+        "description": "时间衰减半衰期（天）",
+        "type": "float",
+        "default": 30.0,
+        "slider": {"min": 1.0, "max": 365.0, "step": 1.0}
+      },
+      "time_decay_weight_floor": {
+        "description": "时间衰减权重下限",
+        "type": "float",
+        "default": 0.05,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.01}
+      },
+      "style_keep": {
+        "description": "每作用域保留的表达样本上限",
+        "type": "int",
+        "default": 200,
+        "slider": {"min": 10, "max": 2000, "step": 10},
+        "hint": "每作用域保留的表达样本上限"
+      },
+      "graph_keep": {
+        "description": "每作用域保留的图谱实体上限",
+        "type": "int",
+        "default": 2000,
+        "slider": {"min": 100, "max": 50000, "step": 100},
+        "hint": "每作用域保留的图谱实体上限"
+      },
+      "prune_min_weight": {
+        "description": "弱项清理阈值",
+        "type": "float",
+        "default": 0.1,
+        "slider": {"min": 0.0, "max": 1.0, "step": 0.01}
+      }
+    }
+  },
+  "prompts": {
+    "description": "提示词定制",
+    "type": "object",
+    "hint": "留空即使用内置提示词。自定义模板必须保留说明中的全部占位符（如 {material}），否则该模板会被忽略并回退内置默认。以下各字段均渲染为多行文本框",
+    "items": {
+      "reflection_system": {
+        "description": "反思系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "反思的系统提示词。留空使用内置默认"
+      },
+      "reflection_template": {
+        "description": "反思模板",
+        "type": "text",
+        "default": "",
+        "hint": "反思模板。必须保留占位符：{transcript}、{max_facts}；JSON 示例中的花括号需写成双花括号 {{ }}"
+      },
+      "weekly_system": {
+        "description": "周度洞察系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "周度洞察的系统提示词。留空使用内置默认"
+      },
+      "weekly_template": {
+        "description": "周度洞察模板",
+        "type": "text",
+        "default": "",
+        "hint": "周度洞察模板。必须保留占位符：{material}、{max_facts}"
+      },
+      "summary_system": {
+        "description": "上下文摘要系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "上下文摘要的系统提示词。留空使用内置默认"
+      },
+      "summary_template": {
+        "description": "上下文摘要模板（首次摘要）",
+        "type": "text",
+        "default": "",
+        "hint": "上下文摘要模板（首次摘要）。必须保留占位符：{material}、{max_chars}"
+      },
+      "summary_update_template": {
+        "description": "上下文摘要模板（增量续写）",
+        "type": "text",
+        "default": "",
+        "hint": "上下文摘要模板（增量续写）。必须保留占位符：{previous}、{material}、{max_chars}"
+      },
+      "proactive_system": {
+        "description": "主动消息系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "主动消息的系统提示词。留空使用内置默认"
+      },
+      "proactive_template": {
+        "description": "主动消息模板",
+        "type": "text",
+        "default": "",
+        "hint": "主动消息模板（计划轨与空闲轨共用）。必须保留占位符：{target}、{material}、{period}、{max_chars}、{avoid}"
+      },
+      "jargon_system": {
+        "description": "群内用语推断系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "群内用语推断的系统提示词。留空使用内置默认"
+      },
+      "jargon_template": {
+        "description": "群内用语推断模板",
+        "type": "text",
+        "default": "",
+        "hint": "群内用语推断模板。必须保留占位符：{candidates}"
+      },
+      "affinity_system": {
+        "description": "好感度判定系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "好感度判定的系统提示词。留空使用内置默认"
+      },
+      "affinity_template": {
+        "description": "好感度判定模板",
+        "type": "text",
+        "default": "",
+        "hint": "好感度判定模板。必须保留占位符：{message}"
+      },
+      "graph_system": {
+        "description": "知识图谱抽取系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "知识图谱抽取的系统提示词。留空使用内置默认"
+      },
+      "graph_template": {
+        "description": "知识图谱抽取模板",
+        "type": "text",
+        "default": "",
+        "hint": "知识图谱抽取模板。必须保留占位符：{content}、{max_entities}、{max_relations}"
+      },
+      "auto_review_system": {
+        "description": "自动审核系统提示词",
+        "type": "text",
+        "default": "",
+        "hint": "自动审核的系统提示词。留空使用内置默认"
+      },
+      "auto_review_template": {
+        "description": "自动审核模板",
+        "type": "text",
+        "default": "",
+        "hint": "自动审核模板。必须保留占位符：{origin}、{content}、{max_chars}"
       }
     }
   },

@@ -39,6 +39,8 @@ from .prompts import (
     build_weekly_prompt,
     ensure_kind_valid,
     parse_insights,
+    reflection_system,
+    weekly_system,
 )
 
 _TRANSCRIPT_LINE_MAX = 200
@@ -156,9 +158,11 @@ class ReflectionService:
             scope_type=scope.scope_type.value, scope_id=scope.scope_id, started_at=moment
         )
         transcript = self._render_transcript(material)
-        prompt = build_reflection_prompt(transcript, max_facts=self._config.max_facts)
+        prompt = build_reflection_prompt(
+            transcript, max_facts=self._config.max_facts, overrides=self._config.prompts
+        )
 
-        text, error = await self._invoke(prompt)
+        text, error = await self._invoke(prompt, system=reflection_system(self._config.prompts))
         if error:
             await self._reflections.finish(
                 log_id,
@@ -195,8 +199,10 @@ class ReflectionService:
         log_id = await self._reflections.start(
             scope_type=scope.scope_type.value, scope_id=scope.scope_id, started_at=moment
         )
-        prompt = build_weekly_prompt(material, max_facts=self._config.max_facts)
-        text, error = await self._invoke(prompt)
+        prompt = build_weekly_prompt(
+            material, max_facts=self._config.max_facts, overrides=self._config.prompts
+        )
+        text, error = await self._invoke(prompt, system=weekly_system(self._config.prompts))
         if error:
             await self._reflections.finish(
                 log_id, finished_at=time.time(), status="error", produced=0, error=error
@@ -215,12 +221,12 @@ class ReflectionService:
             default_importance=0.75,
         )
 
-    async def _invoke(self, prompt: str) -> tuple[str | None, str]:
+    async def _invoke(self, prompt: str, *, system: str = "") -> tuple[str | None, str]:
         """调用反思模型；返回 ``(文本, 错误)``，二者必有其一为空。"""
         try:
             result = await self._llm.chat(
                 prompt=prompt,
-                system_prompt=REFLECTION_SYSTEM,
+                system_prompt=system or REFLECTION_SYSTEM,
                 provider_id=self._config.provider_id or None,
                 timeout=self._config.timeout_seconds,
                 purpose="reflection",

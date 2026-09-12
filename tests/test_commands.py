@@ -23,6 +23,8 @@ class FakeApp:
         self.reflection = reflection
         self.memory_config = stack.config  # type: ignore[attr-defined]
         self.persona_service = None
+        self.graph_service = None
+        self.capabilities: dict[str, bool] = {}
         self.ready = True
         self.host = object()
 

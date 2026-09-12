@@ -9,6 +9,16 @@
 
 from __future__ import annotations
 
+from ..support import PromptOverrides, render
+
+PROMPT_SUMMARY_SYSTEM = "summary_system"
+PROMPT_SUMMARY_TEMPLATE = "summary_template"
+PROMPT_SUMMARY_UPDATE_TEMPLATE = "summary_update_template"
+"""配置键：与 `_conf_schema.json` 的 `prompts.*` 一一对应。"""
+
+_INITIAL_REQUIRED = ("material", "max_chars")
+_UPDATE_REQUIRED = ("previous", "material", "max_chars")
+
 SUMMARY_SYSTEM = (
     "你是一个对话历史压缩助手。你的任务是把较早的对话压缩成简洁准确的中文摘要，"
     "供后续对话作为背景参考。"
@@ -49,10 +59,31 @@ _UPDATE_TEMPLATE = """你已经有一份较早对话的摘要：
 """
 
 
-def build_summary_prompt(material: str, *, previous: str = "", max_chars: int = 600) -> str:
+def summary_system(overrides: PromptOverrides | None = None) -> str:
+    """摘要系统提示词：配置优先、内置兜底。"""
+    if overrides is None:
+        return SUMMARY_SYSTEM
+    return overrides.get(PROMPT_SUMMARY_SYSTEM, SUMMARY_SYSTEM)
+
+
+def build_summary_prompt(
+    material: str,
+    *,
+    previous: str = "",
+    max_chars: int = 600,
+    overrides: PromptOverrides | None = None,
+) -> str:
     """构造摘要提示词；``previous`` 非空时走「合并续写」分支。"""
     if previous.strip():
-        return _UPDATE_TEMPLATE.format(
-            previous=previous.strip(), material=material, max_chars=max_chars
+        template = _UPDATE_TEMPLATE
+        if overrides is not None:
+            template = overrides.get(
+                PROMPT_SUMMARY_UPDATE_TEMPLATE, _UPDATE_TEMPLATE, required=_UPDATE_REQUIRED
+            )
+        return render(template, previous=previous.strip(), material=material, max_chars=max_chars)
+    template = _INITIAL_TEMPLATE
+    if overrides is not None:
+        template = overrides.get(
+            PROMPT_SUMMARY_TEMPLATE, _INITIAL_TEMPLATE, required=_INITIAL_REQUIRED
         )
-    return _INITIAL_TEMPLATE.format(material=material, max_chars=max_chars)
+    return render(template, material=material, max_chars=max_chars)

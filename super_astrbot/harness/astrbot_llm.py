@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from typing import Any, Sequence
 
 from ..spec.errors import BudgetExhaustedError, LlmError, safe_detail
@@ -93,11 +94,14 @@ class AstrBotLlmGateway:
         *,
         timeout: float = 45.0,
         budget: Any | None = None,
+        observer: Any | None = None,
     ) -> None:
         self._context = context
         self._host = host
         self._timeout = max(5.0, float(timeout or 45.0))
         self._budget = budget
+        self._observer = observer
+        """调用观察者 ``(purpose, ok, duration_ms, usage, blocked)``，用于运行监控埋点。"""
 
     # ------------------------------------------------------------------ #
     # 提供商枚举
@@ -166,43 +170,69 @@ class AstrBotLlmGateway:
         purpose: str = "general",
     ) -> LlmResult:
         acquired = False
+        blocked = False
+        started = time.time()
+        usage: TokenUsage | None = None
+        succeeded = False
         if self._budget is not None:
             acquired = await self._budget.try_acquire(purpose)
-            if not acquired:
-                raise BudgetExhaustedError(f"辅助调用预算已用尽（purpose={purpose}）")
-
-        resolved_id = provider_id or await self.resolve_provider_id(session_key)
-        context_dicts = _to_context_dicts(contexts)
+            blocked = not acquired
 
         try:
-            response = await asyncio.wait_for(
-                self._invoke(resolved_id, prompt, system_prompt, context_dicts, session_key),
-                timeout=timeout or self._timeout,
+            if blocked:
+                raise BudgetExhaustedError(f"辅助调用预算已用尽（purpose={purpose}）")
+
+            resolved_id = provider_id or await self.resolve_provider_id(session_key)
+            context_dicts = _to_context_dicts(contexts)
+
+            try:
+                response = await asyncio.wait_for(
+                    self._invoke(resolved_id, prompt, system_prompt, context_dicts, session_key),
+                    timeout=timeout or self._timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise LlmError(f"LLM 调用超时（>{timeout or self._timeout:.0f}s）") from exc
+            except LlmError:
+                raise
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - 统一归一化为 LlmError
+                raise LlmError(f"LLM 调用失败：{safe_detail(exc)}") from exc
+
+            text = str(getattr(response, "completion_text", "") or "")
+            if not text.strip():
+                raise LlmError("LLM 返回空内容")
+
+            usage = _extract_usage(response)
+            succeeded = True
+            return LlmResult(
+                text=text,
+                reasoning=str(getattr(response, "reasoning_content", "") or ""),
+                usage=usage,
+                provider_id=resolved_id or "",
+                model="",
+                raw=response,
             )
-        except asyncio.TimeoutError as exc:
-            raise LlmError(f"LLM 调用超时（>{timeout or self._timeout:.0f}s）") from exc
-        except LlmError:
-            raise
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - 统一归一化为 LlmError
-            raise LlmError(f"LLM 调用失败：{safe_detail(exc)}") from exc
         finally:
             if acquired and self._budget is not None:
                 self._budget.release(purpose)
+            self._observe(purpose, succeeded, started, usage, blocked)
 
-        text = str(getattr(response, "completion_text", "") or "")
-        if not text.strip():
-            raise LlmError("LLM 返回空内容")
-
-        return LlmResult(
-            text=text,
-            reasoning=str(getattr(response, "reasoning_content", "") or ""),
-            usage=_extract_usage(response),
-            provider_id=resolved_id or "",
-            model="",
-            raw=response,
-        )
+    def _observe(
+        self,
+        purpose: str,
+        ok: bool,
+        started: float,
+        usage: TokenUsage | None,
+        blocked: bool,
+    ) -> None:
+        """上报一次调用结果；观察者异常必须吞掉，绝不能影响对话链路。"""
+        if self._observer is None:
+            return
+        try:
+            self._observer(purpose, ok, max(0.0, (time.time() - started) * 1000.0), usage, blocked)
+        except Exception as exc:  # noqa: BLE001 - 埋点失败不影响调用
+            self._host.log().debug("LLM 观察者回调失败：%s", safe_detail(exc))
 
     async def _invoke(
         self,

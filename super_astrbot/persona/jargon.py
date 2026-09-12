@@ -20,9 +20,9 @@ from ..loop.state_store import StateStore
 from ..spec.errors import LlmError, safe_detail
 from ..spec.scopes import MemoryScope, ScopeType, retrieval_scopes
 from ..storage import JargonRepository, ReviewRepository
-from ..support import normalize_text, tokenize, truncate
+from ..support import PromptOverrides, normalize_text, tokenize, truncate
 from .config import JargonConfig
-from .prompts import JARGON_SYSTEM, build_jargon_prompt, parse_jargon_insights, render_jargon_block
+from .prompts import build_jargon_prompt, jargon_system, parse_jargon_insights, render_jargon_block
 
 SOURCE_JARGON = "jargon"
 """待审队列里的来源标记；也是审批分流依据。"""
@@ -64,6 +64,7 @@ class JargonService:
         reviews: ReviewRepository,
         llm: LlmGateway,
         store: StateStore,
+        prompts: PromptOverrides | None = None,
         clock: Callable[[], float] | None = None,
         logger: Any | None = None,
     ) -> None:
@@ -72,6 +73,7 @@ class JargonService:
         self._reviews = reviews
         self._llm = llm
         self._store = store
+        self._prompts = prompts
         self._clock = clock or (lambda: 0.0)
         self._logger = logger
         self._counts: dict[str, dict[str, int]] = {}
@@ -136,12 +138,14 @@ class JargonService:
         candidates.sort(key=lambda item: item[1], reverse=True)
         chosen = candidates[: self._config.candidate_limit]
         samples = self._samples.get(scope.key) or {}
-        prompt = build_jargon_prompt([(term, samples.get(term, [])) for term, _ in chosen])
+        prompt = build_jargon_prompt(
+            [(term, samples.get(term, [])) for term, _ in chosen], overrides=self._prompts
+        )
 
         try:
             result = await self._llm.chat(
                 prompt=prompt,
-                system_prompt=JARGON_SYSTEM,
+                system_prompt=jargon_system(self._prompts),
                 provider_id=self._config.provider_id or None,
                 session_key=scope.scope_id,
                 timeout=self._config.timeout_seconds,

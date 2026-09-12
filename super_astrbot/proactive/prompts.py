@@ -9,6 +9,14 @@
 
 from __future__ import annotations
 
+from ..support import PromptOverrides, render
+
+PROMPT_PROACTIVE_SYSTEM = "proactive_system"
+PROMPT_PROACTIVE_TEMPLATE = "proactive_template"
+"""配置键：与 `_conf_schema.json` 的 `prompts.*` 一一对应。"""
+
+_REQUIRED = ("target", "material", "period", "max_chars", "avoid")
+
 PROACTIVE_SYSTEM = (
     "你是一个正在和用户聊天的助手。你需要基于给定的背景素材，自然地发起一句简短的闲聊。"
     "严禁提及「主动」「定时」「系统」「根据记忆」等字样，也不要解释你为什么发这条消息。"
@@ -63,6 +71,13 @@ def period_of_day(hour: int) -> str:
     return "深夜"
 
 
+def proactive_system(overrides: PromptOverrides | None = None) -> str:
+    """主动消息系统提示词：配置优先、内置兜底。"""
+    if overrides is None:
+        return PROACTIVE_SYSTEM
+    return overrides.get(PROMPT_PROACTIVE_SYSTEM, PROACTIVE_SYSTEM)
+
+
 def build_proactive_prompt(
     material: str,
     *,
@@ -71,10 +86,17 @@ def build_proactive_prompt(
     hour: int = 10,
     max_chars: int = 80,
     last_text: str = "",
+    overrides: PromptOverrides | None = None,
 ) -> str:
-    """构造主动消息的生成提示词。"""
+    """构造主动消息的生成提示词。
+
+    计划轨与空闲轨默认使用不同模板；用户自定义模板时两轨共用（占位符一致）。
+    """
     template = _IDLE_TEMPLATE if kind == "idle" else _DAILY_TEMPLATE
-    return template.format(
+    if overrides is not None:
+        template = overrides.get(PROMPT_PROACTIVE_TEMPLATE, template, required=_REQUIRED)
+    return render(
+        template,
         material=material or "（暂无素材，请发一句自然的日常问候）",
         target=target or "对方",
         period=period_of_day(hour),

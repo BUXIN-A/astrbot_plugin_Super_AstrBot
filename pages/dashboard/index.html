@@ -10,7 +10,8 @@
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <img class="brand-logo" src="./logo.svg" alt="" width="26" height="26" />
+        <img class="brand-logo logo-light" src="./logo-light.svg" alt="" width="26" height="26" />
+        <img class="brand-logo logo-dark" src="./logo-dark.svg" alt="" width="26" height="26" />
         <span class="brand-text">
           <span class="brand-name">Super_AstrBot</span>
           <span class="brand-sub" data-i18n="shell.subtitle">长期记忆 · 自我学习</span>
@@ -25,6 +26,8 @@
         <button class="nav-item" data-page="journals" data-i18n="nav.journals">周记</button>
         <button class="nav-item" data-page="reviews" data-i18n="nav.reviews">待审</button>
         <button class="nav-item" data-page="persona" data-i18n="nav.persona">学习</button>
+        <button class="nav-item" data-page="graph" data-i18n="nav.graph">图谱</button>
+        <button class="nav-item" data-page="monitor" data-i18n="nav.monitor">监控</button>
         <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
       </nav>
 
@@ -182,6 +185,99 @@
           <div class="card">
             <h2 data-i18n="persona.affinity">好感度</h2>
             <div class="table-wrap" id="pn-affinity"></div>
+          </div>
+        </section>
+
+        <!-- 图谱 -->
+        <section class="page" id="page-graph">
+          <div class="card">
+            <h2 data-i18n="graph.title">记忆图谱</h2>
+            <p class="muted" data-i18n="graph.hint">
+              实体与关系从长期记忆中抽取并按作用域隔离；填写 UMO 只查看对应会话的图谱。
+            </p>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="graph.umo">会话 UMO（可选）</span>
+                <input type="text" id="gp-umo" placeholder="aiocqhttp:GroupMessage:10086" />
+              </label>
+              <label class="field">
+                <span data-i18n="graph.limit">节点上限</span>
+                <select id="gp-limit">
+                  <option value="60">60</option>
+                  <option value="120" selected>120</option>
+                  <option value="200">200</option>
+                </select>
+              </label>
+              <button class="btn" id="gp-query" data-i18n="graph.query">查询</button>
+            </div>
+            <div class="muted" id="gp-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="graph.title">记忆图谱</h2>
+            <div class="graph-stage">
+              <canvas id="gp-canvas"></canvas>
+              <div class="graph-tip" id="gp-tip" hidden></div>
+            </div>
+            <p class="muted" data-i18n="graph.layout">环形布局 · 滚轮缩放 · 拖拽平移</p>
+          </div>
+          <div class="card">
+            <h2 data-i18n="graph.nodes">节点</h2>
+            <div class="table-wrap" id="gp-nodes"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="graph.edges">关系</h2>
+            <div class="table-wrap" id="gp-edges"></div>
+          </div>
+        </section>
+
+        <!-- 监控 -->
+        <section class="page" id="page-monitor">
+          <div class="card">
+            <h2 data-i18n="monitor.title">运行监控</h2>
+            <p class="muted" data-i18n="monitor.hint">
+              聚合最近的运行指标与自动审核情况，指标名形如 llm.calls、retrieval.calls。
+            </p>
+            <div class="filter-bar">
+              <label class="field">
+                <span data-i18n="monitor.range">时间范围</span>
+                <select id="mt-range">
+                  <option value="1">1h</option>
+                  <option value="24" selected>24h</option>
+                  <option value="168">7d</option>
+                  <option value="720">30d</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="monitor.bucket">粒度</span>
+                <select id="mt-bucket">
+                  <option value="3600" selected data-i18n="monitor.hour">小时</option>
+                  <option value="86400" data-i18n="monitor.day">天</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="monitor.metric">指标</span>
+                <select id="mt-metric"></select>
+              </label>
+              <button class="btn" id="mt-query" data-i18n="action.query">查询</button>
+            </div>
+            <div class="muted" id="mt-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="monitor.live">实时指标</h2>
+            <div class="stat-grid" id="mt-live"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="monitor.trend">趋势</h2>
+            <svg id="mt-chart" class="chart" viewBox="0 0 800 240" preserveAspectRatio="none"></svg>
+            <div class="muted" id="mt-legend"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="monitor.summary">指标汇总</h2>
+            <div class="table-wrap" id="mt-totals"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="monitor.review">自动审核</h2>
+            <div class="kv-grid" id="mt-review"></div>
           </div>
         </section>
 

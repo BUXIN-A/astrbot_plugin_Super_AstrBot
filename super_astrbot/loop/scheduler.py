@@ -80,12 +80,15 @@ class Scheduler:
         store: StateStore | None = None,
         logger: Any | None = None,
         clock: Callable[[], float] | None = None,
+        observer: Callable[[str, bool, float], None] | None = None,
         tick: float = 5.0,
     ) -> None:
         self._scope = scope
         self._store: StateStore = store or MemoryStateStore()
         self._logger = logger
         self._clock = clock or time.time
+        self._observer = observer
+        """任务结束回调 ``(key, 是否成功, 耗时毫秒)``；用于运行监控埋点（可为 None）。"""
         self._tick = max(1.0, float(tick or 5.0))
         self._jobs: Dict[str, JobSpec] = {}
         self._loop_task: asyncio.Task[Any] | None = None
@@ -203,6 +206,7 @@ class Scheduler:
     async def _run_job(self, spec: JobSpec, now: float) -> None:
         error: str | None = None
         abandoned = False
+        started = time.time()
         try:
             result = await self._scope.run(spec.job, timeout=spec.timeout)
             # 必须用哨兵判断：任务正常结束时也会返回 None
@@ -211,6 +215,8 @@ class Scheduler:
             raise
         except Exception as exc:  # noqa: BLE001 - 单个 job 失败不影响调度器
             error = safe_detail(exc)
+
+        self._notify(spec.key, ok=error is None and not abandoned, started=started)
 
         if abandoned:
             spec.skipped += 1
@@ -325,3 +331,12 @@ class Scheduler:
     def _warn(self, message: str, *args: Any) -> None:
         if self._logger is not None:
             self._logger.warning(message, *args)
+
+    def _notify(self, key: str, *, ok: bool, started: float) -> None:
+        """上报任务结果给观察者；观察者异常必须吞掉，绝不能影响调度。"""
+        if self._observer is None:
+            return
+        try:
+            self._observer(key, ok, max(0.0, (time.time() - started) * 1000.0))
+        except Exception as exc:  # noqa: BLE001 - 埋点失败不影响调度
+            self._warn("任务观察者回调失败：%s", safe_detail(exc))
