@@ -281,6 +281,49 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE pending_reviews ADD COLUMN decided_by TEXT NOT NULL DEFAULT ''",
         ),
     ),
+    Migration(
+        version=4,
+        description="现实桥：周记条目新增标题与文本类型（周记 / 日记 / 随笔）",
+        statements=(
+            # 仅增量：``ALTER TABLE ADD COLUMN`` + 索引，不动既有列与数据。
+            # 既有行由 DEFAULT 补齐（title 留空 → 读取时按条目时间回填默认标题）。
+            "ALTER TABLE journals ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE journals ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'weekly'",
+            "CREATE INDEX IF NOT EXISTS idx_journals_type_time ON journals(entry_type, event_time DESC)",
+        ),
+    ),
+    Migration(
+        version=5,
+        description="记忆身份：memories 增补发送者标识，新增身份观测表（跨会话识别用户）",
+        statements=(
+            # 为什么加在 memories 上：历史缺陷是「记忆只记作用域、不记说话者」，
+            # 于是会话级记忆无法回溯归属（迁移报告里的核心约束）。补上这三列后，
+            # 新记忆天然带身份，作用域迁移（session→user）才有依据。
+            "ALTER TABLE memories ADD COLUMN sender_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE memories ADD COLUMN sender_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE memories ADD COLUMN origin_umo TEXT NOT NULL DEFAULT ''",
+            "CREATE INDEX IF NOT EXISTS idx_memories_sender ON memories(sender_id, status)",
+            # 身份观测表：同一条 umo 上出现过的发送者标识。
+            # 用途是回答「本平台 sender_id 是否跨会话稳定」——若同一昵称对应多个
+            # sender_id，说明平台标识不稳定，应改用 auto/nickname 策略。
+            """
+            CREATE TABLE IF NOT EXISTS identity_seen (
+                umo         TEXT PRIMARY KEY,
+                platform    TEXT NOT NULL DEFAULT '',
+                sender_id   TEXT NOT NULL DEFAULT '',
+                sender_name TEXT NOT NULL DEFAULT '',
+                scope_type  TEXT NOT NULL DEFAULT '',
+                scope_id    TEXT NOT NULL DEFAULT '',
+                user_key    TEXT NOT NULL DEFAULT '',
+                first_seen  REAL NOT NULL,
+                last_seen   REAL NOT NULL,
+                events      INTEGER NOT NULL DEFAULT 1
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_identity_sender ON identity_seen(sender_id)",
+            "CREATE INDEX IF NOT EXISTS idx_identity_name ON identity_seen(sender_name)",
+        ),
+    ),
 )
 """迁移列表。当前 schema 版本 = 最后一项的 version。"""
 

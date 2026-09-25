@@ -1,13 +1,15 @@
-"""命令层测试：权限、参数校验、周记与重置流程。"""
+"""命令层测试：权限、参数校验、现实桥（周记 / 日记 / 随笔）与重置流程。"""
 
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 from super_astrbot.commands import HELP_TEXT, CommandService
 from super_astrbot.harness.protocols import EventView
 from super_astrbot.journal import JournalConfig, JournalService
+from super_astrbot.spec.scopes import MemoryScope, ScopeType
 
 from .helpers import build_stack
 
@@ -55,6 +57,11 @@ def _view(
     *, is_admin: bool = True, text: str = "", umo: str = "aiocqhttp:FriendMessage:1"
 ) -> EventView:
     return EventView(umo=umo, sender_id="u1", sender_name="测试用户", text=text, is_admin=is_admin)
+
+
+def _scope() -> MemoryScope:
+    """命令层默认落在会话作用域（session:umo）；这里按同一作用域查库。"""
+    return MemoryScope.from_event(ScopeType.SESSION, umo="aiocqhttp:FriendMessage:1", user_id="u1")
 
 
 def test_help_and_status_are_available_to_everyone(tmp_path: Path) -> None:
@@ -152,6 +159,98 @@ def test_journal_blocked_when_user_write_disabled(tmp_path: Path) -> None:
         return text
 
     assert "不允许" in asyncio.run(_run())
+
+
+def test_bridge_types_write_and_default_title(tmp_path: Path) -> None:
+    """三类文本走同一动作族：动作名决定类型，未填标题则用当天日期时间。"""
+
+    async def _run() -> dict:
+        stack = await build_stack(tmp_path)
+        service = CommandService(app=FakeApp(stack), config=ADMIN_CONFIG)
+        diary = await service.dispatch("diary", _view(), ["今天把问题清单过了一遍"])
+        essay = await service.dispatch("essay", _view(), ["路上的比喻"])
+        weekly = await service.dispatch("journal", _view(), ["这周开始跑步"])
+        rows = await stack.journal.list_recent(_scope(), limit=10)
+        await stack.close()
+        return {
+            "diary": diary,
+            "essay": essay,
+            "weekly": weekly,
+            "rows": {row["id"]: row for row in rows},
+            "today": time.strftime("%Y%m%d%H:%M"),
+        }
+
+    data = asyncio.run(_run())
+    assert "日记已记录" in data["diary"]
+    assert "随笔已记录" in data["essay"]
+    assert "周记已记录" in data["weekly"]
+    types = {row["entry_type"] for row in data["rows"].values()}
+    assert types == {"weekly", "diary", "essay"}
+    # 未标注标题 → 默认标题是「当天日期时间」（分钟级，允许跨分钟）
+    for row in data["rows"].values():
+        assert row["title"].startswith(data["today"][:11]), row["title"]
+
+
+def test_bridge_title_written_by_user_wins(tmp_path: Path) -> None:
+    async def _run() -> dict:
+        stack = await build_stack(tmp_path)
+        service = CommandService(app=FakeApp(stack), config=ADMIN_CONFIG)
+        text = await service.dispatch("diary", _view(), ["面试复盘", "|", "准备确实不足", "#工作"])
+        rows = await stack.journal.list_recent(_scope(), limit=5)
+        await stack.close()
+        return {"text": text, "row": rows[0]}
+
+    data = asyncio.run(_run())
+    assert data["row"]["title"] == "面试复盘"
+    assert data["row"]["content"] == "准备确实不足"
+    assert data["row"]["entry_type"] == "diary"
+    assert "面试复盘" in data["text"]
+
+
+def test_bridge_list_filters_by_type(tmp_path: Path) -> None:
+    async def _run() -> tuple[str, str]:
+        stack = await build_stack(tmp_path)
+        service = CommandService(app=FakeApp(stack), config=ADMIN_CONFIG)
+        await service.dispatch("diary", _view(), ["今天的日记"])
+        await service.dispatch("essay", _view(), ["今天的随笔"])
+        diary_list = await service.dispatch("journals", _view(), ["日记"])
+        all_list = await service.dispatch("journals", _view(), [])
+        await stack.close()
+        return diary_list, all_list
+
+    diary_list, all_list = asyncio.run(_run())
+    assert "今天的日记" in diary_list
+    assert "今天的随笔" not in diary_list, "按类型筛选时不应混入其它类型"
+    assert "今天的随笔" in all_list
+
+
+def test_bridge_edit_updates_record(tmp_path: Path) -> None:
+    async def _run() -> dict:
+        stack = await build_stack(tmp_path)
+        service = CommandService(app=FakeApp(stack), config=ADMIN_CONFIG)
+        added = await stack.journal.add(_scope(), "原始正文")
+        journal_id = int(added["journal_id"])
+
+        # 只改正文：标题不动
+        keep = await service.dispatch("journal-edit", _view(), [str(journal_id), "改后的正文"])
+        # 换类型 + 换标题
+        change = await service.dispatch(
+            "journal-edit", _view(), [str(journal_id), "随笔", "新的标题", "|", "再改一次"]
+        )
+        bad = await service.dispatch("journal-edit", _view(), ["abc", "正文"])
+        empty = await service.dispatch("journal-edit", _view(), [str(journal_id)])
+        row = await stack.journals_repo.get(journal_id)
+        await stack.close()
+        return {"keep": keep, "change": change, "bad": bad, "empty": empty, "row": row}
+
+    data = asyncio.run(_run())
+    assert data["row"]["content"] == "再改一次"
+    assert data["row"]["title"] == "新的标题"
+    assert data["row"]["entry_type"] == "essay"
+    assert "已更新" in data["change"]
+    assert "编号" in data["bad"], "非数字编号应给出可读提示"
+    assert "用法" in data["empty"]
+    assert data["keep"].startswith("已更新"), "只改正文也应成功（标题保持原值）"
 
 
 def test_reset_requires_confirmation(tmp_path: Path) -> None:

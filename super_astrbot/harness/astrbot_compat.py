@@ -176,10 +176,6 @@ def require(name: str) -> Any:
     return value
 
 
-def framework_available() -> bool:
-    return SYMBOLS.ok
-
-
 _OPTIONAL_SYMBOLS: tuple[str, ...] = (
     "TextPart",
     "ProviderRequest",

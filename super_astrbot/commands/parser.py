@@ -31,9 +31,20 @@ _ACTION_ALIASES: dict[str, str] = {
     "检索": "search",
     "记": "remember",
     "记住": "remember",
+    # 现实桥：动作名本身决定文本类型（周记 / 日记 / 随笔）
     "周记": "journal",
-    "日记": "journal",
+    "现实桥": "journal",
+    "桥": "journal",
+    "日记": "diary",
+    "随笔": "essay",
+    "随记": "essay",
     "周记列表": "journals",
+    "日记列表": "journals",
+    "现实桥列表": "journals",
+    "列表": "journals",
+    "修改": "journal-edit",
+    "编辑": "journal-edit",
+    "改": "journal-edit",
     "待审": "review",
     "批准": "approve",
     "驳回": "reject",
@@ -48,10 +59,37 @@ _ACTION_ALIASES: dict[str, str] = {
     "知识图谱": "graph",
 }
 
+_TITLE_SEPARATORS: tuple[str, ...] = ("|", "｜")
+"""标题与正文的分隔符：``标题 | 正文``；全角竖线一并接受（中文输入法下更顺手）。"""
+
 
 def strip_command_prefix(text: str) -> str:
     """去掉消息开头的命令前缀符号。"""
     return (text or "").strip().lstrip(_COMMAND_PREFIX_CHARS).strip()
+
+
+def parse_journal_payload(payload: str) -> tuple[str, str, list[str]]:
+    """把现实桥命令的正文拆成 ``(标题, 内容, 标签)``。
+
+    约定：
+
+    - ``#标签`` 可写在任意位置，拆解后从标题与正文里移除；
+    - 出现 ``|``（或全角 ``｜``）时，其前为**标题**、其后为**正文**；
+    - 不写分隔符时整体都是正文，标题交给服务层补「当天日期时间」默认值
+      （即用户标注了标题才用自定义标题，否则一律用默认标题）。
+    """
+    raw = (payload or "").strip()
+    if not raw:
+        return "", "", []
+    tokens = raw.split()
+    tags = [token[1:] for token in tokens if token.startswith("#") and len(token) > 1]
+    if tags:
+        raw = " ".join(token for token in tokens if not token.startswith("#")).strip()
+    for separator in _TITLE_SEPARATORS:
+        if separator in raw:
+            title, _, content = raw.partition(separator)
+            return title.strip(), content.strip(), tags
+    return "", raw, tags
 
 
 def split_command_args(

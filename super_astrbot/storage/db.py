@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import sqlite3
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Iterable, Sequence
+from typing import Any, AsyncIterator, Iterable, Mapping, Sequence
 
 from ..spec.errors import StorageError, safe_detail
 from .migrations import CURRENT_VERSION, FTS_STATEMENTS, MIGRATIONS
@@ -114,10 +115,6 @@ class Database:
         return self._path
 
     @property
-    def connected(self) -> bool:
-        return self._conn is not None
-
-    @property
     def fts_available(self) -> bool:
         return self._fts_available
 
@@ -189,6 +186,100 @@ class Database:
     async def scalar(self, sql: str, params: Sequence[Any] = (), default: Any = None) -> Any:
         async with self._lock:
             return await Transaction(self._require_conn()).scalar(sql, params, default)
+
+    # ------------------------------------------------------------------ #
+    # 全表导出 / 回灌（全局备份用）
+    # ------------------------------------------------------------------ #
+
+    _TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+    async def table_names(self) -> list[str]:
+        """当前库里的普通表（不含 FTS 虚拟表及其影子表、SQLite 内部表）。"""
+        rows = await self.query(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        return [
+            str(row["name"])
+            for row in rows
+            if not str(row["name"]).startswith("sqlite_")
+            and str(row["name"]) not in {"schema_version", "write_ops"}
+            and not str(row["name"]).startswith("memory_index")
+        ]
+
+    async def table_columns(self, table: str) -> list[str]:
+        """列出表的列名（用于回灌时过滤掉本版本不存在的字段）。"""
+        self._require_table_name(table)
+        rows = await self.query(f"PRAGMA table_info({table})")
+        return [str(row["name"]) for row in rows]
+
+    async def dump_table(self, table: str, *, limit: int = 200_000) -> list[dict[str, Any]]:
+        """整表导出为普通字典列表（字段一字不改，恢复时按原样写回）。"""
+        self._require_table_name(table)
+        rows = await self.query(f"SELECT * FROM {table} LIMIT ?", (int(limit),))
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    async def count_rows(self, table: str) -> int:
+        """表内行数（恢复前估算「将删除多少行」用）。"""
+        self._require_table_name(table)
+        return int(await self.scalar(f"SELECT COUNT(*) FROM {table}", default=0))
+
+    async def restore_tables(
+        self,
+        payloads: Mapping[str, Sequence[Mapping[str, Any]]],
+        *,
+        replace: bool = False,
+    ) -> dict[str, int]:
+        """在**同一个事务**里逐表回灌，返回 ``表名 → 实际写入行数``。
+
+        - ``replace=False``（merge）：``INSERT OR REPLACE``，备份优先，不动备份之外的行；
+        - ``replace=True``（完全覆盖）：先 ``DELETE FROM 表`` 再灌，恢复后该表内容与备份一致
+          （备份里没有的行必然不存在）。**空列表同样会清空该表**，这正是「覆盖」的语义。
+
+        整体原子性：任何一张表失败（约束冲突、字段缺失、磁盘错误…）都会让本次事务回滚，
+        不会出现「清了没灌上」或「一半表已覆盖、一半没动」的中间状态。调用方必须在
+        调用前留好数据库快照——回滚只针对本次事务，覆盖掉的旧数据只能靠快照找回。
+        """
+        written: dict[str, int] = {}
+        pending: list[tuple[str, tuple[str, ...], list[list[Any]]]] = []
+        for table, rows in payloads.items():
+            self._require_table_name(table)
+            columns = await self.table_columns(table)
+            if not columns:
+                continue
+            # 按「实际可用列」分组后批量写入：整表导出的一批行列表一致，天然走 executemany；
+            # 手工构造/跨版本的 JSON 里列可能不齐，分组可避免为每行单独准备 SQL。
+            groups: dict[tuple[str, ...], list[list[Any]]] = {}
+            for row in rows or ():
+                if not isinstance(row, Mapping):
+                    continue
+                usable = tuple(name for name in columns if name in row)
+                if usable:
+                    groups.setdefault(usable, []).append([row[name] for name in usable])
+            for usable, values in groups.items():
+                pending.append((table, usable, values))
+            written.setdefault(table, 0)
+
+        if not written:
+            return written
+
+        async with self.transaction() as tx:
+            if replace:
+                for table in written:
+                    await tx.execute(f"DELETE FROM {table}")
+            for table, usable, values in pending:
+                column_sql = ", ".join(usable)
+                placeholders = ", ".join("?" for _ in usable)
+                await tx.executemany(
+                    f"INSERT OR REPLACE INTO {table} ({column_sql}) VALUES ({placeholders})",
+                    values,
+                )
+                written[table] += len(values)
+        return written
+
+    def _require_table_name(self, table: str) -> None:
+        """表名只允许 ``[A-Za-z_][A-Za-z0-9_]*``：PRAGMA 无法参数化，必须自行校验。"""
+        if not self._TABLE_NAME_RE.match(str(table or "")):
+            raise StorageError(f"非法的表名：{table!r}")
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Transaction]:
@@ -269,6 +360,105 @@ class Database:
         except OSError as exc:
             self._warn("数据库备份失败：%s", safe_detail(exc))
             return None
+
+    async def snapshot_to(self, target: str | Path) -> Path | None:
+        """把当前库**一致性快照**写到 ``target``（导出备份包用）。
+
+        与 ``backup()`` 的区别：``backup()`` 直接拷文件，在 WAL 模式下可能拷到
+        「主文件还没落盘」的中间态；``snapshot_to`` 走 SQLite 的在线备份 API，
+        会把 WAL 中已提交的内容一并写进目标库，导出的备份包因此可直接打开。
+        """
+        conn = self._conn
+        if conn is None:
+            return None
+        dest = Path(target)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        def _run() -> None:
+            out = sqlite3.connect(str(dest))
+            try:
+                with out:
+                    conn.backup(out)
+            finally:
+                out.close()
+
+        async with self._lock:
+            try:
+                await asyncio.to_thread(_run)
+            except sqlite3.Error as exc:
+                self._warn("数据库快照失败：%s", safe_detail(exc))
+                return None
+        self._info("数据库快照已写出：%s", dest.name)
+        return dest
+
+    async def replace_file_from(self, source: str | Path) -> dict[str, Any]:
+        """用 ``source`` 整库替换当前库文件（等价「停用插件 → 覆盖库 → 启用插件」）。
+
+        为什么提供它：备份包里的 ``database/*.db`` 是唯一能连 ``kv_state``、FTS 等
+        非导出表一起还原的东西，而运行中直接覆盖库文件会让连接指向被替换的 inode
+        （表现为「替换成功但数据没变」）。因此这里显式按序做：
+
+        1. 断开连接（SQLite 会把 WAL 收进主文件后关闭）；
+        2. 把当前库复制成 ``<库名>.pre-restore-<时间戳>``（回滚凭据，失败时自动放回）；
+        3. 清掉 ``-wal`` / ``-shm`` 残留（避免旧 WAL 回放到新库上）；
+        4. 用 ``source`` 覆盖主库文件；
+        5. 重新连接并跑迁移。
+
+        任何一步失败都会把原库放回并重连后再抛错，不会留下半套文件。
+        """
+        src = Path(source)
+        if not src.is_file():
+            raise StorageError(f"整库替换源不存在：{src}")
+
+        wal = self._path.with_name(f"{self._path.name}-wal")
+        shm = self._path.with_name(f"{self._path.name}-shm")
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = self._path.with_name(f"{self._path.name}.pre-restore-{stamp}")
+
+        async with self._lock:
+            conn, self._conn = self._conn, None
+            if conn is not None:
+                try:
+                    await asyncio.to_thread(conn.close)
+                except sqlite3.Error as exc:
+                    self._warn("整库替换前关闭连接失败：%s", safe_detail(exc))
+            try:
+                if self._path.exists():
+                    await asyncio.to_thread(shutil.copy2, self._path, backup)
+                for side in (wal, shm):
+                    if side.exists():
+                        await asyncio.to_thread(side.unlink)
+                await asyncio.to_thread(shutil.copy2, src, self._path)
+            except OSError as exc:
+                await self._restore_file(backup)
+                raise StorageError(f"整库替换失败（已回滚原库）：{safe_detail(exc)}") from exc
+
+        try:
+            await self.connect()
+        except Exception as exc:
+            # 快照打不开（损坏 / schema 高于当前代码）：放回原库，保证插件还能用
+            async with self._lock:
+                await self._restore_file(backup)
+            await self.connect()
+            raise StorageError(f"整库替换后无法打开快照（已回滚原库）：{safe_detail(exc)}") from exc
+
+        self._info("整库替换完成：%s → %s（原库备份 %s）", src.name, self._path.name, backup.name)
+        return {
+            "restored_from": str(src),
+            "backup": str(backup) if backup.exists() else "",
+            "schema_version": CURRENT_VERSION,
+        }
+
+    async def _restore_file(self, backup: Path) -> bool:
+        """把 ``backup`` 放回主库位置（替换失败时的回滚动作）。"""
+        if not backup.exists():
+            return False
+        try:
+            await asyncio.to_thread(shutil.copy2, backup, self._path)
+            return True
+        except OSError as exc:
+            self._warn("回滚原库失败（原库仍保留在 %s）：%s", backup, safe_detail(exc))
+            return False
 
     async def _prune_backups(self) -> None:
         try:

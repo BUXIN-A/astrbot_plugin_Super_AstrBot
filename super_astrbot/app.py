@@ -11,11 +11,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Any, Mapping
 
 from . import __version__
+from .backup import (
+    EXCLUDED_TABLES as BACKUP_EXCLUDED_TABLES,
+    RESTORE_MERGE,
+    RESTORE_REPLACE,
+    BackupService,
+    normalize_mode,
+)
 from .context import ContextConfig, ContextGovernor
 from .graph import GraphConfig, GraphService
 from .group import GroupChatService, GroupConfig
@@ -36,7 +44,12 @@ from .harness import (
     unregister_tools,
 )
 from .harness.protocols import EventView
-from .journal import JournalConfig, JournalService
+from .journal import (
+    DEFAULT_ENTRY_TYPE,
+    JournalConfig,
+    JournalService,
+    normalize_entry_type,
+)
 from .learning import ReflectionConfig, ReflectionService
 from .loop import ConcurrencyGate, LLMBudget, Scheduler, TaskScope
 from .maibot import MaiBotConfig, MaiBotService
@@ -45,10 +58,16 @@ from .memory import (
     HybridRetriever,
     KeywordRetriever,
     MemoryConfig,
+    MemoryIdentity,
     MemoryLifecycle,
     MemoryService,
+    ResolvedIdentity,
     Reranker,
     VectorRetriever,
+    DEFAULT_IDENTITY_STRATEGY,
+    SOURCE_JOURNAL,
+    SOURCE_WEEKLY,
+    resolve_identity,
 )
 from .memory.retriever import GraphRetriever
 from .monitor import (
@@ -57,6 +76,7 @@ from .monitor import (
     METRIC_GROUP_INTERJECT,
     METRIC_INJECT_BLOCKS,
     METRIC_INJECT_CHARS,
+    METRIC_INJECT_FALLBACKS,
     METRIC_LLM_BUDGET_BLOCKED,
     METRIC_LLM_CALLS,
     METRIC_LLM_ERRORS,
@@ -102,6 +122,7 @@ from .storage import (
     Database,
     GraphRepository,
     JargonRepository,
+    IdentityRepository,
     JournalRepository,
     MemoryRepository,
     MetricSeriesRepository,
@@ -115,10 +136,54 @@ from .support import PromptOverlay, PromptOverrides, PromptStore, missing_placeh
 
 _DB_FILENAME = "super_astrbot.db"
 _SKIP_CAPTURE_PREFIXES = ("/", "!", "#", ".")
-"""命令类消息不进入记忆缓冲，避免把指令当成对话语料。"""
+"""命令类消息不进入记忆缓冲，避免把指令当成语料。"""
+
+def _optional_float(value: Any) -> float | None:
+    """导入用：能转成数字就转，否则返回 ``None``（语义为「按写入时刻算」）。
+
+    ``0`` 原样返回：``last_access_at=0`` 表示「从未访问过」，必须保留；
+    而 ``created_at=0`` 到了生命周期层会被当作「未提供」回退到当前时刻，
+    不会写出 1970 年的时间。
+    """
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+SCOPE_MIGRATION_TARGETS: tuple[str, ...] = (
+    "user",
+    "global",
+    "archive",
+    "user_else_archive",
+)
+"""作用域迁移目标（面板下拉与后端校验共用一份）。"""
 
 _REFLECTION_SCAN_INTERVAL = 300.0
 """反思扫描间隔（秒）：只查条件是否满足，满足才真正调用模型。"""
+
+_REFLECTION_SKIP_LOG_INTERVAL = 1800.0
+"""「全部跳过」时反思原因日志的最小间隔（秒）。
+
+跳过原因必须能在后台看见（``basic.debug_log`` 默认关闭，debug 级日志等于黑盒），
+但每 5 分钟原样输出一次既吵又没用，因此只在「有进展」时逐次记录，
+纯粹的「全都跳过」按半小时节流。
+"""
+
+_REFLECTION_SKIP_DETAIL_MAX = 5
+"""单行日志里最多列出几个跳过的作用域，避免把一行日志写成一张表。"""
 
 _MAINTENANCE_HOUR, _MAINTENANCE_MINUTE = 4, 30
 
@@ -172,7 +237,8 @@ class SuperAstrBotApp:
     ) -> None:
         self._star = star
         self._context = context
-        self._config: Mapping[str, Any] = config or {}
+        # 注意不要用 `config or {}`：空但真实的配置实体（如新建插件）会被误换成普通 dict，丢掉 .schema 引用
+        self._config: Mapping[str, Any] = config if config is not None else {}
         # 允许显式指定数据目录（测试隔离 / 自定义部署位置）；None 时交由 Host 解析。
         self._data_dir_override = data_dir
         self._logger = getattr(star, "logger", None)
@@ -203,6 +269,8 @@ class SuperAstrBotApp:
 
         self._memories: MemoryRepository | None = None
         self._journals_repo: JournalRepository | None = None
+        self._identities_repo: IdentityRepository | None = None
+        self._backup_service: BackupService | None = None
         self._reflections_repo: ReflectionRepository | None = None
         self._reviews_repo: ReviewRepository | None = None
         self._style_repo: StyleRepository | None = None
@@ -227,6 +295,12 @@ class SuperAstrBotApp:
 
         self._style_pairs: dict[str, tuple[str, float]] = {}
         """会话最近一条用户消息（umo → 文本/时间），用于与 Bot 回复配对成风格样本。"""
+
+        self._injection_methods: set[str] = set()
+        """已经用 info 记录过的注入方式：同一方式只报一次，之后降为 debug。"""
+
+        self._reflection_skip_logged_at = 0.0
+        """上次输出「反思全部跳过」日志的时间戳（见 ``_REFLECTION_SKIP_LOG_INTERVAL``）。"""
 
         self._effective_capabilities: dict[str, bool] = {}
         self._retriever: Any | None = None
@@ -275,14 +349,6 @@ class SuperAstrBotApp:
         return self._reflection_config
 
     @property
-    def context_config(self) -> ContextConfig | None:
-        return self._context_config
-
-    @property
-    def group_service(self) -> GroupChatService | None:
-        return self._group_service
-
-    @property
     def proactive_service(self) -> ProactiveService | None:
         return self._proactive_service
 
@@ -291,16 +357,8 @@ class SuperAstrBotApp:
         return self._persona_service
 
     @property
-    def persona_config(self) -> PersonaConfig | None:
-        return self._persona_config
-
-    @property
     def graph_service(self) -> GraphService | None:
         return self._graph_service
-
-    @property
-    def graph_config(self) -> GraphConfig | None:
-        return self._graph_config
 
     @property
     def auto_review_service(self) -> AutoReviewService | None:
@@ -309,10 +367,6 @@ class SuperAstrBotApp:
     @property
     def monitor_service(self) -> MonitorService | None:
         return self._monitor_service
-
-    @property
-    def maibot_service(self) -> MaiBotService | None:
-        return self._maibot_service
 
     @property
     def host(self) -> Any:
@@ -760,6 +814,8 @@ class SuperAstrBotApp:
         """指标落盘任务：只要持久层可用就常驻（监控不是可选能力）。
 
         与其它任务一样保持「已存在则不动」：重新 ``every`` 会新建 JobSpec 并把统计清零。
+        末尾无条件 ``set_enabled(True)``：该任务不归能力开关管，任何一次热切换都不该把它关掉
+        （曾被误关后表现为「指标内存里在涨、库里却不再新增」，难以自查）。
         """
         scheduler = self._scheduler
         if scheduler is None or self._monitor_service is None:
@@ -772,8 +828,7 @@ class SuperAstrBotApp:
                 timeout=60.0,
                 run_immediately=False,
             )
-        else:
-            scheduler.set_enabled(_JOB_MONITOR_FLUSH, True)
+        scheduler.set_enabled(_JOB_MONITOR_FLUSH, True)
 
     def _sync_persona_jobs(self) -> None:
         """增删黑话扫描任务（支持热切换）。"""
@@ -892,6 +947,1041 @@ class SuperAstrBotApp:
             self._debug("框架加载后的能力复检失败：%s", safe_detail(exc))
 
     # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
+    # 配置维护（面板）：导出/导入插件配置 JSON，导入后热应用
+    # ------------------------------------------------------------------ #
+
+    def _schema_defaults(self) -> dict[str, Any]:
+        """从 schema 的 ``default`` 字段构建参考默认配置（供导入校验）。"""
+        schema = getattr(self._config, "schema", None)
+        if not isinstance(schema, dict):
+            return {}
+
+        def defaults_of(node: dict[str, Any]) -> dict[str, Any]:
+            out: dict[str, Any] = {}
+            for key, field in node.items():
+                if not isinstance(field, dict) or "type" not in field:
+                    continue
+                ftype = field.get("type")
+                if ftype == "object":
+                    out[key] = defaults_of(field.get("items") or {})
+                elif "default" in field:
+                    out[key] = field["default"]
+                else:
+                    out[key] = {"int": 0, "float": 0.0, "bool": False, "string": "", "text": ""}.get(ftype, "")
+            return out
+
+        return defaults_of(schema)
+
+    def config_export(self) -> dict[str, Any]:
+        """导出当前插件配置（与官方配置页同一份数据）。"""
+        return {
+            "kind": "super_astrbot.config",
+            "exported_at": time.time(),
+            "config": dict(self._config),
+        }
+
+    @staticmethod
+    def _coerce_config_value(value: Any, ftype: str, default: Any, field: dict[str, Any]) -> Any:
+        """按 schema 类型收敛单个配置值；无法解析时回退默认值。"""
+        from .spec.capabilities import as_bool, as_float, as_int, as_str
+
+        try:
+            if ftype == "bool":
+                return value if isinstance(value, bool) else as_bool(value, as_bool(default, False))
+            if ftype == "int":
+                return as_int(value, as_int(default, 0))
+            if ftype == "float":
+                return as_float(value, as_float(default, 0.0))
+            if ftype in ("string", "text"):
+                result = as_str(value)
+                options = field.get("options")
+                if options and result and result not in options:
+                    return as_str(default)
+                return result
+            if ftype == "list":
+                if isinstance(value, list):
+                    return [str(item) for item in value]
+                if isinstance(value, str):
+                    return [part.strip() for part in value.replace("，", ",").split(",") if part.strip()]
+                return list(default or [])
+            return value  # dict / file / template_list 等保持原样
+        except (TypeError, ValueError):
+            return default
+
+    def _coerce_by_schema(self, node: dict[str, Any], schema: dict[str, Any]) -> None:
+        """递归按 schema 收敛配置值类型（就地修改）。"""
+        for key, field in schema.items():
+            if not isinstance(field, dict) or "type" not in field or key not in node:
+                continue
+            ftype = field.get("type")
+            if ftype == "object" and isinstance(node[key], dict):
+                self._coerce_by_schema(node[key], field.get("items") or {})
+            else:
+                node[key] = self._coerce_config_value(
+                    node[key], ftype, field.get("default"), field
+                )
+
+    async def config_import(self, payload: Any) -> dict[str, Any]:
+        """导入插件配置：按 schema 剔除未知键/补齐缺失默认值/收敛类型 → 合并进配置实体 → 落盘 → 热应用。"""
+        if not isinstance(payload, dict):
+            return {"ok": False, "message": "配置必须是 JSON 对象"}
+        if not payload:
+            return {"ok": False, "message": "配置为空"}
+
+        incoming = json.loads(json.dumps(payload, ensure_ascii=False))  # 深拷贝，避免污染调用方
+        schema = getattr(self._config, "schema", None)
+        checker = getattr(self._config, "check_config_integrity", None)
+        if callable(checker):
+            defaults = self._schema_defaults()
+            if defaults:
+                # 规范化：未知键剔除、缺失补默认、类型不符回退默认（核心同款逻辑）
+                checker(defaults, incoming)
+        else:
+            defaults = self._schema_defaults()
+            incoming = {key: value for key, value in incoming.items() if key in defaults}
+
+        if not incoming:
+            return {"ok": False, "message": "没有可识别的配置项"}
+
+        # 类型收敛：check_config_integrity 不处理「"13"→13」这类标量转型
+        if isinstance(schema, dict):
+            self._coerce_by_schema(incoming, schema)
+
+        known = sum(1 for key in incoming if key in self._config)
+        self._config.clear()
+        self._config.update(incoming)
+        persisted = await self._persist_config()
+
+        # 热应用：重建全部配置包装 + 重解析能力开关 + 重注入嵌入模型选项
+        self._build_configs()
+        self.refresh_capabilities()
+        self.sync_schema_options()
+        self._info(
+            "导入插件配置：%s 个分节（落盘%s）",
+            len(incoming),
+            "成功" if persisted else "失败",
+        )
+        message = "已导入并热应用" + ("" if persisted else "；配置落盘失败，重启后可能回到原值")
+        return {
+            "ok": True,
+            "sections": len(incoming),
+            "known": known,
+            "persisted": persisted,
+            "message": message,
+        }
+
+    # ------------------------------------------------------------------ #
+    # 记忆编辑 / 导入导出（面板）
+    # ------------------------------------------------------------------ #
+
+    async def panel_memory_export(self) -> list[dict[str, Any]]:
+        memory = self._memory_or_error()
+        return await memory.export_all_memories()
+
+    async def panel_memory_update(self, memory_id: int, content: str) -> dict[str, Any]:
+        """面板编辑记忆正文：写入新内容并重建该条的关键词/向量索引。
+
+        重建而不是「只改字」：编辑过的记忆若沿用旧索引，关键词路会因未分词而搜不到它，
+        向量路则会继续按旧语义被召回——两种都是静默的错配。
+        """
+        memory = self._memory_or_error()
+        ok = await memory.update_content(int(memory_id), content)
+        return {"ok": ok, "message": "已保存" if ok else "记录不存在或内容为空"}
+
+    async def panel_memory_delete(self, memory_id: int) -> dict[str, Any]:
+        """面板删除单条记忆（软删除：状态置为已遗忘，索引与图谱关联一并清理）。"""
+        memory = self._memory_or_error()
+        deleted = await memory.delete([int(memory_id)])
+        return {"ok": deleted > 0, "message": "已删除" if deleted else "条目不存在"}
+
+    async def panel_memory_import(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """导入记忆：保留类型/重要度/来源/标签/状态/作用域；跳过已遗忘与空内容。"""
+        from .memory.models import STATUS_FORGOTTEN
+
+        memory = self._memory_or_error()
+        imported, skipped = 0, 0
+        for item in items[:10_000]:
+            if not isinstance(item, dict):
+                skipped += 1
+                continue
+            content = str(item.get("content") or "").strip()
+            if not content:
+                skipped += 1
+                continue
+            status = str(item.get("status") or "active")
+            if status == STATUS_FORGOTTEN:
+                skipped += 1
+                continue
+            scope = self._parse_scope_key(str(item.get("scope") or f"{item.get('scope_type') or 'global'}:{item.get('scope_id') or '*'}"))
+            tags = item.get("tags")
+            if isinstance(tags, str):
+                try:
+                    tags = json.loads(tags)
+                except (TypeError, ValueError):
+                    tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+            try:
+                importance = float(item.get("importance") or 0.5)
+            except (TypeError, ValueError):
+                importance = 0.5
+            try:
+                confidence = float(item.get("confidence") or 0.8)
+            except (TypeError, ValueError):
+                confidence = 0.8
+            await memory.remember_text(
+                scope,
+                content,
+                kind=str(item.get("kind") or "fact"),
+                importance=max(0.0, min(1.0, importance)),
+                confidence=max(0.0, min(1.0, confidence)),
+                source=str(item.get("source") or "manual"),
+                tags=tags if isinstance(tags, list) else None,
+                status=status,
+                identity=MemoryIdentity(
+                    sender_id=str(item.get("sender_id") or ""),
+                    sender_name=str(item.get("sender_name") or ""),
+                    origin_umo=str(item.get("origin_umo") or ""),
+                ),
+                # 保留原始时间线：不回填的话，导入的历史记忆会全部显示成导入时刻
+                created_at=_optional_float(item.get("created_at")),
+                updated_at=_optional_float(item.get("updated_at")),
+                last_access_at=_optional_float(item.get("last_access_at")),
+                access_count=_optional_int(item.get("access_count")),
+            )
+            imported += 1
+        return {"ok": True, "imported": imported, "skipped": skipped}
+
+    # ------------------------------------------------------------------ #
+    # 身份诊断与作用域迁移（跨会话识别用户的两件配套工具）
+    # ------------------------------------------------------------------ #
+
+    async def panel_identity_report(self) -> dict[str, Any]:
+        """身份观测报告：谁在哪个会话说过话，以及平台标识是否稳定。"""
+        memory = self.memory
+        if memory is None:
+            return {
+                "items": [],
+                "total": 0,
+                "analysis": {"verdict": "empty", "hint": "记忆服务未就绪"},
+                "strategy": DEFAULT_IDENTITY_STRATEGY,
+                "scope_type": "",
+                "tracking": False,
+            }
+        report = await memory.identity_observations(limit=200)
+        config = self._memory_config
+        report["strategy"] = config.identity_strategy if config else DEFAULT_IDENTITY_STRATEGY
+        report["scope_type"] = config.default_scope.value if config else "session"
+        report["tracking"] = self._identity_tracking_enabled()
+        return report
+
+    async def panel_identity_clear(self) -> dict[str, Any]:
+        """清空身份观测（用户换平台或想重新取样时用）。"""
+        memory = self.memory
+        if memory is None:
+            return {"ok": False, "message": "记忆服务未就绪"}
+        removed = await memory.clear_identity_observations()
+        return {"ok": True, "removed": removed, "message": f"已清空 {removed} 条身份观测"}
+
+    async def panel_scope_report(self) -> dict[str, Any]:
+        """作用域分布 + 当前作用域策略（迁移前必看）。"""
+        memory = self.memory
+        if memory is None:
+            return {"types": {}, "scopes": [], "strategy": DEFAULT_IDENTITY_STRATEGY}
+        data = await memory.scope_distribution(limit=50)
+        config = self._memory_config
+        data["strategy"] = config.identity_strategy if config else DEFAULT_IDENTITY_STRATEGY
+        data["scope_type"] = config.default_scope.value if config else "session"
+        data["targets"] = list(SCOPE_MIGRATION_TARGETS)
+        return data
+
+    async def panel_scope_migrate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """作用域迁移：``dry_run`` 只预览，落库前自动做一次数据库备份。
+
+        支持的目标：``user``（按发送者归属）/ ``global``（整体提升）/
+        ``archive``（只归档）/ ``user_else_archive``（能归属的归用户，其余归档）。
+        """
+        memory = self._memory_or_error()
+        to = str(payload.get("to") or "").strip().lower()
+        if to not in SCOPE_MIGRATION_TARGETS:
+            return {"ok": False, "message": f"不支持的目标：{to or '(空)'}"}
+        from_scope = str(payload.get("from_scope_type") or "session").strip()
+        dry_run = payload.get("dry_run", True) is not False
+        only_attributed = payload.get("only_attributed", True) is not False
+
+        stats = await memory.migrate_scope(
+            to=to,
+            from_scope_type=from_scope,
+            only_attributed=only_attributed,
+            dry_run=dry_run,
+        )
+        result: dict[str, Any] = {
+            "ok": True,
+            "to": to,
+            "from_scope_type": from_scope,
+            "dry_run": dry_run,
+            **stats,
+        }
+        if dry_run:
+            result["message"] = (
+                f"预览：符合条件 {stats.get('matched', 0)} 条（其中带身份 {stats.get('attributed', 0)} 条）——"
+                f"将归属用户 {stats.get('moved', 0)} 条、归档 {stats.get('archived', 0)} 条、"
+                f"跳过 {stats.get('skipped', 0)} 条；点「执行迁移」后才会真正写入。"
+            )
+            return result
+
+        # 真实写入前先留一份库备份：作用域迁移是批量 UPDATE，必须可回滚。
+        backup_path = await self._backup_database_file()
+        result["backup"] = str(backup_path) if backup_path else ""
+
+        # 记忆迁移完成后，配套迁移现实桥记录与图谱。
+        # 注意：这两张表都没有发送者字段，无法像记忆那样逐条归属到用户，
+        # 因此只在「整体提升为 global」时同步搬迁；其余目标会在结果里说明。
+        if to == "global" and from_scope:
+            result["journals"] = await memory.migrate_journal_scope(
+                scope_type=from_scope, to_scope_type="global", to_scope_id="*", dry_run=False
+            )
+            if self._graph_repo is not None:
+                try:
+                    result["graph"] = await self._graph_repo.migrate_scope(
+                        scope_type=from_scope, to_scope_type="global", to_scope_id="*", dry_run=False
+                    )
+                except Exception as exc:  # 图谱迁移失败不影响记忆迁移结果
+                    result["graph"] = {"error": safe_detail(exc)}
+        elif to in {"user", "user_else_archive"}:
+            result["note"] = (
+                "现实桥记录与图谱没有发送者字段，无法按用户归属，本次未改动它们；"
+                "如需一并收敛，可先选「整体提升为全局」或单独归档。"
+            )
+
+        await self._record_migration(result)
+        result["message"] = (
+            f"迁移完成：处理 {stats.get('matched', 0)} 条（归属用户 {stats.get('moved', 0)}，"
+            f"归档 {stats.get('archived', 0)}）。"
+        )
+        return result
+
+    async def _backup_database_file(self) -> Path | None:
+        """迁移前的库文件备份（走在线快照，WAL 下也一致）。"""
+        db = self._db
+        if db is None or self._data_dir is None:
+            return None
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = self._data_dir / f"{db.path.name}.pre-scope-migration-{stamp}"
+        try:
+            return await db.snapshot_to(target)
+        except Exception as exc:
+            self._warn("迁移前备份失败：%s", safe_detail(exc))
+            return None
+
+    async def _record_migration(self, payload: dict[str, Any]) -> None:
+        """把迁移动作记进 kv_state，便于事后追溯「什么时候动过作用域」。"""
+        if self._db is None:
+            return
+        try:
+            await SqliteStateStore(self._db).set(
+                "scope_migration:last",
+                {
+                    "at": time.time(),
+                    "to": payload.get("to"),
+                    "matched": payload.get("matched"),
+                    "moved": payload.get("moved"),
+                    "archived": payload.get("archived"),
+                    "backup": payload.get("backup"),
+                },
+            )
+        except Exception as exc:
+            self._debug("迁移记录写入失败：%s", safe_detail(exc))
+
+    # ------------------------------------------------------------------ #
+    # 周记管理（面板）—— 参照 admin-diary-proxy 模式：面板可直接增/编/删/导入导出
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _parse_scope_key(key: str) -> MemoryScope:
+        """把 ``global:*`` / ``user:123`` / ``group:456`` / ``session:umo`` 解析成作用域。"""
+        from .spec.scopes import GLOBAL_SCOPE_ID, ScopeType
+
+        raw = (key or "").strip()
+        scope_type, _, scope_id = raw.partition(":")
+        try:
+            stype = ScopeType(scope_type.strip().lower())
+        except ValueError:
+            stype = ScopeType.GLOBAL
+        if stype is ScopeType.GLOBAL:
+            return MemoryScope(stype, GLOBAL_SCOPE_ID)
+        return MemoryScope(stype, scope_id.strip() or GLOBAL_SCOPE_ID)
+
+    def _journal_service_or_error(self) -> JournalService:
+        service = self.journal
+        if service is None:
+            raise RuntimeError("现实桥服务未就绪")
+        return service
+
+    @staticmethod
+    def _journal_entry_type(payload: dict[str, Any]) -> str | None:
+        """从面板/导入载荷里取类型；``type`` 与 ``entry_type`` 两个键都接受。"""
+        raw = payload.get("entry_type")
+        if raw is None or str(raw).strip() == "":
+            raw = payload.get("type")
+        if raw is None or str(raw).strip() == "":
+            return None
+        return normalize_entry_type(raw)
+
+    def _default_entry_type(self) -> str:
+        """面板新增未选类型时的默认类型（配置项 ``journal.default_entry_type``）。"""
+        config = self._journal_config
+        return config.default_entry_type if config is not None else DEFAULT_ENTRY_TYPE
+
+    async def panel_journal_add(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """面板写入现实记录（含记忆联动），与聊天 ``/sab journal`` 同一落库路径。
+
+        标题留空时由服务层补「当天日期时间」；类型默认周记。
+        """
+        service = self._journal_service_or_error()
+        content = str(payload.get("content") or "").strip()
+        if not content:
+            return {"ok": False, "message": "内容不能为空"}
+        tags = payload.get("tags")
+        if isinstance(tags, str):
+            tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+        emotion = payload.get("emotion")
+        event_time = payload.get("event_time")
+        scope = self._parse_scope_key(str(payload.get("scope") or "global:*"))
+        result = await service.add(
+            scope,
+            content,
+            title=payload.get("title"),
+            entry_type=self._journal_entry_type(payload) or self._default_entry_type(),
+            tags=tags if isinstance(tags, list) else None,
+            emotion=emotion,
+            event_time=float(event_time) if event_time else None,
+        )
+        if result is None:
+            return {"ok": False, "message": "写入失败（内容为空）"}
+        return {"ok": True, **result}
+
+    async def panel_journal_update(self, journal_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        """面板编辑记录：标题/类型缺省表示保持不变，与导入同构。"""
+        service = self._journal_service_or_error()
+        tags = payload.get("tags")
+        if isinstance(tags, str):
+            tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+        has_title = "title" in payload
+        has_type = payload.get("entry_type") is not None or payload.get("type") is not None
+        ok = await service.update(
+            int(journal_id),
+            content=str(payload.get("content") or ""),
+            title=payload.get("title") if has_title else None,
+            entry_type=self._journal_entry_type(payload) if has_type else None,
+            tags=tags if isinstance(tags, list) else None,
+            emotion=payload.get("emotion"),
+        )
+        return {"ok": bool(ok), "message": "已保存" if ok else "记录不存在或内容为空"}
+
+    async def panel_journal_delete(self, journal_id: int) -> dict[str, Any]:
+        service = self._journal_service_or_error()
+        ok = await service.delete(int(journal_id))
+        return {"ok": bool(ok), "message": "已删除" if ok else "记录不存在"}
+
+    async def panel_journal_export(
+        self,
+        *,
+        ids: list[int] | None = None,
+        entry_type: str = "",
+        keyword: str = "",
+    ) -> list[dict[str, Any]]:
+        """导出记录：``ids`` 非空为「导出所选」，否则按类型/关键词筛选导出。"""
+        service = self._journal_service_or_error()
+        return await service.export_items(ids=ids, entry_type=entry_type, keyword=keyword)
+
+    async def panel_journal_export_selected(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """面板勾选导出：解析勾选集合（或「全选当前筛选」）后走同一导出路径。"""
+        select_all = bool(payload.get("all"))
+        entry_type = self._journal_entry_type(payload) or ""
+        keyword = str(payload.get("keyword") or "").strip()
+        raw_ids = payload.get("ids")
+        ids: list[int] = []
+        if not select_all:
+            if not isinstance(raw_ids, (list, tuple)):
+                return {"ok": False, "message": "缺少勾选列表 ids"}
+            for item in raw_ids:
+                try:
+                    value = int(item)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    ids.append(value)
+            if not ids:
+                return {"ok": False, "message": "请先勾选要导出的记录"}
+        items = await self.panel_journal_export(
+            ids=ids or None,
+            entry_type=entry_type,
+            keyword=keyword,
+        )
+        return {
+            "ok": True,
+            "mode": "filter" if select_all else "ids",
+            "count": len(items),
+            "items": items,
+        }
+
+    async def panel_journal_types(self) -> dict[str, int]:
+        """各类型条目数（面板筛选下拉计数）。"""
+        service = self._journal_service_or_error()
+        return await service.count_by_type()
+
+    # ------------------------------------------------------------------ #
+    # 待审批量处理（44 条 pending 只有落地了，学习结果才真正生效）
+    # ------------------------------------------------------------------ #
+
+    async def panel_review_batch(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """批量批准/驳回待审记录。
+
+        ``ids`` 为空且 ``all=true`` 时按当前筛选（``origin`` / ``umo``）取全部待审，
+        逐条复用单条审批逻辑，保证副作用（写入风格/术语、生成记忆）完全一致。
+        """
+        action = str(payload.get("action") or "").strip().lower()
+        if action not in {"approve", "reject"}:
+            return {"ok": False, "message": "action 必须是 approve 或 reject"}
+
+        ids: list[int] = []
+        raw_ids = payload.get("ids")
+        if isinstance(raw_ids, (list, tuple)):
+            for item in raw_ids:
+                try:
+                    value = int(item)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    ids.append(value)
+
+        if not ids:
+            try:
+                rows = await self._pending_review_rows(payload)
+            except Exception as exc:
+                return {"ok": False, "message": f"读取待审队列失败：{safe_detail(exc)}"}
+            ids = [int(row["id"]) for row in rows]
+        if not ids:
+            return {"ok": False, "message": "当前筛选下没有待审记录"}
+
+        done, failed = 0, 0
+        for review_id in ids[:1000]:
+            try:
+                if action == "approve":
+                    handled, _ = await self.approve_review(review_id)
+                else:
+                    handled = await self.reject_review(review_id)
+            except Exception as exc:
+                self._warn("批量处理待审 #%s 失败：%s", review_id, safe_detail(exc))
+                failed += 1
+                continue
+            if handled:
+                done += 1
+            else:
+                failed += 1
+        verb = "批准" if action == "approve" else "驳回"
+        return {
+            "ok": True,
+            "action": action,
+            "handled": done,
+            "failed": failed,
+            "message": f"已{verb} {done} 条" + (f"，{failed} 条未处理" if failed else ""),
+        }
+
+    async def _pending_review_rows(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """按面板筛选条件取待审行（供批量处理用）。"""
+        origin = str(payload.get("origin") or "").strip()
+        umo = str(payload.get("umo") or "").strip()
+        if umo:
+            scope = MemoryScope.for_session(umo)
+            return await self.pending_reviews(scope, limit=1000, offset=0, origin=origin)
+        return await self.pending_reviews_all(limit=1000, offset=0, origin=origin)
+
+    # ------------------------------------------------------------------ #
+    # 备份导出（配置 + 数据库 + 各类数据 → zip）
+    # ------------------------------------------------------------------ #
+
+    @property
+    def backup(self) -> BackupService | None:
+        return self._backup_service
+
+    def _backup_or_error(self) -> BackupService:
+        service = self._backup_service
+        if service is None:
+            raise RuntimeError("备份服务未就绪")
+        return service
+
+    async def panel_backup_build(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """生成备份包并返回可下载信息。"""
+        service = self._backup_or_error()
+        options = payload or {}
+        artifact = await service.build(
+            include_config=options.get("include_config", True) is not False,
+            include_database=options.get("include_database", True) is not False,
+            include_data=options.get("include_data", True) is not False,
+            notes=str(options.get("notes") or ""),
+        )
+        return {"ok": True, **artifact.as_dict(), "message": f"已生成备份包：{artifact.filename}"}
+
+    async def panel_backup_list(self) -> dict[str, Any]:
+        """列出历史备份包与本次备份会覆盖的范围。"""
+        service = self._backup_service
+        if service is None:
+            return {"items": [], "tables": [], "excluded": {}, "views": [], "dir": ""}
+        return {
+            "items": service.list_backups(limit=20),
+            "tables": list(service.tables),
+            "excluded": dict(BACKUP_EXCLUDED_TABLES),
+            "views": service.view_names(),
+            "dir": str(service.backup_dir),
+            "keep": service.keep,
+        }
+
+    async def panel_backup_import(
+        self, raw: bytes, *, mode: str = RESTORE_MERGE, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """从全局备份包恢复。
+
+        两种模式：
+
+        - ``merge``（默认）：逐表 ``INSERT OR REPLACE``，备份优先——备份里有的行一定恢复，
+          备份之后新产生的数据不受影响；
+        - ``replace``：逐表「先清后灌」，恢复后与备份逐表一致（备份里没有的行必然不存在）。
+
+        执行顺序（不可颠倒，见 SPEC 21.6）：**数据库快照 → 逐表写入（单事务，整体原子）
+        → 重建关键词索引**。快照先于任何 DELETE 落盘；写入失败整体回滚并向用户报告快照路径；
+        索引只重建关键词，向量表随包回灌、不重跑嵌入接口。
+        """
+        service = self._backup_service
+        if service is None:
+            return {"ok": False, "message": "备份服务未就绪"}
+        selected = normalize_mode(mode)
+
+        try:
+            manifest = service.read_manifest(raw)
+        except Exception as exc:
+            return {"ok": False, "message": f"备份包不可用：{safe_detail(exc)}"}
+
+        try:
+            preview = await service.restore(raw, dry_run=True, mode=selected)
+        except Exception as exc:
+            return {"ok": False, "message": f"备份包不可用：{safe_detail(exc)}"}
+
+        result: dict[str, Any] = {
+            "ok": True,
+            "mode": selected,
+            "manifest": manifest,
+            "planned": preview.tables,
+            "planned_rows": preview.rows_written,
+            "existing": preview.existing,
+            "estimated_deleted": preview.estimated_deleted,
+            "estimated_deleted_total": sum(preview.estimated_deleted.values()),
+            "warnings": list(preview.notes),
+        }
+        backup_schema = int(manifest.get("schema_version") or 0)
+        if backup_schema > CURRENT_VERSION:
+            result["warnings"].append(
+                f"备份包的 schema 版本(v{backup_schema})高于当前插件(v{CURRENT_VERSION})："
+                "本版本不认识的字段无法恢复，建议先升级插件再恢复"
+            )
+
+        # 旧格式（format 1）包没有 tables/：走按视图恢复 + 整库恢复引导
+        if preview.rows_written == 0 and preview.legacy_views:
+            if dry_run:
+                result["legacy"] = True
+                result["planned_rows"] = sum(len(items) for items in preview.legacy_views.values())
+                result["message"] = "旧格式包预览：将按视图恢复记忆 / 现实桥 / 每周总结"
+                return result
+            return await self._restore_legacy_backup(raw, preview, result)
+        if preview.rows_written == 0:
+            result["ok"] = False
+            result["message"] = (
+                "备份包里没有可恢复的数据"
+                "（既没有 tables/ 全表导出，也没有可用的 data/ 视图或数据库快照）"
+            )
+            return result
+        if dry_run:
+            # 预览与真实执行返回同一套字段（tables / rows_written），
+            # 面板才能用同一段渲染逻辑展示「将写入 N 行 / 预计删除 M 行」
+            result["tables"] = dict(preview.tables)
+            result["rows_written"] = preview.rows_written
+            result["message"] = (
+                f"{'完全覆盖' if selected == RESTORE_REPLACE else '合并'}预览："
+                f"将写入 {preview.rows_written} 行 / {len(preview.tables)} 张表"
+                + (
+                    f"，预计删除约 {result['estimated_deleted_total']} 行（估计值）"
+                    if selected == RESTORE_REPLACE
+                    else ""
+                )
+            )
+            return result
+
+        # 1) 快照先于任何 DELETE 落盘
+        snapshot = await self._backup_database_file()
+        result["backup"] = str(snapshot) if snapshot else ""
+
+        # 2) 逐表写入（单事务，整体原子）
+        try:
+            outcome = await service.restore(raw, dry_run=False, mode=selected)
+        except Exception as exc:
+            self._warn("备份恢复失败：%s", safe_detail(exc))
+            return {
+                "ok": False,
+                "mode": selected,
+                "message": f"恢复失败：{safe_detail(exc)}",
+                "backup": result["backup"],
+                "hint": (
+                    "本次恢复已整体回滚，数据保持恢复前状态；"
+                    f"如需整库回退可用快照：{result['backup'] or '（未生成，请检查数据目录权限）'}"
+                ),
+            }
+        result["tables"] = outcome.tables
+        result["rows_written"] = outcome.rows_written
+        result["skipped_tables"] = outcome.skipped_tables
+        result["warnings"] = [*result["warnings"], *outcome.notes]
+
+        # 3) 索引：覆盖模式必须先清空 FTS（旧 token 会挂到同 id 的新行上），只重建关键词
+        reindex_note = ""
+        if self._memory_service is not None:
+            try:
+                stats = await self._memory_service.reindex_keywords(
+                    clear=selected == RESTORE_REPLACE
+                )
+                cleared = int(stats.get("cleared") or 0)
+                reindex_note = (
+                    f"关键词索引重建 {stats.get('indexed', 0)} 条"
+                    + (f"（先清空 {cleared} 条旧索引）" if cleared else "")
+                )
+            except Exception as exc:
+                self._warn("恢复后重建关键词索引失败：%s", safe_detail(exc))
+                reindex_note = "关键词索引重建失败（可用「重建检索索引」重试）"
+        result["reindex"] = reindex_note
+
+        result["config"] = await self._restore_config_from_backup(raw)
+        result["database"] = await self._stash_database_from_backup(raw)
+        result["can_replace_database"] = bool(
+            str(result["database"].get("saved_to") or "").strip()
+        )
+
+        verb = "完全覆盖" if selected == RESTORE_REPLACE else "逐表合并"
+        parts = [f"{verb}恢复 {outcome.rows_written} 行 / {len(outcome.tables)} 张表"]
+        if result["config"].get("ok"):
+            parts.append("配置已热应用")
+        if reindex_note:
+            parts.append(reindex_note)
+        tail = "备份里没有的行已删除" if selected == RESTORE_REPLACE else "备份之后的新数据未受影响"
+        result["message"] = "导入完成：" + "，".join(parts) + f"（{tail}）"
+        self._info("全局备份恢复完成：%s", result["message"])
+        return result
+
+    async def panel_backup_replace_database(self, source: str) -> dict[str, Any]:
+        """整库恢复：用快照文件替换当前数据库（唯一能连 kv_state 等非导出表一起还原的方式）。
+
+        只接受**由本插件自己落在 backups/ 下的快照**（``restored-*.db``），避免把任意路径
+        交给接口变成文件覆盖漏洞。流程与失败回滚由 ``Database.replace_file_from`` 保证。
+        """
+        db = self._db
+        service = self._backup_service
+        if db is None or service is None or self._data_dir is None:
+            return {"ok": False, "message": "数据库或备份服务未就绪"}
+
+        candidate = self._resolve_snapshot_path(source)
+        if candidate is None:
+            return {"ok": False, "message": "只允许使用备份目录下的快照文件（restored-*.db）"}
+
+        try:
+            info = await db.replace_file_from(candidate)
+        except Exception as exc:
+            self._warn("整库恢复失败：%s", safe_detail(exc))
+            return {
+                "ok": False,
+                "message": f"整库恢复失败：{safe_detail(exc)}",
+                "backup": "",
+            }
+        self._info("整库恢复完成：%s", info)
+        return {
+            "ok": True,
+            "restored_from": info.get("restored_from", ""),
+            "backup": info.get("backup", ""),
+            "schema_version": info.get("schema_version"),
+            "message": (
+                "整库恢复完成：已用快照覆盖当前数据库并重新连接、跑完迁移。"
+                "原库已另存为 pre-restore 备份，如发现不对可整库回退。"
+            ),
+        }
+
+    def _resolve_snapshot_path(self, source: str) -> Path | None:
+        """校验快照路径：必须落在 ``backups/`` 目录内且是 ``.db`` 文件。"""
+        service = self._backup_service
+        if service is None or self._data_dir is None:
+            return None
+        raw = str(source or "").strip()
+        if not raw:
+            # 未指定时取最近一次导入落盘的快照
+            candidates = sorted(
+                service.backup_dir.glob("restored-*.db"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+            return candidates[0] if candidates else None
+        candidate = Path(raw)
+        try:
+            resolved = candidate.resolve()
+            root = service.backup_dir.resolve()
+        except OSError:
+            return None
+        if resolved.parent != root or resolved.suffix != ".db" or not resolved.is_file():
+            return None
+        return resolved
+
+    async def _restore_legacy_backup(
+        self, raw: bytes, preview: Any, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """旧格式（format 1）备份包：按 ``data/*.json`` 尽力恢复。
+
+        旧包是按类挑着导的（记忆 / 现实桥 / 每周总结有导入管线，其余只有可读视图），
+        因此这里只回灌这三类，并把「剩下的请用包内数据库快照整库恢复」说清楚——
+        不假装整包恢复成功。
+        """
+        snapshot = await self._backup_database_file()
+        result["backup"] = str(snapshot) if snapshot else ""
+        result["legacy"] = True
+
+        handlers: dict[str, Any] = {
+            "memories": self.panel_memory_import,
+            "journals": self.panel_journal_import,
+            "weeklies": self.panel_weekly_import,
+        }
+        imported: dict[str, Any] = {}
+        rows = 0
+        for key, items in preview.legacy_views.items():
+            handler = handlers.get(key)
+            if handler is None:
+                continue
+            try:
+                outcome = await handler(items)
+            except Exception as exc:
+                imported[key] = {"ok": False, "message": safe_detail(exc)}
+                continue
+            imported[key] = {"ok": True, **outcome}
+            rows += int(outcome.get("imported") or 0)
+        result["tables"] = imported
+        result["rows_written"] = rows
+        result["warnings"] = [*result["warnings"], *preview.notes]
+
+        reindex_note = ""
+        if self._memory_service is not None:
+            try:
+                stats = await self._memory_service.reindex_keywords()
+                reindex_note = f"关键词索引重建 {stats.get('indexed', 0)} 条"
+            except Exception as exc:
+                self._warn("恢复后重建关键词索引失败：%s", safe_detail(exc))
+        result["reindex"] = reindex_note
+        result["config"] = await self._restore_config_from_backup(raw)
+        result["database"] = await self._stash_database_from_backup(raw)
+
+        head = (
+            f"导入完成（旧格式 format 1 包）：按视图恢复 {rows} 条"
+            + ("，配置已热应用" if result["config"].get("ok") else "")
+        )
+        snapshot_ready = bool(str(result["database"].get("saved_to") or "").strip())
+        if snapshot_ready:
+            # 有库快照：包内数据本身没导出风格/图谱/待审，但整库替换能把它们一起还原
+            result["can_replace_database"] = True
+            result["message"] = (
+                head
+                + "。该备份未导出风格 / 图谱 / 待审等表；包内**有**数据库快照，"
+                "完整恢复请用「整库恢复」（用快照替换当前数据库，含这些未导出的表与运行态）"
+            )
+        else:
+            result["can_replace_database"] = False
+            result["message"] = (
+                head
+                + "。该备份未导出风格 / 图谱 / 待审等表，且包内无数据库快照，"
+                "这些数据无法从此备份恢复；请用新版重新导出一份全量备份（format 2）"
+            )
+        self._info("旧格式备份包恢复完成：%s", result["message"])
+        return result
+
+    async def _restore_config_from_backup(self, raw: bytes) -> dict[str, Any]:
+        """从包内 ``config/plugin_config.json`` 恢复配置（Schema 校验后热应用）。"""
+        import io
+        import zipfile
+
+        if self._backup_service is None:
+            return {"ok": False, "message": "备份服务未就绪"}
+        entry = "config/plugin_config.json"
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                if entry not in set(archive.namelist()):
+                    return {"ok": False, "message": "备份包内没有配置"}
+                payload = json.loads(archive.read(entry).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
+            return {"ok": False, "message": f"配置解析失败：{safe_detail(exc)}"}
+        if isinstance(payload, dict) and isinstance(payload.get("config"), dict):
+            payload = payload["config"]  # 兼容 config_export 的完整信封
+        try:
+            return await self.config_import(payload)
+        except Exception as exc:  # 配置导入失败不应阻断数据恢复
+            self._warn("备份包配置导入失败：%s", safe_detail(exc))
+            return {"ok": False, "message": f"配置导入失败：{safe_detail(exc)}"}
+
+    async def _stash_database_from_backup(self, raw: bytes) -> dict[str, Any]:
+        """把包内数据库另存到 ``backups/``，供停用插件后手动整库替换。"""
+        import io
+        import zipfile
+
+        service = self._backup_service
+        if service is None or self._data_dir is None:
+            return {"saved_to": "", "message": "数据目录未知，未保存数据库快照"}
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = self._data_dir / service.BACKUP_DIR_NAME / f"restored-{stamp}.db"
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                if service.DB_ENTRY not in set(archive.namelist()):
+                    return {"saved_to": "", "message": "备份包内没有数据库快照"}
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(service.DB_ENTRY))
+        except (OSError, zipfile.BadZipFile) as exc:
+            return {"saved_to": "", "message": f"数据库快照保存失败：{safe_detail(exc)}"}
+        live = self._db.path.name if self._db is not None else "super_astrbot.db"
+        return {
+            "saved_to": str(target),
+            "message": f"数据库快照已另存（未覆盖运行中的库）。整库恢复：停用插件 → 用它覆盖 {live} → 启用插件。",
+        }
+
+    async def panel_journal_import(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """导入记录：走同一写入路径（记录 + 记忆联动），保留标题、类型、时间与标签。"""
+        service = self._journal_service_or_error()
+        imported, skipped = 0, 0
+        for item in items[:10_000]:
+            if not isinstance(item, dict):
+                skipped += 1
+                continue
+            content = str(item.get("content") or "").strip()
+            if not content:
+                skipped += 1
+                continue
+            scope = self._parse_scope_key(
+                str(item.get("scope") or f"{item.get('scope_type') or 'global'}:{item.get('scope_id') or '*'}")
+            )
+            tags = item.get("tags")
+            if isinstance(tags, str):
+                try:
+                    tags = json.loads(tags)
+                except (TypeError, ValueError):
+                    tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+            result = await service.add(
+                scope,
+                content,
+                title=item.get("title"),
+                entry_type=self._journal_entry_type(item),
+                tags=tags if isinstance(tags, list) else None,
+                emotion=item.get("emotion"),
+                event_time=float(item["event_time"]) if item.get("event_time") else None,
+                created_at=_optional_float(item.get("created_at")),
+                identity=MemoryIdentity(
+                    sender_id=str(item.get("sender_id") or ""),
+                    sender_name=str(item.get("sender_name") or ""),
+                    origin_umo=str(item.get("origin_umo") or ""),
+                ),
+            )
+            if result is None:
+                skipped += 1
+            else:
+                imported += 1
+        return {"ok": True, "imported": imported, "skipped": skipped}
+
+    # ------------------------------------------------------------------ #
+    # 每周总结（周度洞察产出，独立于周记管理）
+    # ------------------------------------------------------------------ #
+
+    def _memory_or_error(self) -> MemoryService:
+        service = self.memory
+        if service is None:
+            raise RuntimeError("记忆服务未就绪")
+        return service
+
+    async def weeklies_page(
+        self, *, offset: int = 0, limit: int = 20, keyword: str = ""
+    ) -> dict[str, Any]:
+        memory = self._memory_or_error()
+        items = await memory.list_weeklies(offset=offset, limit=limit, keyword=keyword)
+        total = await memory.count_weeklies(keyword=keyword)
+        return {
+            "items": [
+                {
+                    "id": item.id,
+                    "content": item.content,
+                    "kind": item.kind,
+                    "importance": item.importance,
+                    "scope": f"{item.scope_type}:{item.scope_id}",
+                    "created_at": item.created_at,
+                }
+                for item in items
+            ],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+
+    async def panel_weekly_delete(self, memory_id: int) -> dict[str, Any]:
+        memory = self._memory_or_error()
+        deleted = await memory.delete([int(memory_id)])
+        return {"ok": deleted > 0, "message": "已删除" if deleted else "条目不存在"}
+
+    async def panel_weekly_update(self, memory_id: int, content: str) -> dict[str, Any]:
+        """面板编辑每周总结。
+
+        每周总结就是 ``memories`` 里 ``source='weekly_reflection'`` 的行，
+        因此与编辑记忆共用同一条写入路径（含索引重建），不另立分支。
+        """
+        memory = self._memory_or_error()
+        ok = await memory.update_content(int(memory_id), content)
+        return {"ok": ok, "message": "已保存" if ok else "记录不存在或内容为空"}
+
+    async def panel_weekly_export(self) -> list[dict[str, Any]]:
+        memory = self._memory_or_error()
+        return await memory.export_weeklies()
+
+    async def panel_weekly_import(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """导入每周总结：以 ``source=weekly_reflection`` 写回记忆，保留作用域/重要度/标签。"""
+        memory = self._memory_or_error()
+        imported, skipped = 0, 0
+        for item in items[:10_000]:
+            if not isinstance(item, dict):
+                skipped += 1
+                continue
+            content = str(item.get("content") or "").strip()
+            if not content:
+                skipped += 1
+                continue
+            scope = self._parse_scope_key(str(item.get("scope") or "global:*"))
+            tags = item.get("tags")
+            if isinstance(tags, str):
+                try:
+                    tags = json.loads(tags)
+                except (TypeError, ValueError):
+                    tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+            try:
+                importance = float(item.get("importance") or 0.75)
+            except (TypeError, ValueError):
+                importance = 0.75
+            await memory.remember_text(
+                scope,
+                content,
+                kind=str(item.get("kind") or "insight"),
+                importance=max(0.0, min(1.0, importance)),
+                confidence=0.95,
+                source=SOURCE_WEEKLY,
+                tags=tags if isinstance(tags, list) else None,
+                created_at=_optional_float(item.get("created_at")),
+                updated_at=_optional_float(item.get("updated_at")),
+            )
+            imported += 1
+        return {"ok": True, "imported": imported, "skipped": skipped}
+
     # 功能开关（控制台）
     # ------------------------------------------------------------------ #
 
@@ -899,6 +1989,13 @@ class SuperAstrBotApp:
         """列出全部功能及其状态，供控制台渲染开关。"""
         from .spec.capabilities import CAPABILITIES, as_bool, get_path
 
+        try:
+            settings_map = self.feature_setting_specs()
+        except Exception as exc:  # noqa: BLE001 - 设置派生失败只降级为纯开关，不能拖垮功能清单
+            from .spec.errors import safe_detail
+
+            self._warn("功能设置清单派生失败，已降级为纯开关：%s", safe_detail(exc))
+            settings_map = {}
         catalog: list[dict[str, Any]] = []
         for item in CAPABILITIES:
             runtime_blocked = self._capability_overrides.get(item.key) is False
@@ -922,9 +2019,147 @@ class SuperAstrBotApp:
                     "status": self._capability_status(
                         item.key, runtime_blocked, item.hot_reloadable
                     ),
+                    "settings": settings_map.get(item.key, []),
                 }
             )
         return catalog
+
+    def _schema_fields(self) -> dict[str, dict[str, Any]]:
+        """摊平运行时 schema（``AstrBotConfig.schema``，含热注入的 options）。
+
+        Returns:
+            ``{点号路径: 字段声明}``；schema 不可用时返回空 dict（功能页退化为纯开关）。
+        """
+        schema = getattr(self._config, "schema", None)
+        if not isinstance(schema, dict):
+            return {}
+        fields: dict[str, dict[str, Any]] = {}
+
+        def walk(node: Any, prefix: str) -> None:
+            for key, field in node.items():
+                if not isinstance(field, dict) or "type" not in field:
+                    continue
+                path = f"{prefix}{key}"
+                fields[path] = field
+                if field.get("type") == "object":
+                    walk(field.get("items") or {}, path + ".")
+
+        walk(schema, "")
+        return fields
+
+    def feature_setting_specs(self) -> dict[str, list[dict[str, Any]]]:
+        """把每个功能开关的「具体设置」归到该开关名下（与插件配置页同一份 schema）。
+
+        归属规则：
+        - 路径以 ``开关key + "_"`` 开头 → 归该开关（如 ``persona.style_*`` → ``persona.style``）；
+        - 其余同分节的非开关项 → 归该分节的主能力（分节里第一个能力，通常是 ``*.enabled``）；
+        - 无能力分节（``prompts`` / ``runtime``）不进功能页，仍由插件配置页管理。
+
+        每次实时读取配置值，因此官方配置页改动后，下一次拉取即反映（双向同步的读取向）。
+        """
+        from .spec.capabilities import CAPABILITIES, get_path
+
+        fields = self._schema_fields()
+        switches = {item.key for item in CAPABILITIES}
+        primary: dict[str, str] = {}
+        for item in CAPABILITIES:
+            primary.setdefault(item.key.split(".")[0], item.key)
+
+        result: dict[str, list[dict[str, Any]]] = {item.key: [] for item in CAPABILITIES}
+        for path, field in fields.items():
+            if path in switches or "." not in path:
+                continue
+            section = path.split(".", 1)[0]
+            if section not in primary:
+                continue
+            target = next(
+                (
+                    item.key
+                    for item in CAPABILITIES
+                    if path.startswith(item.key + "_")
+                ),
+                None,
+            )
+            if target is None:
+                target = primary[section]
+            value = get_path(self._config, path, field.get("default"))
+            result[target].append(
+                {
+                    "key": path,
+                    "type": field.get("type", "string"),
+                    "default": field.get("default"),
+                    "description": field.get("description", ""),
+                    "hint": field.get("hint", ""),
+                    "options": field.get("options"),
+                    "labels": field.get("labels"),
+                    "value": value,
+                }
+            )
+        return result
+
+    async def set_feature_setting(self, key: str, value: Any) -> dict[str, Any]:
+        """修改某个功能的具体设置：按 schema 类型收敛取值 → 写配置 → 落盘。
+
+        只允许写入 ``feature_setting_specs`` 派生出来的白名单路径，防止任意路径注入。
+        """
+        from .spec.capabilities import (
+            as_bool,
+            as_float,
+            as_int,
+            as_str,
+            set_path,
+        )
+
+        spec = next(
+            (
+                item
+                for items in self.feature_setting_specs().values()
+                for item in items
+                if item["key"] == key
+            ),
+            None,
+        )
+        if spec is None:
+            return {"ok": False, "message": f"未知配置项：{key}"}
+
+        ftype = spec.get("type")
+        if ftype == "bool":
+            coerced = as_bool(value, as_bool(spec.get("default"), False))
+        elif ftype == "int":
+            coerced = as_int(value, as_int(spec.get("default"), 0))
+        elif ftype == "float":
+            coerced = as_float(value, as_float(spec.get("default"), 0.0))
+        elif ftype == "string":
+            coerced = as_str(value)
+            options = spec.get("options")
+            if options and coerced and coerced not in options:
+                return {"ok": False, "message": "取值不在可选项中"}
+        elif ftype == "list":
+            if isinstance(value, str):
+                coerced = [
+                    part.strip()
+                    for part in str(value).replace("，", ",").split(",")
+                    if part.strip()
+                ]
+            elif isinstance(value, list):
+                coerced = [str(item) for item in value]
+            else:
+                return {"ok": False, "message": "列表取值不合法"}
+        else:
+            return {"ok": False, "message": f"面板暂不支持编辑 {ftype} 类型"}
+
+        if not set_path(self._config, key, coerced):
+            return {"ok": False, "message": "写入配置失败（配置结构异常）"}
+
+        persisted = await self._persist_config()
+        message = "已保存" + ("" if persisted else "；配置落盘失败，重启后可能回到原值")
+        return {
+            "ok": True,
+            "key": key,
+            "value": coerced,
+            "persisted": persisted,
+            "message": message,
+        }
 
     def _capability_status(self, key: str, runtime_blocked: bool, hot: bool) -> str:
         if not hot:
@@ -1023,6 +2258,7 @@ class SuperAstrBotApp:
         self._state_store = SqliteStateStore(db)
         self._memories = MemoryRepository(db)
         self._journals_repo = JournalRepository(db)
+        self._identities_repo = IdentityRepository(db)
         self._reflections_repo = ReflectionRepository(db)
         self._reviews_repo = ReviewRepository(db)
         self._style_repo = StyleRepository(db)
@@ -1068,6 +2304,65 @@ class SuperAstrBotApp:
 
         self._info("Harness 就绪：%s", self._harness.describe())
         return True
+
+    def _build_backup_service(self) -> BackupService:
+        """装配备份服务：数据走「全表导出」，面板已有的导出视图作为可读副本一并打包。
+
+        职责划分：**表导出**（完整字段，恢复读它）由 ``Database`` 提供；**视图**
+        （语义化 JSON，供人看与跨插件同步）复用面板已有的导出方法，避免另写一套 SQL
+        造成两处漂移。
+        """
+        data_dir = self._data_dir
+        assert data_dir is not None
+
+        async def _persona() -> dict[str, Any]:
+            service = self.persona_service
+            if service is None:
+                return {}
+            snapshot = service.snapshot()
+            limit = 500
+            return {
+                "enabled": snapshot,
+                "style": await service.all_style_patterns(limit=limit),
+                "jargon": await service.all_jargons(limit=limit),
+                "affinity": await service.all_affinity(limit=limit),
+            }
+
+        async def _graph() -> dict[str, Any]:
+            service = self.graph_service
+            if service is None:
+                return {}
+            data = await service.snapshot(limit_nodes=1000, limit_edges=2000)
+            data["stats"] = await service.stats()
+            return data
+
+        async def _reviews() -> list[dict[str, Any]]:
+            return await self.pending_reviews_all(limit=5000)
+
+        async def _identities() -> dict[str, Any]:
+            memory = self.memory
+            if memory is None:
+                return {}
+            return await memory.identity_observations(limit=1000)
+
+        views: dict[str, Any] = {
+            "memories": self.panel_memory_export,
+            "journals": self.panel_journal_export,
+            "weeklies": self.panel_weekly_export,
+            "reviews": _reviews,
+            "identities": _identities,
+            "persona": _persona,
+            "graph": _graph,
+        }
+        return BackupService(
+            data_dir=data_dir,
+            db=self._db,
+            views=views,
+            config_provider=self.config_export,
+            plugin_version=str(__version__ or ""),
+            schema_version=CURRENT_VERSION,
+            logger=self._logger,
+        )
 
     def _setup_services(self) -> None:
         assert self._db is not None and self._harness is not None
@@ -1151,6 +2446,7 @@ class SuperAstrBotApp:
             journals=self._journals_repo,
             injector=self._harness.injector,
             embedding=self._harness.embedding,
+            identities=self._identities_repo,
             logger=self._logger,
         )
         self._journal_service = JournalService(
@@ -1159,6 +2455,7 @@ class SuperAstrBotApp:
             memory_service=self._memory_service,
             logger=self._logger,
         )
+        self._backup_service = self._build_backup_service()
         self._reflection_service = ReflectionService(
             config=self._reflection_config,
             memory_service=self._memory_service,
@@ -1551,7 +2848,7 @@ class SuperAstrBotApp:
         if self._enabled("memory.capture"):
             self._capture_user_message(view)
 
-        scope = self._scope_for(view)
+        scope = self.memory_scope_for(view)
         try:
             result = await self._memory_service.recall(scope, view.text)
         except Exception as exc:  # 召回失败不影响对话
@@ -1576,15 +2873,42 @@ class SuperAstrBotApp:
         if inject_result.applied:
             record(METRIC_INJECT_BLOCKS, count=max(1, int(inject_result.parts or 1)))
             record(METRIC_INJECT_CHARS, total=float(inject_result.chars or 0))
-            self._debug(
-                "注入 %s 条记忆（%s，%s 字符，%s）",
-                len(result.items),
-                inject_result.method,
-                inject_result.chars,
-                result.route_summary,
+            if inject_result.fallback:
+                record(METRIC_INJECT_FALLBACKS)
+            self._log_injection(
+                method=inject_result.method,
+                items=len(result.items),
+                chars=inject_result.chars,
+                route=result.route_summary,
+                fallback=inject_result.fallback,
             )
         else:
-            self._debug("记忆未注入：%s", inject_result.reason)
+            self._warn("记忆未注入：%s", inject_result.reason)
+
+    def _log_injection(
+        self, *, method: str, items: int, chars: int, route: str, fallback: bool
+    ) -> None:
+        """记录一次记忆注入；同一方式只报一次（info/warning），之后降为 debug。
+
+        注入是每轮对话都会发生的事，逐次 info 会淹没日志；但完全不报又会让
+        「注入有没有生效、走的哪条路」无从核对。折中：方式首次出现时显式记录，
+        后续同类降到 debug，持续计数交给 ``inject.*`` 指标。
+        """
+        if method in self._injection_methods:
+            self._debug("注入 %s 条记忆（%s，%s 字符，%s）", items, method, chars, route)
+            return
+        self._injection_methods.add(method)
+        if fallback:
+            self._warn(
+                "记忆注入（%s，已降级）：%s 条 / %s 字符；检索路 %s。"
+                "临时内容块不可用时回退系统提示词，记忆仍生效但会占用系统提示词位。",
+                method,
+                items,
+                chars,
+                route,
+            )
+            return
+        self._info("记忆注入（%s）：%s 条 / %s 字符；检索路 %s", method, items, chars, route)
 
     async def _govern_context(self, view: EventView, request: Any) -> None:
         """请求级上下文治理：仅在估算超过阈值时动手。"""
@@ -1709,7 +3033,7 @@ class SuperAstrBotApp:
             await self._learn_style(view, reply)
         if not self._enabled("memory.capture") or not reply:
             return
-        self._queue_buffer(view, f"助手：{truncate(reply, 500)}")
+        self._queue_buffer(view, f"我：{truncate(reply, 500)}")
 
     def _note_activity(self, view: EventView, *, reply_text: str = "") -> None:
         """记录会话活动（供主动交互判断静默）与 Bot 发言（供群聊话题延续）。"""
@@ -1738,24 +3062,74 @@ class SuperAstrBotApp:
         """把缓冲写入放到后台，避免阻塞对话主链路。
 
         显式传入事件时间戳，保证即使执行顺序有抖动，缓冲顺序仍然正确。
+        顺带记录一次身份观测（同一后台任务，不额外增加主链路耗时）。
         """
         if self._scope is None or self._memory_service is None:
             return
-        scope = self._scope_for(view)
+        scope = self.memory_scope_for(view)
+        identity = MemoryIdentity.from_view(view)
         timestamp = view.timestamp or time.time()
 
         async def _task() -> None:
             try:
-                await self._memory_service.buffer_episode(scope, line, now=timestamp)
+                await self._memory_service.buffer_episode(
+                    scope, line, now=timestamp, identity=identity
+                )
                 record(METRIC_MEMORY_WRITES)
             except Exception as exc:
                 self._warn("写入对话缓冲失败：%s", safe_detail(exc))
+            await self._observe_identity(view, scope)
 
         self._scope.spawn(_task(), name="buffer")
 
-    def _scope_for(self, view: EventView) -> MemoryScope:
-        scope_type = self._memory_config.default_scope if self._memory_config else ScopeType.SESSION
-        return MemoryScope.from_event(scope_type, umo=view.umo, user_id=view.sender_id or "unknown")
+    async def _observe_identity(self, view: EventView, scope: MemoryScope) -> None:
+        """记录「这条会话上出现过哪个发送者」，用于判定平台标识是否稳定。
+
+        观测是纯旁路：失败只记 debug 日志，绝不冒泡到对话链路。
+        """
+        if self._memory_service is None or not self._enabled("memory.enabled"):
+            return
+        if not self._identity_tracking_enabled():
+            return
+        await self._memory_service.observe_identity(
+            umo=view.umo,
+            platform=view.platform,
+            sender_id=view.sender_id,
+            sender_name=view.sender_name,
+            scope=scope,
+            user_key=scope.scope_id,
+            now=view.timestamp or time.time(),
+        )
+
+    def _identity_tracking_enabled(self) -> bool:
+        """身份观测开关（默认开：观测是旁路写入，用于判定平台标识是否稳定）。"""
+        from .spec.capabilities import get_path
+
+        return bool(get_path(self._config, "basic.identity_tracking", True))
+
+    def memory_scope_for(self, view: EventView) -> MemoryScope:
+        """按配置的作用域类型与身份策略解析作用域。
+
+        这是「跨会话识别用户」的落点：``default_scope=user`` 时，作用域键取自
+        ``identity_strategy`` 指定的稳定标识（平台 ID / 昵称 / 自动回退），
+        而不是会随连接变化的会话 ``umo``。
+        """
+        config = self._memory_config
+        scope_type = config.default_scope if config else ScopeType.SESSION
+        if scope_type is not ScopeType.USER:
+            return MemoryScope.from_event(scope_type, umo=view.umo, user_id=view.sender_id or "")
+        resolved = self.resolve_user_identity(view)
+        return MemoryScope.for_user(resolved.user_key)
+
+    def resolve_user_identity(self, view: EventView) -> ResolvedIdentity:
+        """按身份策略解析用户键（诊断与面板共用同一份逻辑）。"""
+        config = self._memory_config
+        strategy = config.identity_strategy if config else DEFAULT_IDENTITY_STRATEGY
+        return resolve_identity(
+            sender_id=view.sender_id,
+            sender_name=view.sender_name,
+            strategy=strategy,
+        )
 
     # ------------------------------------------------------------------ #
     # 调度任务
@@ -1795,6 +3169,12 @@ class SuperAstrBotApp:
             self._warn("枚举待反思作用域失败：%s", safe_detail(exc))
             return
 
+        if not scopes:
+            self._debug("没有待反思的作用域")
+            return
+
+        eligible = 0
+        skipped: list[str] = []
         for scope_type, scope_id in scopes:
             scope = MemoryScope(ScopeType.parse(scope_type), scope_id)
             try:
@@ -1803,9 +3183,38 @@ class SuperAstrBotApp:
                 self._warn("反思条件判定失败（%s）：%s", scope.key, safe_detail(exc))
                 continue
             if not should:
-                self._debug("反思跳过（%s）：%s", scope.key, reason)
+                skipped.append(f"{scope.key}（{reason}）")
                 continue
+            eligible += 1
             await self._run_reflection(scope, reason)
+
+        self._log_reflection_scan(eligible, skipped)
+
+    def _log_reflection_scan(self, eligible: int, skipped: list[str]) -> None:
+        """输出本次反思扫描的结论（含跳过原因）。
+
+        「为什么没反思」必须是后台可见的事实，而不是只能靠开 ``basic.debug_log`` 猜：
+        有作用域达标时逐次记录（反思本身低频），全部跳过时按 ``_REFLECTION_SKIP_LOG_INTERVAL``
+        节流，避免每轮扫描都刷同样一行。
+        """
+        if not skipped:
+            self._info("反思扫描：%s 个作用域达标，全部执行", eligible)
+            return
+
+        detail = "；".join(skipped[:_REFLECTION_SKIP_DETAIL_MAX])
+        if len(skipped) > _REFLECTION_SKIP_DETAIL_MAX:
+            detail += f"；…另有 {len(skipped) - _REFLECTION_SKIP_DETAIL_MAX} 个"
+        if eligible:
+            self._info("反思扫描：%s 个作用域达标、%s 个跳过 → %s", eligible, len(skipped), detail)
+            self._reflection_skip_logged_at = time.time()
+            return
+
+        now = time.time()
+        if now - self._reflection_skip_logged_at < _REFLECTION_SKIP_LOG_INTERVAL:
+            self._debug("反思扫描：%s 个作用域全部跳过 → %s", len(skipped), detail)
+            return
+        self._reflection_skip_logged_at = now
+        self._info("反思扫描：%s 个作用域全部跳过 → %s", len(skipped), detail)
 
     async def _run_reflection(self, scope: MemoryScope, reason: str) -> None:
         assert self._reflection_service is not None
@@ -1819,7 +3228,10 @@ class SuperAstrBotApp:
         except Exception as exc:
             self._warn("反思执行异常（%s）：%s", scope.key, safe_detail(exc))
             return
-        self._info("反思（%s）：%s", scope.key, outcome.summary())
+        if outcome.error:
+            self._warn("反思（%s）：%s", scope.key, outcome.summary())
+        else:
+            self._info("反思（%s）：%s", scope.key, outcome.summary())
         if outcome.produced:
             record(METRIC_MEMORY_WRITES, count=int(outcome.produced))
 
@@ -2079,6 +3491,29 @@ class SuperAstrBotApp:
             "state": self._retriever.rerank_note if self._retriever is not None else "未启用",
         }
 
+    async def _identity_status(self) -> dict[str, Any]:
+        """身份与作用域的现状摘要（``/sab status`` 与面板共用）。"""
+        config = self._memory_config
+        summary: dict[str, Any] = {
+            "scope_type": config.default_scope.value if config else "session",
+            "strategy": config.identity_strategy if config else DEFAULT_IDENTITY_STRATEGY,
+            "tracking": self._identity_tracking_enabled(),
+            "umo_count": 0,
+            "hint": "",
+        }
+        if self._memory_service is None:
+            return summary
+        try:
+            report = await self._memory_service.identity_observations(limit=200)
+        except Exception as exc:
+            summary["hint"] = f"身份观测读取失败：{safe_detail(exc)}"
+            return summary
+        analysis = report.get("analysis") or {}
+        summary["umo_count"] = len(report.get("items") or [])
+        summary["verdict"] = analysis.get("verdict", "empty")
+        summary["hint"] = analysis.get("hint", "")
+        return summary
+
     async def status(self, *, umo: str = "") -> dict[str, Any]:
         """汇总运行状态，供命令与面板使用。
 
@@ -2132,6 +3567,7 @@ class SuperAstrBotApp:
             monitor = await self._monitor_service.snapshot()
         maibot = self._maibot_service.snapshot() if self._maibot_service is not None else {}
         rerank = self._rerank_status()
+        identity = await self._identity_status()
         if umo:
             if self._group_service is not None:
                 group = {**group, "session": self._group_service.session_snapshot(umo)}
@@ -2167,6 +3603,7 @@ class SuperAstrBotApp:
             "monitor": monitor,
             "maibot": maibot,
             "rerank": rerank,
+            "identity": identity,
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,
             "database": str(self._db.path) if self._db is not None else "",
             "fts": bool(self._db.fts_available) if self._db is not None else False,

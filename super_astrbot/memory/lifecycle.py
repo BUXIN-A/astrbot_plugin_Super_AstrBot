@@ -85,8 +85,14 @@ class MemoryLifecycle:
         """写入一条记忆，返回记忆 ID。
 
         即使索引/向量失败也会返回 ID（记忆本体已落库），并留给启动修复补全。
+
+        时间戳：``draft.created_at`` 非空时按原值落库（导入历史数据用），
+        否则取当前时刻；索引与图谱的记账时间始终用「本次写入时刻」——
+        索引是刚刚才建好的，记成历史时间会误导后续的增量维护。
         """
         now = time.time()
+        created_at = float(draft.created_at) if draft.created_at else now
+        updated_at = float(draft.updated_at) if draft.updated_at else created_at
         op_id = f"mem-add-{uuid4().hex[:12]}"
         await self._begin_op(op_id, draft)
 
@@ -99,8 +105,14 @@ class MemoryLifecycle:
             confidence=draft.confidence,
             source=draft.source,
             tags=draft.tags,
-            created_at=now,
+            created_at=created_at,
             status=draft.status,
+            sender_id=draft.sender_id,
+            sender_name=draft.sender_name,
+            origin_umo=draft.origin_umo,
+            updated_at=updated_at,
+            last_access_at=draft.last_access_at,
+            access_count=draft.access_count,
         )
 
         try:
@@ -118,14 +130,6 @@ class MemoryLifecycle:
         except Exception as exc:  # 索引失败不影响记忆本体可用
             self._warn("记忆 %s 的索引/向量写入失败，将在启动时修复：%s", memory_id, exc)
         return memory_id
-
-    async def add_many(self, drafts: Sequence[MemoryDraft]) -> list[int]:
-        """批量写入（逐条走 add 以保证索引与日志语义一致）。"""
-        ids: list[int] = []
-        for draft in drafts:
-            ids.append(await self.add(draft))
-        return ids
-
     async def _apply_indexes(
         self,
         memory_id: int,
@@ -330,6 +334,65 @@ class MemoryLifecycle:
                             at=moment,
                         )
                         stats["vectorized"] += 1
+            if len(rows) < _MAINTENANCE_BATCH:
+                break
+        return stats
+
+    async def refresh_indexes(
+        self, memory_id: int, content: str, *, now: float | None = None
+    ) -> bool:
+        """重建**单条**记忆的索引（关键词 + 向量），用于面板编辑正文之后。
+
+        与 ``reindex()`` 的区别：只处理这一条，不扫全表、不动图谱，避免「改一句话」
+        触发整作用域重新嵌入。
+
+        关键词必须写**分词后**的文本：``index_tokens`` 把入参原样写进 tokens 列，
+        写原始正文会让 unicode61 把整段中文当成一个词，这条记忆此后基本检索不到。
+        """
+        text = (content or "").strip()
+        if not text:
+            return False
+        moment = now if now is not None else time.time()
+        target = int(memory_id)
+        await self._memories.index_tokens(target, " ".join(tokenize(text)))
+        if self._vector_ready():
+            vector = await self._embedding.embed(text)  # type: ignore[union-attr]
+            if vector:
+                await self._vectors.upsert(
+                    target,
+                    self._embedding.fingerprint(),  # type: ignore[union-attr]
+                    vector,
+                    at=moment,
+                )
+        return True
+
+    async def reindex_keywords(self, *, clear: bool = False) -> dict[str, int]:
+        """只重建关键词（FTS）索引，不触碰向量。
+
+        全表回灌备份时用：行是直接写进表的，绕过了写入管线，FTS 不会自己更新；
+        而向量表本身已经随包回灌，没必要再花一次嵌入调用重算。
+
+        ``clear=True`` 用于**覆盖恢复**：先把整张 FTS 清空再重建——旧 token 挂在新行上
+        会让检索命中错内容，这是「清了没灌上」之外另一种静默错乱。
+        """
+        stats = {"indexed": 0, "skipped": 0, "cleared": 0}
+        if clear:
+            stats["cleared"] = await self._memories.clear_index()
+        after_id = 0
+        while True:
+            rows = await self._memories.list_maintenance_after(
+                status=STATUS_ACTIVE, after_id=after_id, limit=_MAINTENANCE_BATCH
+            )
+            if not rows:
+                break
+            for row in rows:
+                item = MemoryItem.from_row(row)
+                after_id = item.id
+                if not item.content.strip():
+                    stats["skipped"] += 1
+                    continue
+                await self._memories.index_tokens(item.id, " ".join(tokenize(item.content)))
+                stats["indexed"] += 1
             if len(rows) < _MAINTENANCE_BATCH:
                 break
         return stats

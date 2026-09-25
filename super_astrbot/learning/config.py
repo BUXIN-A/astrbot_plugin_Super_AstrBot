@@ -16,11 +16,16 @@ VALID_MODES = (MODE_ROUNDS, MODE_INTERVAL, MODE_BOTH)
 
 @dataclass
 class ReflectionConfig:
-    """反思参数。"""
+    """反思参数。
+
+    默认值刻意偏「容易触发」：``mode=both`` 让时间间隔成为兜底，``trigger_rounds=12``
+    让缓冲按会话分片时也够得着（默认 ``basic.default_scope=session``，单会话峰值通常十几条）。
+    早期默认 ``rounds`` + 30 的组合会让单作用域阈值实际等于 30，反思长期不触发。
+    """
 
     enabled: bool = True
-    mode: str = MODE_ROUNDS
-    trigger_rounds: int = 30
+    mode: str = MODE_BOTH
+    trigger_rounds: int = 12
     interval_minutes: int = 720
     provider_id: str = ""
     min_messages: int = 8
@@ -37,9 +42,9 @@ class ReflectionConfig:
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "ReflectionConfig":
-        mode = as_str(get_path(config, "reflection.mode", MODE_ROUNDS))
+        mode = as_str(get_path(config, "reflection.mode", MODE_BOTH))
         if mode not in VALID_MODES:
-            mode = MODE_ROUNDS
+            mode = MODE_BOTH
         base_timeout = as_int(
             get_path(config, "runtime.llm_timeout_seconds", 45), 45, low=5, high=300
         )
@@ -47,7 +52,7 @@ class ReflectionConfig:
             enabled=as_bool(get_path(config, "reflection.enabled", True), True),
             mode=mode,
             trigger_rounds=as_int(
-                get_path(config, "reflection.trigger_rounds", 30), 30, low=2, high=1000
+                get_path(config, "reflection.trigger_rounds", 12), 12, low=2, high=1000
             ),
             interval_minutes=as_int(
                 get_path(config, "reflection.interval_minutes", 720), 720, low=1, high=10080

@@ -154,7 +154,10 @@ def create_harness(
     rerank = AstrBotRerankGateway(context, host, provider_id=rerank_provider_id)
     injector = AstrBotInjector(host)
     persona_injector = AstrBotInjector(
-        host, block_start=PERSONA_BLOCK_START, block_end=PERSONA_BLOCK_END
+        host,
+        block_start=PERSONA_BLOCK_START,
+        block_end=PERSONA_BLOCK_END,
+        label="拟人化学习",
     )
     return Harness(
         host=host,

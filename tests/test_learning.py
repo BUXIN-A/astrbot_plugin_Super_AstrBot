@@ -7,12 +7,33 @@ from pathlib import Path
 
 from super_astrbot.harness.protocols import LlmResult
 from super_astrbot.learning import ReflectionConfig, ReflectionService
-from super_astrbot.learning.prompts import parse_insights
+from super_astrbot.learning.prompts import (
+    build_reflection_prompt,
+    build_weekly_prompt,
+    parse_insights,
+)
 from super_astrbot.spec.errors import LlmError
 from super_astrbot.spec.scopes import MemoryScope, ScopeType
 from super_astrbot.storage import ReflectionRepository, ReviewRepository
 
 from .helpers import build_stack
+
+
+def test_reflection_prompt_explains_first_person_bot_lines() -> None:
+    """记忆里 Bot 的发言以「我：」记录，提示词必须说清「我」是谁。
+
+    前缀从「助手：」改成「我：」后，「我」不再自解释：若不说明，模型可能把
+    Bot 自己的话当成用户说的，产出「用户说……（其实是 Bot 说的）」这类错误记忆。
+    """
+    prompt = build_reflection_prompt("[09-25 00:57] 我：……嗯", max_facts=3)
+    assert "「我」" in prompt
+    assert "用户(昵称)" in prompt
+
+
+def test_weekly_prompt_stays_free_of_transcript_convention() -> None:
+    """周度洞察读的是用户自己写的周记，不能被「『我』是 Bot」的约定污染。"""
+    prompt = build_weekly_prompt("今天我和朋友去爬山", max_facts=3)
+    assert "「我」" not in prompt
 
 
 class FakeLlm:
@@ -103,6 +124,105 @@ def test_should_run_respects_buffer_threshold(tmp_path: Path) -> None:
     assert "不足" in reason_few
     assert enough is True
     assert "达标" in reason_enough
+
+
+def test_should_run_ignores_trigger_rounds_for_single_scope(tmp_path: Path) -> None:
+    """回归：「单作用域阈值」曾被 trigger_rounds 抬高到 30，导致反思永不触发。
+
+    只要本作用域攒够 ``min_messages`` 就该达标，与 ``trigger_rounds`` 无关。
+    """
+
+    async def _run() -> tuple[bool, str]:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        config = ReflectionConfig(
+            min_messages=3,
+            trigger_rounds=99,  # 远高于 min_messages：旧实现会因此判不达标
+            interval_minutes=600,
+            cooldown_minutes=0,
+            mode="rounds",
+        )
+        service = await _make_service(stack, FakeLlm(), config)
+        for index in range(3):
+            await stack.memory.buffer_episode(scope, f"用户：第 {index} 条消息")
+        should, reason = await service.should_run(scope)
+        await stack.close()
+        return should, reason
+
+    should, reason = asyncio.run(_run())
+    assert should is True, f"单作用域达标不应被 trigger_rounds 抬高：{reason}"
+    assert "累计内容达标" in reason
+
+
+def test_should_run_aggregates_buffer_across_scopes(tmp_path: Path) -> None:
+    """缓冲被会话切碎时，全库总量达标也要触发（聚合兜底）。"""
+
+    async def _run() -> tuple[bool, str, int, int]:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        other = MemoryScope.for_session("s2")
+        config = ReflectionConfig(
+            min_messages=5,
+            trigger_rounds=4,
+            interval_minutes=600,
+            cooldown_minutes=0,
+            mode="rounds",
+        )
+        service = await _make_service(stack, FakeLlm(), config)
+        # 两个会话各 2 条：单作用域都不够（2/5），但总量 4 条已达到 trigger_rounds
+        for index in range(2):
+            await stack.memory.buffer_episode(scope, f"用户：A 第 {index} 条")
+            await stack.memory.buffer_episode(other, f"用户：B 第 {index} 条")
+        total = await stack.memory.count_buffer_total()
+        per_scope = await stack.memory.count_buffer(scope)
+        should, reason = await service.should_run(scope)
+        await stack.close()
+        return should, reason, total, per_scope
+
+    should, reason, total, per_scope = asyncio.run(_run())
+    assert per_scope == 2, "单作用域只有 2 条"
+    assert total == 4, "聚合计数应包含其它作用域"
+    assert should is True
+    assert "聚合达标" in reason
+
+
+def test_should_run_explains_skip_with_both_counts(tmp_path: Path) -> None:
+    """两条判据都不达标时，理由要能同时说清单作用域与全库的数量。"""
+
+    async def _run() -> str:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        config = ReflectionConfig(min_messages=9, trigger_rounds=30, mode="rounds")
+        service = await _make_service(stack, FakeLlm(), config)
+        await stack.memory.buffer_episode(scope, "用户：只有一条")
+        _, reason = await service.should_run(scope)
+        await stack.close()
+        return reason
+
+    reason = asyncio.run(_run())
+    assert "本作用域 1/9" in reason
+    assert "全库 1/30" in reason
+
+
+def test_reflection_defaults_favor_triggering() -> None:
+    """默认值必须「容易触发」：``both`` + 12 轮，且代码默认与配置页默认一致。
+
+    这组默认值曾经是 ``rounds`` + 30：单作用域阈值实际等于 30，而缓冲按会话分片，
+    于是反思长期不触发、长期记忆冻结。默认值改动必须同时落在两处，否则重置配置即复发。
+    """
+    import json
+
+    root = Path(__file__).resolve().parents[1]
+    schema = json.loads((root / "_conf_schema.json").read_text(encoding="utf-8"))
+    items = schema["reflection"]["items"]
+
+    default_config = ReflectionConfig()
+    assert default_config.mode == "both"
+    assert default_config.trigger_rounds == 12
+    assert ReflectionConfig.from_mapping({}).mode == "both"
+    assert ReflectionConfig.from_mapping({}).trigger_rounds == 12
+    assert items["mode"]["default"] == default_config.mode
+    assert items["trigger_rounds"]["default"] == default_config.trigger_rounds
 
 
 def test_reflect_writes_insight_and_consumes_buffer(tmp_path: Path) -> None:

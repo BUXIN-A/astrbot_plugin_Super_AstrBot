@@ -14,6 +14,7 @@ import json
 import struct
 from typing import Any, Mapping, Sequence
 
+from ..spec.entry_types import DEFAULT_ENTRY_TYPE, ENTRY_TYPES
 from ..spec.scopes import MemoryScope
 from .db import Database
 
@@ -85,6 +86,17 @@ def journal_order_clause(sort: str) -> str:
     return JOURNAL_SORT_OPTIONS.get(sort, JOURNAL_SORT_OPTIONS[DEFAULT_JOURNAL_SORT])
 
 
+def _journal_type_filter(entry_type: str) -> tuple[str, list[Any]]:
+    """类型过滤 SQL 片段；空值或未登记的类型视为「不限类型」。
+
+    只接受词表内的取值（``ENTRY_TYPES``），因此可以直接参数化拼接，无需转义。
+    """
+    token = str(entry_type or "").strip().lower()
+    if token not in ENTRY_TYPES:
+        return "", []
+    return " AND entry_type=?", [token]
+
+
 # --------------------------------------------------------------------------- #
 # 记忆
 # --------------------------------------------------------------------------- #
@@ -109,11 +121,18 @@ class MemoryRepository:
         tags: Sequence[str],
         created_at: float,
         status: str = "active",
+        sender_id: str = "",
+        sender_name: str = "",
+        origin_umo: str = "",
+        updated_at: float | None = None,
+        last_access_at: float | None = None,
+        access_count: int | None = None,
     ) -> int:
         cursor = await self._db.execute(
             "INSERT INTO memories(scope_type, scope_id, kind, content, importance, confidence,"
-            " source, tags, created_at, updated_at, last_access_at, access_count, status)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,0,0,?)",
+            " source, tags, created_at, updated_at, last_access_at, access_count, status,"
+            " sender_id, sender_name, origin_umo)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 scope_type,
                 scope_id,
@@ -124,38 +143,16 @@ class MemoryRepository:
                 source,
                 json.dumps(list(tags), ensure_ascii=False),
                 created_at,
-                created_at,
+                created_at if updated_at is None else float(updated_at),
+                0.0 if last_access_at is None else float(last_access_at),
+                0 if access_count is None else int(access_count),
                 status,
+                sender_id,
+                sender_name,
+                origin_umo,
             ),
         )
         return int(cursor.lastrowid)
-
-    async def insert_many(self, items: Sequence[dict[str, Any]]) -> list[int]:
-        """批量插入并返回自增 ID 列表（逐条插入以拿到 ID，整体置于一个事务内）。"""
-        ids: list[int] = []
-        async with self._db.transaction() as tx:
-            for item in items:
-                cursor = await tx.execute(
-                    "INSERT INTO memories(scope_type, scope_id, kind, content, importance,"
-                    " confidence, source, tags, created_at, updated_at, last_access_at,"
-                    " access_count, status) VALUES (?,?,?,?,?,?,?,?,?,?,0,0,?)",
-                    (
-                        item["scope_type"],
-                        item["scope_id"],
-                        item["kind"],
-                        item["content"],
-                        float(item["importance"]),
-                        float(item["confidence"]),
-                        item["source"],
-                        json.dumps(list(item.get("tags") or []), ensure_ascii=False),
-                        item["created_at"],
-                        item["created_at"],
-                        str(item.get("status") or "active"),
-                    ),
-                )
-                ids.append(int(cursor.lastrowid))
-        return ids
-
     async def get(self, memory_id: int) -> dict[str, Any] | None:
         row = await self._db.query_one("SELECT * FROM memories WHERE id=?", (memory_id,))
         return None if row is None else row_to_dict(row)
@@ -209,12 +206,6 @@ class MemoryRepository:
     async def delete(self, memory_id: int) -> bool:
         cursor = await self._db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return bool(getattr(cursor, "rowcount", 0))
-
-    async def delete_by_scopes(self, scopes: Sequence[MemoryScope]) -> int:
-        where, params = _scope_where(scopes)
-        cursor = await self._db.execute(f"DELETE FROM memories WHERE ({where})", params)
-        return int(getattr(cursor, "rowcount", 0) or 0)
-
     async def set_status(self, memory_id: int, status: str, *, at: float) -> None:
         await self._db.execute(
             "UPDATE memories SET status=?, updated_at=? WHERE id=?", (status, at, memory_id)
@@ -272,6 +263,19 @@ class MemoryRepository:
             )
         )
 
+    async def count_by_status_all(self, status: str) -> int:
+        """跨**全部作用域**统计指定状态的行数（不受 scope 过滤影响）。
+
+        与 ``count_by_status`` 的区别：后者按给定作用域并集过滤，前者是「整库总量」。
+        存在的原因是 ``basic.default_scope=session`` 会把缓冲切成许多互不可见的小作用域，
+        单作用域计数无法反映「其实已经攒了很多待反思内容」。
+        """
+        return int(
+            await self._db.scalar(
+                "SELECT COUNT(*) FROM memories WHERE status=?", (status,), default=0
+            )
+        )
+
     async def purge_status_before(
         self, scopes: Sequence[MemoryScope], *, status: str, before: float
     ) -> int:
@@ -303,6 +307,143 @@ class MemoryRepository:
             (status, after_id, limit),
         )
         return [row_to_dict(row) for row in rows]
+
+    # ------------------------------------------------------------------ #
+    # 作用域分布与迁移（跨会话识别用户的核心维护动作）
+    # ------------------------------------------------------------------ #
+
+    async def scope_distribution(self, *, limit: int = 50) -> dict[str, Any]:
+        """作用域分布：按类型汇总状态数 + 活跃作用域明细。
+
+        「可归属」一列是关键：只有带 ``sender_id`` 的记忆才能迁到 ``user`` 作用域，
+        历史记忆大多为空——这正是迁移必须先看分布、再动手的原因。
+        """
+        by_type = await self._db.query(
+            "SELECT scope_type, status, COUNT(*) AS total FROM memories"
+            " GROUP BY scope_type, status"
+        )
+        types: dict[str, dict[str, int]] = {}
+        for row in by_type:
+            bucket = types.setdefault(str(row["scope_type"]), {})
+            bucket[str(row["status"])] = int(row["total"])
+
+        detail = await self._db.query(
+            "SELECT scope_type, scope_id, COUNT(*) AS total,"
+            " SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,"
+            " SUM(CASE WHEN sender_id<>'' THEN 1 ELSE 0 END) AS attributed,"
+            " MAX(created_at) AS last_at"
+            " FROM memories GROUP BY scope_type, scope_id"
+            " ORDER BY total DESC LIMIT ?",
+            (int(limit),),
+        )
+        scopes = [
+            {
+                "scope_type": str(row["scope_type"]),
+                "scope_id": str(row["scope_id"]),
+                "total": int(row["total"] or 0),
+                "active": int(row["active"] or 0),
+                "attributed": int(row["attributed"] or 0),
+                "last_at": float(row["last_at"] or 0.0),
+            }
+            for row in detail
+        ]
+        return {"types": types, "scopes": scopes}
+
+    async def migrate_scope(
+        self,
+        *,
+        to: str,
+        from_scope_type: str = "",
+        ids: Sequence[int] | None = None,
+        only_attributed: bool = True,
+        dry_run: bool = True,
+    ) -> dict[str, int]:
+        """把符合条件的记忆迁到新作用域（或归档）。
+
+        ``to`` 取值：
+
+        - ``user``：``scope_id`` 改写为该条记忆的 ``sender_id``——只能处理带身份的记忆；
+        - ``global``：整体提升为全局可见（隐私风险由调用方在界面上提示）；
+        - ``archive``：仅归档，作用域不动；
+        - ``user_else_archive``：能归属的迁到 user，其余归档（迁移报告推荐的处置）。
+
+        返回值语义（``dry_run`` 时给的是**计划值**，便于先预览再落库）：
+
+        - ``matched``：符合条件的记录总数（不含「必须有身份」这一附加条件）；
+        - ``attributed``：其中带 ``sender_id``、可归属到用户的条数；
+        - ``moved`` / ``archived``：将迁到 user / 将归档的条数；
+        - ``skipped``：既不迁移也不归档的条数（例如 ``to=user`` 且无身份的记录）。
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if from_scope_type:
+            clauses.append("scope_type=?")
+            params.append(from_scope_type)
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            clauses.append(f"id IN ({placeholders})")
+            params.extend(int(item) for item in ids)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        attributed_sql = f"{where} AND sender_id<>''" if where else " WHERE sender_id<>''"
+
+        matched = int(
+            await self._db.scalar(f"SELECT COUNT(*) FROM memories{where}", params, default=0)
+        )
+        attributed = int(
+            await self._db.scalar(f"SELECT COUNT(*) FROM memories{attributed_sql}", params, default=0)
+        )
+        plan = self._migration_plan(
+            to=to, matched=matched, attributed=attributed, only_attributed=only_attributed
+        )
+        stats: dict[str, int] = {"matched": matched, "attributed": attributed, **plan}
+        if dry_run or matched == 0:
+            return stats
+
+        if to == "user":
+            target_sql = attributed_sql if only_attributed else where
+            cursor = await self._db.execute(
+                f"UPDATE memories SET scope_type='user', scope_id=sender_id{target_sql}", params
+            )
+            stats["moved"] = int(cursor.rowcount or 0)
+            return stats
+
+        if to == "global":
+            cursor = await self._db.execute(
+                f"UPDATE memories SET scope_type='global', scope_id='*'{where}", params
+            )
+            stats["moved"] = int(cursor.rowcount or 0)
+            return stats
+
+        if to == "archive":
+            cursor = await self._db.execute(f"UPDATE memories SET status='archived'{where}", params)
+            stats["archived"] = int(cursor.rowcount or 0)
+            return stats
+
+        if to == "user_else_archive":
+            cursor = await self._db.execute(
+                f"UPDATE memories SET scope_type='user', scope_id=sender_id{attributed_sql}", params
+            )
+            stats["moved"] = int(cursor.rowcount or 0)
+            rest_sql = f"{where} AND sender_id=''" if where else " WHERE sender_id=''"
+            cursor = await self._db.execute(f"UPDATE memories SET status='archived'{rest_sql}", params)
+            stats["archived"] = int(cursor.rowcount or 0)
+            return stats
+
+        raise ValueError(f"不支持的作用域迁移目标：{to}")
+
+    @staticmethod
+    def _migration_plan(
+        *, to: str, matched: int, attributed: int, only_attributed: bool
+    ) -> dict[str, int]:
+        """按目标算出「将迁移/将归档/将跳过」的条数（预览与执行共用一份口径）。"""
+        if to == "user":
+            moved = attributed if only_attributed else matched
+            return {"moved": moved, "archived": 0, "skipped": matched - moved}
+        if to == "global":
+            return {"moved": matched, "archived": 0, "skipped": 0}
+        if to == "archive":
+            return {"moved": 0, "archived": matched, "skipped": 0}
+        return {"moved": attributed, "archived": matched - attributed, "skipped": 0}
 
     async def count(
         self, scopes: Sequence[MemoryScope] | None = None, *, status: str = "active"
@@ -365,14 +506,18 @@ class MemoryRepository:
         keyword: str = "",
         status: str = "active",
         kind: str = "",
+        source: str = "",
         sort: str = DEFAULT_MEMORY_SORT,
     ) -> list[dict[str, Any]]:
-        """跨作用域分页（面板总览用），支持按状态/类型/关键词过滤与排序。"""
+        """跨作用域分页（面板总览用），支持按状态/类型/来源/关键词过滤与排序。"""
         clauses = ["status=?"]
         params: list[Any] = [status]
         if kind:
             clauses.append("kind=?")
             params.append(kind)
+        if source:
+            clauses.append("source=?")
+            params.append(source)
         if keyword:
             clauses.append("content LIKE ? ESCAPE '\\'")
             params.append(_like_pattern(keyword))
@@ -385,7 +530,12 @@ class MemoryRepository:
         return rows_to_dicts(rows)
 
     async def count_filtered(
-        self, *, status: str = "active", kind: str = "", keyword: str = ""
+        self,
+        *,
+        status: str = "active",
+        kind: str = "",
+        source: str = "",
+        keyword: str = "",
     ) -> int:
         """与 ``list_all_page`` 同条件的总数（面板分页需要）。"""
         clauses = ["status=?"]
@@ -393,6 +543,9 @@ class MemoryRepository:
         if kind:
             clauses.append("kind=?")
             params.append(kind)
+        if source:
+            clauses.append("source=?")
+            params.append(source)
         if keyword:
             clauses.append("content LIKE ? ESCAPE '\\'")
             params.append(_like_pattern(keyword))
@@ -411,7 +564,52 @@ class MemoryRepository:
             )
         )
 
-    # ---------------------- FTS 索引维护 ---------------------- #
+    async def export_by_source(
+        self,
+        source: str = "",
+        *,
+        limit: int = 100_000,
+        status: str = "active",
+    ) -> list[dict[str, Any]]:
+        """按来源导出记忆（面板导出 JSON 用）；只导面板可见状态，已遗忘的不导出。
+
+        ``source`` 为空串时不限来源（记忆页全量导出用）。
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if source:
+            clauses.append("source=?")
+            params.append(source)
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = await self._db.query(
+            f"SELECT * FROM memories{where} ORDER BY created_at DESC LIMIT ?",
+            (*params, limit),
+        )
+        return rows_to_dicts(rows)
+
+    async def export_visible(
+        self,
+        *,
+        limit: int = 100_000,
+        exclude: tuple[str, ...] = ("forgotten", "buffered"),
+    ) -> list[dict[str, Any]]:
+        """导出全部「有效」记忆（排除已遗忘与对话缓冲，备份用）。"""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if exclude:
+            placeholders = ",".join("?" for _ in exclude)
+            clauses.append(f"status NOT IN ({placeholders})")
+            params.extend(exclude)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = await self._db.query(
+            f"SELECT * FROM memories{where} ORDER BY created_at DESC LIMIT ?",
+            (*params, limit),
+        )
+        return rows_to_dicts(rows)
+
     async def index_tokens(self, memory_id: int, tokens_text: str) -> None:
         if not self._db.fts_available:
             return
@@ -420,6 +618,18 @@ class MemoryRepository:
             await self._db.execute(
                 "INSERT INTO memory_index(rowid, tokens) VALUES (?,?)", (memory_id, tokens_text)
             )
+
+    async def clear_index(self) -> int:
+        """清空整张 FTS 索引（整库/覆盖恢复前调用）。
+
+        覆盖恢复会把 ``memories`` 整表重灌，但 FTS 是独立虚拟表、行按 rowid 关联：
+        残留的 token 会挂到「同 id 的新记忆」上，造成检索命中错内容或漏命中。
+        因此覆盖前必须清空，随后按新正文重建。
+        """
+        if not self._db.fts_available:
+            return 0
+        cursor = await self._db.execute("DELETE FROM memory_index")
+        return int(getattr(cursor, "rowcount", 0) or 0)
 
     async def delete_index_many(self, ids: Sequence[int]) -> None:
         """批量删除 FTS 索引（批量归档/遗忘时避免逐条删除）。"""
@@ -561,27 +771,13 @@ class VectorRepository:
             "DELETE FROM memory_vectors WHERE fingerprint<>?", (fingerprint,)
         )
         return int(result.rowcount or 0)
-
-    async def missing_ids(self, ids: Sequence[int], fingerprint: str) -> list[int]:
-        """返回尚无可用向量的记忆 ID（用于增量补算）。"""
-        if not ids:
-            return []
-        placeholders = ",".join("?" for _ in ids)
-        rows = await self._db.query(
-            f"SELECT memory_id FROM memory_vectors WHERE fingerprint=? AND memory_id IN ({placeholders})",
-            [fingerprint, *ids],
-        )
-        indexed = {int(row["memory_id"]) for row in rows}
-        return [item for item in ids if item not in indexed]
-
-
 # --------------------------------------------------------------------------- #
 # 周记
 # --------------------------------------------------------------------------- #
 
 
 class JournalRepository:
-    """``journals`` 表访问。"""
+    """``journals`` 表访问（现实桥：周记 / 日记 / 随笔共用）。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -597,10 +793,12 @@ class JournalRepository:
         event_time: float,
         memory_id: int | None,
         created_at: float,
+        title: str = "",
+        entry_type: str = DEFAULT_ENTRY_TYPE,
     ) -> int:
         cursor = await self._db.execute(
             "INSERT INTO journals(scope_type, scope_id, content, tags, emotion, event_time,"
-            " memory_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            " memory_id, created_at, title, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 scope_type,
                 scope_id,
@@ -610,6 +808,8 @@ class JournalRepository:
                 event_time,
                 memory_id,
                 created_at,
+                title,
+                entry_type,
             ),
         )
         return int(cursor.lastrowid)
@@ -619,12 +819,13 @@ class JournalRepository:
         return None if row is None else row_to_dict(row)
 
     async def list_recent(
-        self, scopes: Sequence[MemoryScope], *, limit: int
+        self, scopes: Sequence[MemoryScope], *, limit: int, entry_type: str = ""
     ) -> list[dict[str, Any]]:
         where, params = _scope_where(scopes)
+        suffix, extra = _journal_type_filter(entry_type)
         rows = await self._db.query(
-            f"SELECT * FROM journals WHERE ({where}) ORDER BY event_time DESC LIMIT ?",
-            [*params, limit],
+            f"SELECT * FROM journals WHERE ({where}){suffix} ORDER BY event_time DESC LIMIT ?",
+            [*params, *extra, limit],
         )
         return [row_to_dict(row) for row in rows]
 
@@ -640,14 +841,76 @@ class JournalRepository:
         return [row_to_dict(row) for row in rows]
 
     async def list_page(
-        self, scopes: Sequence[MemoryScope], *, offset: int, limit: int
+        self,
+        scopes: Sequence[MemoryScope],
+        *,
+        offset: int,
+        limit: int,
+        entry_type: str = "",
     ) -> list[dict[str, Any]]:
         where, params = _scope_where(scopes)
+        suffix, extra = _journal_type_filter(entry_type)
         rows = await self._db.query(
-            f"SELECT * FROM journals WHERE ({where}) ORDER BY event_time DESC LIMIT ? OFFSET ?",
-            [*params, limit, offset],
+            f"SELECT * FROM journals WHERE ({where}){suffix}"
+            " ORDER BY event_time DESC LIMIT ? OFFSET ?",
+            [*params, *extra, limit, offset],
         )
         return [row_to_dict(row) for row in rows]
+
+    async def update(
+        self,
+        journal_id: int,
+        *,
+        content: str,
+        tags: Sequence[str] | None = None,
+        emotion: int | None = None,
+        title: str | None = None,
+        entry_type: str | None = None,
+    ) -> bool:
+        """更新记录内容/标签/情绪/标题/类型；``None`` 表示保持不变。"""
+        assignments = ["content=?"]
+        params: list[Any] = [content]
+        if tags is not None:
+            assignments.append("tags=?")
+            params.append(json.dumps(list(tags), ensure_ascii=False))
+        if emotion is not None:
+            assignments.append("emotion=?")
+            params.append(emotion)
+        if title is not None:
+            assignments.append("title=?")
+            params.append(title)
+        if entry_type is not None:
+            assignments.append("entry_type=?")
+            params.append(entry_type)
+        params.append(journal_id)
+        cursor = await self._db.execute(
+            f"UPDATE journals SET {', '.join(assignments)} WHERE id=?", params
+        )
+        return bool(getattr(cursor, "rowcount", 0))
+
+    async def export_all(
+        self,
+        *,
+        limit: int = 100_000,
+        ids: Sequence[int] | None = None,
+        entry_type: str = "",
+        keyword: str = "",
+    ) -> list[dict[str, Any]]:
+        """导出记录（跨作用域）。
+
+        ``ids`` 非空时只导出这些条目（面板勾选导出）；否则按 ``entry_type`` /
+        ``keyword`` 筛选导出，两者都为空即全量导出。
+        """
+        where, params = self._journal_filter(keyword, entry_type)
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            where = f"({where}) AND id IN ({placeholders})"
+            params.extend(int(item) for item in ids)
+        params.append(limit)
+        rows = await self._db.query(
+            f"SELECT * FROM journals WHERE {where} ORDER BY event_time DESC LIMIT ?", params
+        )
+        return rows_to_dicts(rows)
 
     async def delete(self, journal_id: int) -> bool:
         cursor = await self._db.execute("DELETE FROM journals WHERE id=?", (journal_id,))
@@ -662,7 +925,7 @@ class JournalRepository:
         )
 
     async def all_scopes(self) -> list[tuple[str, str]]:
-        """列出存在周记的作用域（供周度洞察遍历）。"""
+        """列出存在记录的作用域（供周度洞察遍历）。"""
         rows = await self._db.query("SELECT DISTINCT scope_type, scope_id FROM journals")
         return [(str(row["scope_type"]), str(row["scope_id"])) for row in rows]
 
@@ -673,9 +936,10 @@ class JournalRepository:
         limit: int,
         keyword: str = "",
         sort: str = DEFAULT_JOURNAL_SORT,
+        entry_type: str = "",
     ) -> list[dict[str, Any]]:
-        """跨作用域分页（面板总览用），支持关键词过滤与排序。"""
-        where, params = self._journal_filter(keyword)
+        """跨作用域分页（面板总览用），支持关键词、类型过滤与排序。"""
+        where, params = self._journal_filter(keyword, entry_type)
         params.extend([limit, offset])
         rows = await self._db.query(
             f"SELECT * FROM journals WHERE {where}"
@@ -684,19 +948,118 @@ class JournalRepository:
         )
         return rows_to_dicts(rows)
 
-    async def count_all(self, *, keyword: str = "") -> int:
-        where, params = self._journal_filter(keyword)
+    async def count_all(self, *, keyword: str = "", entry_type: str = "") -> int:
+        where, params = self._journal_filter(keyword, entry_type)
         return int(
             await self._db.scalar(f"SELECT COUNT(*) FROM journals WHERE {where}", params, default=0)
         )
 
+    async def count_by_type(self) -> dict[str, int]:
+        """各类型条目数（面板筛选下拉显示计数用）。"""
+        rows = await self._db.query(
+            "SELECT entry_type, COUNT(*) AS total FROM journals GROUP BY entry_type"
+        )
+        return {str(row["entry_type"]): int(row["total"]) for row in rows}
+
+    async def migrate_scope(
+        self, *, scope_type: str, to_scope_type: str, to_scope_id: str, dry_run: bool = True
+    ) -> dict[str, int]:
+        """把某作用域类型下的现实桥记录整体迁到目标作用域（与记忆迁移同批执行）。"""
+        matched = int(
+            await self._db.scalar(
+                "SELECT COUNT(*) FROM journals WHERE scope_type=?", (scope_type,), default=0
+            )
+        )
+        if dry_run or matched == 0:
+            return {"matched": matched, "moved": 0}
+        cursor = await self._db.execute(
+            "UPDATE journals SET scope_type=?, scope_id=? WHERE scope_type=?",
+            (to_scope_type, to_scope_id, scope_type),
+        )
+        return {"matched": matched, "moved": int(getattr(cursor, "rowcount", 0) or 0)}
+
+
     @staticmethod
-    def _journal_filter(keyword: str) -> tuple[str, list[Any]]:
-        """周记关键词过滤：正文与标签任一命中即可。"""
-        if not keyword:
-            return "1", []
-        pattern = _like_pattern(keyword)
-        return "(content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')", [pattern, pattern]
+    def _journal_filter(keyword: str = "", entry_type: str = "") -> tuple[str, list[Any]]:
+        """记录过滤：类型精确匹配，关键词命中标题/正文/标签任一即可。"""
+        clauses: list[str] = []
+        params: list[Any] = []
+        token = str(entry_type or "").strip().lower()
+        if token in ENTRY_TYPES:
+            clauses.append("entry_type=?")
+            params.append(token)
+        if keyword:
+            pattern = _like_pattern(keyword)
+            clauses.append(
+                "(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'"
+                " OR tags LIKE ? ESCAPE '\\')"
+            )
+            params.extend([pattern, pattern, pattern])
+        return (" AND ".join(clauses) if clauses else "1"), params
+
+
+# --------------------------------------------------------------------------- #
+# 身份观测
+# --------------------------------------------------------------------------- #
+
+
+class IdentityRepository:
+    """``identity_seen`` 表访问：观测「谁在哪个会话里说过话」。
+
+    存在的意义是让「平台用户标识是否跨会话稳定」变成可观察的事实，
+    而不是靠猜——这决定了能不能把记忆作用域切到 ``user``。
+    """
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def observe(
+        self,
+        *,
+        umo: str,
+        platform: str = "",
+        sender_id: str = "",
+        sender_name: str = "",
+        scope_type: str = "",
+        scope_id: str = "",
+        user_key: str = "",
+        now: float,
+    ) -> None:
+        """记录一次身份观测（同一 umo 只保留一行，累积事件数与时间窗）。"""
+        await self._db.execute(
+            "INSERT INTO identity_seen(umo, platform, sender_id, sender_name, scope_type,"
+            " scope_id, user_key, first_seen, last_seen, events)"
+            " VALUES (?,?,?,?,?,?,?,?,?,1)"
+            " ON CONFLICT(umo) DO UPDATE SET"
+            " platform=excluded.platform, sender_id=excluded.sender_id,"
+            " sender_name=excluded.sender_name, scope_type=excluded.scope_type,"
+            " scope_id=excluded.scope_id, user_key=excluded.user_key,"
+            " last_seen=excluded.last_seen, events=identity_seen.events+1",
+            (
+                umo,
+                platform,
+                sender_id,
+                sender_name,
+                scope_type,
+                scope_id,
+                user_key,
+                now,
+                now,
+            ),
+        )
+
+    async def list_all(self, *, limit: int = 200) -> list[dict[str, Any]]:
+        rows = await self._db.query(
+            "SELECT * FROM identity_seen ORDER BY last_seen DESC LIMIT ?", (int(limit),)
+        )
+        return rows_to_dicts(rows)
+
+    async def count(self) -> int:
+        return int(await self._db.scalar("SELECT COUNT(*) FROM identity_seen", default=0))
+
+    async def clear(self) -> int:
+        cursor = await self._db.execute("DELETE FROM identity_seen")
+        return int(getattr(cursor, "rowcount", 0) or 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -1541,6 +1904,42 @@ class GraphRepository:
         return {
             "relations": int(getattr(relations, "rowcount", 0) or 0),
             "entities": int(getattr(entities, "rowcount", 0) or 0),
+        }
+
+    async def migrate_scope(
+        self, *, scope_type: str, to_scope_type: str, to_scope_id: str, dry_run: bool = True
+    ) -> dict[str, int]:
+        """把某个类型下的图谱行整体迁到目标作用域（仅支持整体迁移）。
+
+        图谱行没有发送者字段，无法像记忆那样逐条归属到用户；能安全做的是整体提升
+        （例如 session → global），所以这里只提供「按 scope_type 整体迁移」。
+        """
+        params: list[Any] = [scope_type]
+        matched_entities = int(
+            await self._db.scalar(
+                "SELECT COUNT(*) FROM graph_entities WHERE scope_type=?", params, default=0
+            )
+        )
+        matched_relations = int(
+            await self._db.scalar(
+                "SELECT COUNT(*) FROM graph_relations WHERE scope_type=?", params, default=0
+            )
+        )
+        if dry_run or (matched_entities == 0 and matched_relations == 0):
+            return {"entities": 0, "relations": 0, "matched_entities": matched_entities, "matched_relations": matched_relations}
+        entities = await self._db.execute(
+            "UPDATE graph_entities SET scope_type=?, scope_id=? WHERE scope_type=?",
+            (to_scope_type, to_scope_id, scope_type),
+        )
+        relations = await self._db.execute(
+            "UPDATE graph_relations SET scope_type=?, scope_id=? WHERE scope_type=?",
+            (to_scope_type, to_scope_id, scope_type),
+        )
+        return {
+            "entities": int(getattr(entities, "rowcount", 0) or 0),
+            "relations": int(getattr(relations, "rowcount", 0) or 0),
+            "matched_entities": matched_entities,
+            "matched_relations": matched_relations,
         }
 
     async def clear_memories(self, memory_ids: Sequence[int]) -> int:

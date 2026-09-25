@@ -138,11 +138,11 @@ CAPABILITIES: tuple[Capability, ...] = (
     ),
     Capability(
         key="journal.enabled",
-        title="周记现实记忆",
+        title="现实桥（周记 / 日记 / 随笔）",
         domain="journal",
         default=True,
         depends_on=("basic.enabled",),
-        description="把用户现实记录作为高优先级的记忆来源。",
+        description="把用户的现实书写（周记 / 日记 / 随笔）作为高优先级的记忆来源。",
     ),
     Capability(
         key="journal.weekly_reflection",
@@ -150,7 +150,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         domain="journal",
         default=True,
         depends_on=("journal.enabled", "reflection.enabled"),
-        description="每周固定时间阅读本周周记并产出洞察。",
+        description="每周固定时间阅读本周现实桥记录并产出洞察。",
     ),
     Capability(
         key="agent.memory_tools",

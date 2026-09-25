@@ -19,7 +19,8 @@ const LOCAL_I18N = {
     "nav.features": "功能",
     "nav.memories": "记忆",
     "nav.recall": "检索",
-    "nav.journals": "周记",
+    "nav.journals": "现实桥",
+    "nav.weeklies": "每周总结",
     "nav.reviews": "待审",
     "nav.persona": "学习",
     "nav.graph": "图谱",
@@ -27,18 +28,27 @@ const LOCAL_I18N = {
     "nav.models": "模型",
     "nav.prompts": "提示词",
     "nav.system": "系统",
+    "nav.identity": "身份",
     "features.title": "功能开关",
-    "features.hint": "开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。",
+    "features.hint": "开关与「具体设置」都会立即写入插件配置并落盘，与插件配置页双向同步；标注「需重载」的项目将在重载插件后生效。",
     "features.empty": "没有可用的功能项。",
     "features.switchOn": "开",
     "features.switchOff": "关",
+    "features.settings": "具体设置",
+    "features.settingsOpen": "收起设置",
+    "features.syncedAt": "与配置页双向同步 · %1",
+    "features.syncNow": "立即同步",
+    "features.syncFailed": "同步失败（插件可能在重载），保留当前显示",
+    "features.externalSync": "已从插件配置页同步 %1 项改动",
+    "features.listHint": "逗号分隔",
+    "features.editHint": "失焦或回车后保存",
     "features.needsReload": "需重载",
     "features.runtimeUnsupported": "环境不支持",
     "features.blockedBy": "依赖未开启",
     "domain.basic": "基础",
     "domain.memory": "记忆",
     "domain.reflection": "自我学习",
-    "domain.journal": "周记",
+    "domain.journal": "现实桥",
     "domain.agent": "Agent 工具",
     "domain.context": "上下文治理",
     "domain.group": "群聊语义",
@@ -64,7 +74,7 @@ const LOCAL_I18N = {
     "stat.buffered": "对话缓冲",
     "stat.pending": "待审",
     "stat.archived": "归档",
-    "stat.journals": "周记",
+    "stat.journals": "现实桥",
     "stat.tasks": "后台任务",
     "filter.status": "状态",
     "filter.kind": "类型",
@@ -79,14 +89,50 @@ const LOCAL_I18N = {
     "recall.umo": "会话 UMO（可选）",
     "recall.limit": "条数",
     "recall.hint": "不填 UMO 时按关键词跨作用域匹配；填写后走混合检索并展示打分构成。",
-    "journals.title": "周记（现实记忆）",
+    "journals.title": "现实桥（周记 / 日记 / 随笔）",
+    "journals.add": "+ 新增记录",
+    "journals.edit": "编辑",
+    "journals.delete": "删除",
+    "journals.scope": "作用域",
+    "journals.scopeHint": "global:* / user:123 / group:456",
+    "table.actions": "操作",
+    "journals.emotion": "情绪 (1-5)",
+    "journals.content": "内容",
+    "action.confirm": "确认",
+    "journals.tags": "标签（逗号分隔）",
+    "journals.exported": "已导出",
+    "journals.imported": "导入完成：新增 %1，跳过 %2",
+    "journals.type": "类型",
+    "journals.titleField": "标题",
+    "journals.createdAt": "创建时间",
+    "journals.titleHint": "留空自动使用当天日期时间（例 2015061517:00）",
+    "journals.selectPage": "本页全选",
+    "journals.selectFilter": "全选当前筛选（{count} 条）",
+    "journals.selectNone": "清空选择",
+    "journals.selectedCount": "已选 {count} 条",
+    "journals.noneSelected": "尚未选择",
+    "journals.exportSelected": "导出所选 JSON",
+    "journals.exportSelectedDone": "已导出 {count} 条",
+    "journals.empty": "还没有记录（可用 /sab 日记 内容 记录，或点「新增记录」）",
+    "journals.newTitle": "+ 新增记录",
+    "jtype.all": "全部",
+    "jtype.weekly": "周记",
+    "jtype.diary": "日记",
+    "jtype.essay": "随笔",
+    "weeklies.title": "每周总结",
+    "weeklies.hint": "每周总结由「周度洞察」基于本周现实桥记录自动生成，独立于现实桥管理；可删除或导入导出。",
+    "weeklies.empty": "还没有每周总结（开启周度洞察后自动生成，或导入历史 JSON）",
+    "weeklies.imported": "导入完成：新增 %1，跳过 %2",
+    "action.exportJournals": "导出全部 JSON",
+    "action.importJournals": "导入 JSON",
+    "action.exportWeeklies": "导出 JSON",
+    "action.importWeeklies": "导入 JSON",
     "persona.title": "拟人化学习",
     "persona.hint": "风格样本、群内用语与好感度都在这里查看；未经批准的学习结果不会影响对话。",
     "persona.umo": "会话 UMO（可选）",
     "persona.styles": "表达样本",
     "persona.jargons": "群内用语",
     "persona.affinity": "好感度",
-    "persona.approval": "需审批",
     "graph.title": "记忆图谱",
     "graph.hint": "实体与关系从长期记忆中抽取并按作用域隔离；填写 UMO 只查看对应会话的图谱。",
     "graph.umo": "会话 UMO（可选）",
@@ -98,7 +144,6 @@ const LOCAL_I18N = {
     "graph.edges": "关系",
     "graph.empty": "暂无图谱数据",
     "graph.truncated": "数据已截断（可提高节点上限）",
-    "graph.detail": "节点详情",
     "monitor.title": "运行监控",
     "monitor.hint": "聚合最近的运行指标与自动审核情况，指标名形如 llm.calls、retrieval.calls。",
     "monitor.range": "时间范围",
@@ -130,8 +175,123 @@ const LOCAL_I18N = {
     "system.jobs": "后台任务",
     "system.budget": "辅助调用预算",
     "system.maintenance": "维护",
+    "system.configMaintenance": "配置维护",
+    "system.configHint": "导出当前插件配置为 JSON 备份；导入会按配置 Schema 校验并合并，导入后自动热应用（能力开关与各模块配置即时生效，无需重载）。",
+    "system.configImported": "配置已导入并热应用",
+    "action.importConfig": "导入配置 JSON",
+    "action.exportConfig": "导出配置 JSON",
+    "action.exportMemories": "导出 JSON",
+    "action.importMemories": "导入 JSON",
+    "memories.imported": "导入完成：新增 %1，跳过 %2",
     "system.reindexHint": "根据当前配置重建关键词索引与向量索引，不会删除记忆。",
+    "backup.title": "备份与导出",
+    "backup.hint": "全局备份：把插件全部业务表（记忆 / 现实桥 / 图谱 / 拟人化学习 / 待审 / 身份观测等）、配置与数据库快照打包成一个 zip。包内 manifest.json 记录逐表行数、每个文件的大小与 sha256，并写明未包含的表及原因；服务器 backups/ 目录保留最近若干份。",
+    "backup.notes": "备注（可选）",
+    "backup.export": "导出备份 ZIP",
+    "backup.import": "导入备份 ZIP",
+    "backup.imported": "导入完成",
+    "backup.mode": "导入模式",
+    "backup.modeMerge": "合并导入（推荐，保留备份之后的新数据）",
+    "backup.modeReplace": "完全覆盖（恢复到备份时刻）",
+    "backup.modeMergeShort": "合并导入",
+    "backup.modeReplaceShort": "完全覆盖",
+    "backup.resultMode": "本次模式",
+    "backup.replaceConfirmTitle": "完全覆盖确认",
+    "backup.replaceConfirmBody": "将用备份内容覆盖业务表：备份里没有的行会被删除，且不可撤销（恢复前会自动留一份数据库快照）。",
+    "backup.replaceConfirmPlan": "将写入 {1} 行；预计删除 ≥{2} 行（估计值：当前行数 − 备份行数，主键有差异时实际更多）。",
+    "backup.replaceConfirmTail": "确认后立即执行。",
+    "backup.dbRestore": "整库恢复",
+    "backup.dbRestoreHint": "用包内数据库快照替换整个库：这是唯一能连未导出的表（风格 / 图谱 / 待审）与运行态一起还原的方式。",
+    "backup.dbRestoreConfirm": "将断开数据库连接 → 把当前库另存为 pre-restore 备份 → 用快照覆盖 → 重新连接并跑迁移。任一步失败会自动回滚原库。",
+    "backup.dbRestored": "整库恢复完成",
+    "backup.dbRestoreBackup": "原库备份",
+    "backup.importHint": "恢复为逐表合并（备份优先）：备份里有的行一定恢复，备份之后新产生的行不受影响；写库前自动留一份数据库快照。数据库文件另存到 backups/，整库恢复需停用插件后手动替换。",
+    "backup.downloading": "正在打包，包体较大时请稍候…",
+    "backup.done": "备份包已生成：{1}",
+    "backup.savedAt": "服务器副本：{1}",
+    "backup.empty": "还没有备份包（点「导出备份 ZIP」生成第一份）",
+    "backup.colFile": "文件",
+    "backup.colSize": "大小",
+    "backup.colTime": "生成时间",
+    "backup.colPath": "服务器路径",
+    "identity.title": "身份诊断",
+    "identity.hint": "记忆按「谁说的」归属，而部分平台的用户标识会随会话变化。这里观测每条会话上出现过的发送者标识：若同一昵称对应多个 ID，说明平台 ID 不稳定，应改用昵称策略，否则记忆仍会被会话切碎。",
+    "identity.clear": "清空观测",
+    "identity.cleared": "已清空 {1} 条身份观测",
+    "identity.strategy": "身份策略",
+    "identity.scopeType": "作用域类型",
+    "identity.tracking": "观测开关",
+    "identity.umoCount": "已观测会话",
+    "identity.verdict": "结论",
+    "identity.colUmo": "会话 UMO",
+    "identity.colPlatform": "平台",
+    "identity.colSenderId": "发送者 ID",
+    "identity.colSenderName": "昵称",
+    "identity.colScope": "作用域",
+    "identity.colEvents": "次数",
+    "identity.colLast": "最近",
+    "identity.empty": "还没有身份观测数据（用户说一句话后即可看到）",
+    "identity.scopeTitle": "作用域分布与迁移",
+    "identity.scopeHint": "只有带发送者标识的记忆才能按用户归属；迁移前请先预览，落库前插件会自动备份数据库。",
+    "identity.fromScope": "来源作用域",
+    "identity.toScope": "迁移目标",
+    "identity.toUser": "按发送者归属到用户",
+    "identity.toGlobal": "整体提升为全局",
+    "identity.toArchive": "仅归档",
+    "identity.toUserElseArchive": "能归属的归用户，其余归档",
+    "identity.preview": "预览",
+    "identity.apply": "执行迁移",
+    "identity.applyConfirm": "即将写入数据库（会先自动备份）：",
+    "identity.colTotal": "总数",
+    "identity.colActive": "可召回",
+    "identity.colAttributed": "带身份",
+    "identity.distEmpty": "还没有记忆数据",
+    "identity.on": "开启",
+    "identity.off": "关闭",
+    "verdict.empty": "无样本",
+    "verdict.unstable_id": "ID 不稳定",
+    "verdict.stable_id": "ID 稳定",
+    "verdict.single": "样本不足",
+    "reviews.approveAll": "批准当前筛选全部",
+    "reviews.rejectAll": "驳回当前筛选全部",
+    "reviews.batchConfirm": "将对当前筛选下的全部待审记录执行：",
+    "reviews.batchDone": "已处理 {1} 条",
     "modal.detail": "详情",
+    "peek.memoryTitle": "记忆 #{id}",
+    "peek.journalTitle": "现实记录 #{id}",
+    "peek.weeklyTitle": "每周总结 #{id}",
+    "peek.edit": "编辑",
+    "peek.delete": "删除",
+    "peek.save": "保存",
+    "peek.cancel": "取消",
+    "peek.content": "内容",
+    "peek.metadata": "元数据",
+    "peek.editContent": "编辑内容",
+    "peek.needContent": "内容不能为空",
+    "peek.saved": "已保存",
+    "peek.deleted": "已删除",
+    "peek.gone": "条目不存在（可能已被删除，或不在当前页）",
+    "peek.untitled": "（无标题）",
+    "peek.empty": "（空内容）",
+    "peek.importance": "重要度 {value}",
+    "peek.emotion": "情绪 {value}",
+    "peek.close": "关闭详情面板",
+    "peek.field.status": "状态",
+    "peek.field.kind": "类型",
+    "peek.field.source": "来源",
+    "peek.field.scope": "作用域",
+    "peek.field.importance": "重要度",
+    "peek.field.confidence": "置信度",
+    "peek.field.accessCount": "访问次数",
+    "peek.field.createdAt": "创建时间",
+    "peek.field.updatedAt": "更新时间",
+    "peek.field.lastAccessAt": "最近访问",
+    "peek.field.tags": "标签",
+    "peek.field.senderId": "发送者 ID",
+    "peek.field.senderName": "发送者昵称",
+    "peek.field.originUmo": "来源会话",
+    "peek.field.title": "标题",
+    "peek.field.emotion": "情绪",
     "errors.bridgeMissing": "插件页桥接 SDK 未加载：请重载插件或刷新页面",
     "errors.requestFailed": "请求失败",
     "empty.none": "暂无数据",
@@ -143,26 +303,36 @@ const LOCAL_I18N = {
     "nav.features": "Features",
     "nav.memories": "Memories",
     "nav.recall": "Recall",
-    "nav.journals": "Journal",
+    "nav.journals": "Reality Bridge",
+    "nav.weeklies": "Weekly digest",
     "nav.reviews": "Reviews",
     "nav.persona": "Learning",
+    "nav.identity": "Identity",
     "nav.graph": "Graph",
     "nav.monitor": "Monitor",
     "nav.models": "Models",
     "nav.prompts": "Prompts",
     "nav.system": "System",
     "features.title": "Feature toggles",
-    "features.hint": "Toggles are written to the plugin config and applied immediately; items marked \"reload\" take effect after reloading the plugin.",
+    "features.hint": "Toggles and per-feature settings are written to the plugin config immediately and stay two-way in sync with the config page; items marked \"reload\" take effect after reloading the plugin.",
     "features.empty": "No features available.",
     "features.switchOn": "On",
     "features.switchOff": "Off",
+    "features.settings": "Settings",
+    "features.settingsOpen": "Hide settings",
+    "features.syncedAt": "Two-way synced with config page · %1",
+    "features.syncNow": "Sync now",
+    "features.syncFailed": "Sync failed (plugin may be reloading), keeping current view",
+    "features.externalSync": "Synced %1 change(s) from the plugin config page",
+    "features.listHint": "Comma separated",
+    "features.editHint": "Saves on blur or Enter",
     "features.needsReload": "Reload",
     "features.runtimeUnsupported": "Unsupported",
     "features.blockedBy": "Dependencies off",
     "domain.basic": "Basics",
     "domain.memory": "Memory",
     "domain.reflection": "Self-learning",
-    "domain.journal": "Journal",
+    "domain.journal": "Reality Bridge",
     "domain.agent": "Agent tools",
     "domain.context": "Context control",
     "domain.group": "Group semantics",
@@ -188,7 +358,7 @@ const LOCAL_I18N = {
     "stat.buffered": "Buffered",
     "stat.pending": "Pending",
     "stat.archived": "Archived",
-    "stat.journals": "Journals",
+    "stat.journals": "Bridge",
     "stat.tasks": "Tasks",
     "filter.status": "Status",
     "filter.kind": "Kind",
@@ -203,14 +373,50 @@ const LOCAL_I18N = {
     "recall.umo": "Session UMO (optional)",
     "recall.limit": "Limit",
     "recall.hint": "Without UMO it matches keywords across all scopes; with UMO it runs hybrid retrieval with score breakdown.",
-    "journals.title": "Journal (real-life memory)",
+    "journals.title": "Reality Bridge (weekly / diary / essay)",
+    "journals.add": "+ Add entry",
+    "journals.edit": "Edit",
+    "journals.delete": "Delete",
+    "journals.scope": "Scope",
+    "journals.scopeHint": "global:* / user:123 / group:456",
+    "table.actions": "Actions",
+    "journals.emotion": "Emotion (1-5)",
+    "journals.content": "Content",
+    "action.confirm": "Confirm",
+    "journals.tags": "Tags (comma separated)",
+    "journals.exported": "Exported",
+    "journals.imported": "Imported: %1 added, %2 skipped",
+    "journals.type": "Type",
+    "journals.titleField": "Title",
+    "journals.createdAt": "Created",
+    "journals.titleHint": "Leave empty to use today's date-time (e.g. 2015061517:00)",
+    "journals.selectPage": "Select page",
+    "journals.selectFilter": "Select all filtered ({count})",
+    "journals.selectNone": "Clear selection",
+    "journals.selectedCount": "{count} selected",
+    "journals.noneSelected": "Nothing selected",
+    "journals.exportSelected": "Export selected JSON",
+    "journals.exportSelectedDone": "Exported {count} entries",
+    "journals.empty": "No entries yet (use /sab diary <text>, or click \"Add entry\")",
+    "journals.newTitle": "+ Add entry",
+    "jtype.all": "All",
+    "jtype.weekly": "Weekly",
+    "jtype.diary": "Diary",
+    "jtype.essay": "Essay",
+    "weeklies.title": "Weekly digest",
+    "weeklies.hint": "Weekly digests are generated by the weekly insight from this week's reality-bridge entries; manage, export or import them here.",
+    "weeklies.empty": "No weekly digests yet (enable weekly insight, or import a JSON backup)",
+    "weeklies.imported": "Imported: %1 added, %2 skipped",
+    "action.exportJournals": "Export all JSON",
+    "action.importJournals": "Import JSON",
+    "action.exportWeeklies": "Export JSON",
+    "action.importWeeklies": "Import JSON",
     "persona.title": "Persona learning",
     "persona.hint": "Style samples, group jargon and affinity are listed here; unapproved learnings never affect replies.",
     "persona.umo": "Session UMO (optional)",
     "persona.styles": "Style samples",
     "persona.jargons": "Group jargon",
     "persona.affinity": "Affinity",
-    "persona.approval": "Needs review",
     "graph.title": "Knowledge graph",
     "graph.hint": "Entities and relations are extracted from long-term memory and isolated by scope; set an UMO to view one session only.",
     "graph.umo": "Session UMO (optional)",
@@ -222,7 +428,6 @@ const LOCAL_I18N = {
     "graph.edges": "Relations",
     "graph.empty": "No graph data",
     "graph.truncated": "Truncated (raise the node limit)",
-    "graph.detail": "Node detail",
     "monitor.title": "Monitor",
     "monitor.hint": "Aggregates recent runtime metrics and auto-review status; metric names look like llm.calls, retrieval.calls.",
     "monitor.range": "Range",
@@ -254,19 +459,139 @@ const LOCAL_I18N = {
     "system.jobs": "Scheduled jobs",
     "system.budget": "LLM budget",
     "system.maintenance": "Maintenance",
+    "system.configMaintenance": "Config maintenance",
+    "system.configHint": "Export the plugin config as a JSON backup; import validates against the schema, merges and hot-applies (capability switches and module configs take effect immediately, no reload needed).",
+    "system.configImported": "Config imported and hot-applied",
+    "action.exportConfig": "Export config JSON",
+    "action.importConfig": "Import config JSON",
+    "action.exportMemories": "Export JSON",
+    "action.importMemories": "Import JSON",
+    "memories.imported": "Imported: %1 added, %2 skipped",
     "system.reindexHint": "Rebuild keyword and vector indexes from current config. Memories are not deleted.",
+    "backup.title": "Backup & export",
+    "backup.hint": "Global backup: packs every business table (memories, reality bridge, graph, persona learning, reviews, identity observations ...), the config and a database snapshot into one zip. manifest.json records per-table row counts, each file's size and sha256, and why some tables are excluded; recent archives are kept in the server's backups/ directory.",
+    "backup.notes": "Note (optional)",
+    "backup.export": "Export backup ZIP",
+    "backup.import": "Import backup ZIP",
+    "backup.imported": "Import finished",
+    "backup.mode": "Import mode",
+    "backup.modeMerge": "Merge (recommended; keeps data created after the backup)",
+    "backup.modeReplace": "Full replace (restore to the backup moment)",
+    "backup.modeMergeShort": "Merge",
+    "backup.modeReplaceShort": "Full replace",
+    "backup.resultMode": "Mode used",
+    "backup.replaceConfirmTitle": "Confirm full replace",
+    "backup.replaceConfirmBody": "Business tables will be overwritten by the backup: rows missing from the backup are deleted and this cannot be undone (a database snapshot is taken first).",
+    "backup.replaceConfirmPlan": "Will write {1} rows; at least {2} rows are expected to be deleted (estimate: current rows minus backup rows; more when primary keys differ).",
+    "backup.replaceConfirmTail": "Runs immediately after confirmation.",
+    "backup.dbRestore": "Restore whole database",
+    "backup.dbRestoreHint": "Replaces the entire database with the snapshot inside the package: the only way to restore tables that were never exported (persona / graph / reviews) plus runtime state.",
+    "backup.dbRestoreConfirm": "The plugin will disconnect, save the current database as a pre-restore backup, overwrite it with the snapshot, then reconnect and run migrations. Any failure rolls the original database back automatically.",
+    "backup.dbRestored": "Whole-database restore finished",
+    "backup.dbRestoreBackup": "Previous database backup",
+    "backup.importHint": "Restores table by table with backup-wins merging: rows present in the backup are restored, rows created after the backup are untouched; a database snapshot is taken before writing. The database file is stashed under backups/ and must be swapped in while the plugin is disabled.",
+    "backup.downloading": "Packing, this can take a moment for large data...",
+    "backup.done": "Backup archive created: {1}",
+    "backup.savedAt": "Server copy: {1}",
+    "backup.empty": "No backup archives yet (click \"Export backup ZIP\")",
+    "backup.colFile": "File",
+    "backup.colSize": "Size",
+    "backup.colTime": "Created",
+    "backup.colPath": "Server path",
+    "identity.title": "Identity diagnostics",
+    "identity.hint": "Memories are attributed to whoever said them, but some platforms change the user identifier per session. These observations show which sender identifiers appear on which session: if one nickname maps to several IDs, the platform ID is unstable and the nickname strategy should be used instead.",
+    "identity.clear": "Clear observations",
+    "identity.cleared": "Cleared {1} identity observations",
+    "identity.strategy": "Identity strategy",
+    "identity.scopeType": "Scope type",
+    "identity.tracking": "Observation",
+    "identity.umoCount": "Sessions seen",
+    "identity.verdict": "Verdict",
+    "identity.colUmo": "Session UMO",
+    "identity.colPlatform": "Platform",
+    "identity.colSenderId": "Sender ID",
+    "identity.colSenderName": "Nickname",
+    "identity.colScope": "Scope",
+    "identity.colEvents": "Events",
+    "identity.colLast": "Last seen",
+    "identity.empty": "No identity observations yet (they appear after a user speaks)",
+    "identity.scopeTitle": "Scope distribution & migration",
+    "identity.scopeHint": "Only memories carrying a sender identifier can be attributed to a user. Preview first; the plugin backs up the database before writing.",
+    "identity.fromScope": "From scope",
+    "identity.toScope": "Target",
+    "identity.toUser": "Attribute to user by sender",
+    "identity.toGlobal": "Promote everything to global",
+    "identity.toArchive": "Archive only",
+    "identity.toUserElseArchive": "Attributed to user, rest archived",
+    "identity.preview": "Preview",
+    "identity.apply": "Migrate now",
+    "identity.applyConfirm": "This writes to the database (an automatic backup runs first):",
+    "identity.colTotal": "Total",
+    "identity.colActive": "Recallable",
+    "identity.colAttributed": "Attributed",
+    "identity.distEmpty": "No memories yet",
+    "identity.on": "on",
+    "identity.off": "off",
+    "verdict.empty": "No samples",
+    "verdict.unstable_id": "ID unstable",
+    "verdict.stable_id": "ID stable",
+    "verdict.single": "Not enough samples",
+    "reviews.approveAll": "Approve all filtered",
+    "reviews.rejectAll": "Reject all filtered",
+    "reviews.batchConfirm": "Applies to every pending record under the current filter:",
+    "reviews.batchDone": "Handled {1} records",
     "modal.detail": "Detail",
+    "peek.memoryTitle": "Memory #{id}",
+    "peek.journalTitle": "Journal #{id}",
+    "peek.weeklyTitle": "Weekly #{id}",
+    "peek.edit": "Edit",
+    "peek.delete": "Delete",
+    "peek.save": "Save",
+    "peek.cancel": "Cancel",
+    "peek.content": "Content",
+    "peek.metadata": "Metadata",
+    "peek.editContent": "Edit content",
+    "peek.needContent": "Content cannot be empty",
+    "peek.saved": "Saved",
+    "peek.deleted": "Deleted",
+    "peek.gone": "Item not found (it may have been deleted or is off the current page)",
+    "peek.untitled": "(untitled)",
+    "peek.empty": "(empty)",
+    "peek.importance": "Importance {value}",
+    "peek.emotion": "Mood {value}",
+    "peek.close": "Close detail panel",
+    "peek.field.status": "Status",
+    "peek.field.kind": "Kind",
+    "peek.field.source": "Source",
+    "peek.field.scope": "Scope",
+    "peek.field.importance": "Importance",
+    "peek.field.confidence": "Confidence",
+    "peek.field.accessCount": "Access count",
+    "peek.field.createdAt": "Created",
+    "peek.field.updatedAt": "Updated",
+    "peek.field.lastAccessAt": "Last access",
+    "peek.field.tags": "Tags",
+    "peek.field.senderId": "Sender ID",
+    "peek.field.senderName": "Sender name",
+    "peek.field.originUmo": "Origin session",
+    "peek.field.title": "Title",
+    "peek.field.emotion": "Mood",
     "errors.bridgeMissing": "Plugin page bridge SDK not loaded: reload the plugin or refresh the page",
     "errors.requestFailed": "Request failed",
     "empty.none": "No data",
   },
 };
 
+const FEATURES_POLL_MS = 5000;
+
 const state = {
   page: "overview",
   locale: "zh-CN",
   context: null,
   overview: null,
+  featuresItems: [],
+  featuresClosedGroups: new Set(),
+  featuresOpenSettings: new Set(),
   memories: {
     offset: 0,
     limit: 20,
@@ -276,7 +601,23 @@ const state = {
     sort: "created_desc",
     total: 0,
   },
-  journals: { offset: 0, limit: 20, keyword: "", sort: "event_desc", total: 0 },
+  journals: {
+    offset: 0,
+    limit: 20,
+    keyword: "",
+    type: "",
+    sort: "event_desc",
+    total: 0,
+    /** 后端配置的默认类型（journal.default_entry_type），新增记录时预选。 */
+    defaultType: "weekly",
+  },
+  journalsItems: [],
+  /** 已勾选的记录 id（跨页保留，直到筛选或翻页动作重置）。 */
+  journalsSelected: new Set(),
+  /** 勾选状态是否为「全选当前筛选」：此时导出交给后端按筛选条件取全量。 */
+  journalsSelectAll: false,
+  weeklies: { offset: 0, limit: 20, keyword: "", total: 0 },
+  weekliesItems: [],
   reviews: { offset: 0, limit: 20, origin: "", umo: "", total: 0 },
 };
 
@@ -289,10 +630,19 @@ function getBridge() {
 }
 
 function t(key, fallback) {
+  // 本地字典优先（随插件打包、切语言即时生效），bridge 里注册的插件 i18n 可覆盖，
+  // fallback（通常是节点现有文案）只作为 key 完全未知的最后兜底。
+  // 否则传节点文案当 fallback 会让本地字典永远用不上，静态节点切不了语言。
   const dict = LOCAL_I18N[state.locale] || LOCAL_I18N["zh-CN"];
-  // 先算本地兜底：桥接的 fallback 必须收到「真正的兜底文案」，
-  // 否则传 key 本身会让桥接把 key 当成有效翻译返回，本地字典永远用不上。
-  const local = fallback !== undefined ? fallback : dict[key] !== undefined ? dict[key] : key;
+  const base = LOCAL_I18N["zh-CN"];
+  const local =
+    dict[key] !== undefined
+      ? dict[key]
+      : base[key] !== undefined
+        ? base[key]
+        : fallback !== undefined
+          ? fallback
+          : key;
   const bridge = getBridge();
   if (bridge && typeof bridge.t === "function") {
     try {
@@ -354,18 +704,45 @@ function toast(message, kind = "info") {
   node.className = `toast ${kind}`;
   node.textContent = String(message);
   region.appendChild(node);
-  window.setTimeout(() => node.remove(), 4200);
+  window.setTimeout(() => {
+    if (!node.isConnected) return;
+    // 出场比入场快（150ms vs 200ms），transitionend 后移除；reduced-motion 下可能不触发，兜底定时
+    node.classList.add("leaving");
+    const done = () => node.remove();
+    node.addEventListener("transitionend", done, { once: true });
+    window.setTimeout(done, 400);
+  }, 4200);
 }
 
+let modalCloseTimer = 0;
+
 function openModal(title, html) {
+  // 快速「关闭→再打开」时，取消还没播完的退场回调，别把新弹窗藏掉
+  window.clearTimeout(modalCloseTimer);
+  $("modal").classList.remove("closing");
   $("modal-title").textContent = title;
   $("modal-body").innerHTML = html;
   $("modal").hidden = false;
 }
 
 function closeModal() {
-  $("modal").hidden = true;
-  $("modal-body").innerHTML = "";
+  const modal = $("modal");
+  if (modal.hidden || modal.classList.contains("closing")) return;
+  // 先播 150ms 退场动画再隐藏，避免瞬间消失的跳变；
+  // transitionend 会冒泡，只认 modal 自身的 opacity 过渡，另有定时器兜底
+  modal.classList.add("closing");
+  const done = () => {
+    window.clearTimeout(modalCloseTimer);
+    modal.classList.remove("closing");
+    modal.hidden = true;
+    $("modal-body").innerHTML = "";
+  };
+  modal.addEventListener("transitionend", function handler(event) {
+    if (event.target !== modal) return;
+    modal.removeEventListener("transitionend", handler);
+    done();
+  });
+  modalCloseTimer = window.setTimeout(done, 400);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -663,6 +1040,14 @@ function renderFeatureItem(item) {
   const blocked = (item.blocked_by || []).length
     ? `<div class="blocked">${esc(`${t("features.blockedBy")}：${item.blocked_by.join("、")}`)}</div>`
     : "";
+  const settings = item.settings || [];
+  const settingsBtn = settings.length
+    ? `<button type="button" class="btn ghost small${
+        state.featuresOpenSettings.has(item.key) ? " active" : ""
+      }" data-settings-toggle="${esc(item.key)}">${esc(
+        state.featuresOpenSettings.has(item.key) ? t("features.settingsOpen") : t("features.settings")
+      )}</button>`
+    : "";
   return `
     <div class="feature-item">
       <div class="info">
@@ -671,15 +1056,138 @@ function renderFeatureItem(item) {
         <div class="desc">${esc(item.description || "")}</div>
         ${blocked}
       </div>
-      <label class="switch">
-        <input type="checkbox" data-feature="${esc(item.key)}"
-          ${item.enabled ? "checked" : ""} ${locked ? "disabled" : ""} />
-        <span class="track"></span><span class="thumb"></span>
-      </label>
+      <div class="ops">
+        ${settingsBtn}
+        <label class="switch">
+          <input type="checkbox" data-feature="${esc(item.key)}"
+            ${item.enabled ? "checked" : ""} ${locked ? "disabled" : ""} />
+          <span class="track"></span><span class="thumb"></span>
+        </label>
+      </div>
     </div>`;
 }
 
-async function loadFeatures() {
+function renderSettingRow(spec) {
+  const type = spec.type || "string";
+  // prev 用于保存失败时回滚；JSON 字符串里的引号由 esc 转义
+  const prevAttr = `data-prev='${esc(JSON.stringify(spec.value === undefined ? null : spec.value))}'`;
+  const common = `data-setting="${esc(spec.key)}" data-type="${esc(type)}" ${prevAttr}`;
+  let control;
+  if (type === "bool") {
+    control = `<label class="switch"><input type="checkbox" ${common} ${
+      spec.value ? "checked" : ""
+    } /><span class="track"></span><span class="thumb"></span></label>`;
+  } else if (type === "int" || type === "float") {
+    control = `<input type="number" ${type === "int" ? 'step="1"' : 'step="any"'} ${common} value="${esc(
+      spec.value === null || spec.value === undefined ? "" : spec.value
+    )}" />`;
+  } else if (type === "string" && Array.isArray(spec.options) && spec.options.length) {
+    const opts = spec.options
+      .map((opt, index) => {
+        const label = Array.isArray(spec.labels) ? spec.labels[index] : opt;
+        const selected = String(spec.value ?? "") === String(opt) ? "selected" : "";
+        return `<option value="${esc(opt)}" ${selected}>${esc(label ?? opt)}</option>`;
+      })
+      .join("");
+    control = `<select ${common}>${opts}</select>`;
+  } else if (type === "text") {
+    control = `<textarea rows="3" ${common} placeholder="${esc(t("features.editHint"))}">${esc(
+      spec.value ?? ""
+    )}</textarea>`;
+  } else if (type === "list") {
+    const text = Array.isArray(spec.value) ? spec.value.join(", ") : String(spec.value ?? "");
+    control = `<input type="text" ${common} value="${esc(text)}" placeholder="${esc(
+      t("features.listHint")
+    )}" />`;
+  } else {
+    control = `<input type="text" ${common} value="${esc(spec.value ?? "")}" />`;
+  }
+  const hint = [spec.key, type === "list" ? t("features.listHint") : "", spec.hint]
+    .filter(Boolean)
+    .map((part) => esc(part))
+    .join(" · ");
+  return `
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-name">${esc(spec.description || spec.key)}</div>
+        <div class="setting-key">${hint}</div>
+      </div>
+      <div class="setting-ctl">${control}</div>
+    </div>`;
+}
+
+function renderFeatureBlock(item) {
+  const settings = item.settings || [];
+  const open = state.featuresOpenSettings.has(item.key);
+  const panel = settings.length
+    ? `<div class="feature-settings${open ? " open" : ""}" data-settings-panel="${esc(item.key)}">
+        <div class="feature-settings-inner">${settings.map(renderSettingRow).join("")}</div>
+      </div>`
+    : "";
+  return `<div class="feature-block">${renderFeatureItem(item)}${panel}</div>`;
+}
+
+function renderFeatureGroups(items) {
+  const groups = new Map();
+  items.forEach((item) => {
+    const domain = item.domain || "other";
+    if (!groups.has(domain)) groups.set(domain, []);
+    groups.get(domain).push(item);
+  });
+
+  const blocks = [];
+  groups.forEach((groupItems, domain) => {
+    const title = DOMAIN_TITLES[domain] ? t(DOMAIN_TITLES[domain]) : domain;
+    const open = !state.featuresClosedGroups.has(domain);
+    blocks.push(`
+      <section class="fgroup${open ? " open" : ""}" data-group="${esc(domain)}">
+        <button type="button" class="fgroup-head" data-group-toggle="${esc(domain)}">
+          <span class="chev" aria-hidden="true">▸</span>
+          <span class="fgroup-title">${esc(title)}</span>
+          <span class="fgroup-count mono">${groupItems.length}</span>
+        </button>
+        <div class="fgroup-body"><div class="fgroup-body-inner">
+          ${groupItems.map(renderFeatureBlock).join("")}
+        </div></div>
+      </section>`);
+  });
+  $("feat-list").innerHTML = blocks.join("");
+}
+
+function updateFeatureSyncTime() {
+  const node = $("feat-sync");
+  if (!node) return;
+  node.textContent = t("features.syncedAt").replaceAll("%1", new Date().toLocaleTimeString());
+  const line = node.closest("#feat-sync-line");
+  if (line) line.classList.remove("sync-error");
+}
+
+/** 对比拉取到的数据与内存快照，统计外部改动（自己的保存会同步快照，不会误报）。 */
+function diffFeatureChanges(items) {
+  const previous = state.featuresItems || [];
+  if (!previous.length) return [];
+  const prevEnabled = new Map(previous.map((item) => [item.key, !!item.enabled]));
+  const prevValues = new Map();
+  previous.forEach((item) =>
+    (item.settings || []).forEach((spec) => prevValues.set(spec.key, JSON.stringify(spec.value ?? null)))
+  );
+
+  const changed = [];
+  items.forEach((item) => {
+    if (prevEnabled.has(item.key) && prevEnabled.get(item.key) !== !!item.enabled) {
+      changed.push(item.title || item.key);
+    }
+    (item.settings || []).forEach((spec) => {
+      if (prevValues.has(spec.key) && prevValues.get(spec.key) !== JSON.stringify(spec.value ?? null)) {
+        changed.push(spec.description || spec.key);
+      }
+    });
+  });
+  return changed;
+}
+
+async function loadFeatures(options = {}) {
+  const silent = !!options.silent;
   const target = $("feat-list");
   try {
     const result = await apiGet("features");
@@ -688,23 +1196,91 @@ async function loadFeatures() {
       renderEmpty(target, t("features.empty"));
       return;
     }
-
-    const groups = new Map();
-    items.forEach((item) => {
-      const domain = item.domain || "other";
-      if (!groups.has(domain)) groups.set(domain, []);
-      groups.get(domain).push(item);
-    });
-
-    const blocks = [];
-    groups.forEach((groupItems, domain) => {
-      const title = DOMAIN_TITLES[domain] ? t(DOMAIN_TITLES[domain]) : domain;
-      blocks.push(`<div class="muted">${esc(title)}</div>`);
-      groupItems.forEach((item) => blocks.push(renderFeatureItem(item)));
-    });
-    target.innerHTML = blocks.join("");
+    // 轮询路径：先对比再更新快照，外部改动给出可见提示
+    if (silent) {
+      const changed = diffFeatureChanges(items);
+      if (changed.length) {
+        toast(t("features.externalSync").replaceAll("%1", String(changed.length)), "ok");
+      }
+    }
+    state.featuresItems = items;
+    renderFeatureGroups(items);
+    updateFeatureSyncTime();
   } catch (error) {
-    renderError(target, error);
+    if (silent) {
+      // 官方配置页保存会触发插件热重载，重载窗口内请求可能失败：
+      // 保留当前界面不砸掉，只标记同步状态，下一轮轮询自动恢复
+      const node = $("feat-sync");
+      if (node) {
+        node.textContent = t("features.syncFailed");
+        const line = node.closest("#feat-sync-line");
+        if (line) line.classList.add("sync-error");
+      }
+    } else {
+      renderError(target, error);
+    }
+  }
+}
+
+function syncFeaturesNow() {
+  if (state.page !== "features") return;
+  const list = $("feat-list");
+  if (list && list.contains(document.activeElement)) return;
+  loadFeatures({ silent: true });
+}
+
+/** 双向同步（读取向）：轮询 + 聚焦/可见即拉取，官方配置页的改动最迟数秒内到达。 */
+function startFeatureSyncPolling() {
+  window.setInterval(() => {
+    if (state.page !== "features" || document.hidden) return;
+    syncFeaturesNow();
+  }, FEATURES_POLL_MS);
+  // 切回面板页 / 窗口聚焦时立即拉一次，不等下一个周期
+  const pullOnWake = () => {
+    if (state.page === "features" && !document.hidden) syncFeaturesNow();
+  };
+  document.addEventListener("visibilitychange", pullOnWake);
+  window.addEventListener("focus", pullOnWake);
+}
+
+
+
+async function saveFeatureSetting(key, control) {
+  const type = control.dataset.type;
+  let value;
+  if (type === "bool") value = control.checked;
+  else if (type === "int" || type === "float") {
+    value = control.value === "" ? null : Number(control.value);
+  } else {
+    value = control.value;
+  }
+  control.disabled = true;
+  try {
+    const result = await apiPost("feature-setting", { key, value });
+    toast(result.message || t("features.saved") || "已保存", "ok");
+    // 同步内存快照，重载/轮询前界面与后端一致
+    for (const item of state.featuresItems || []) {
+      const spec = (item.settings || []).find((entry) => entry.key === key);
+      if (spec) {
+        spec.value = result.value;
+        break;
+      }
+    }
+    state.overview = null;
+  } catch (error) {
+    toast(error.message || String(error), "err");
+    // 回滚到保存前的值
+    let prev = null;
+    try {
+      prev = JSON.parse(control.dataset.prev || "null");
+    } catch (parseError) {
+      prev = null;
+    }
+    if (type === "bool") control.checked = !!prev;
+    else if (type === "list") control.value = Array.isArray(prev) ? prev.join(", ") : "";
+    else control.value = prev === null || prev === undefined ? "" : prev;
+  } finally {
+    control.disabled = false;
   }
 }
 
@@ -852,8 +1428,143 @@ async function runRecall() {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 章节：周记                                                              */
+/* 章节：现实桥（周记 / 日记 / 随笔）                                        */
 /* ---------------------------------------------------------------------- */
+
+const JOURNAL_TYPES = ["weekly", "diary", "essay"];
+
+/** 类型中文名；未知类型原样回退，避免渲染出 "jtype.xxx" 这类半成品文案。 */
+function journalTypeLabel(type) {
+  const key = `jtype.${type}`;
+  const text = t(key);
+  return text === key ? String(type || "") : text;
+}
+
+/** 默认标题：与后端 spec.entry_types.TITLE_TIME_FORMAT 一致（YYYYMMDDHH:MM）。 */
+function defaultJournalTitle(date) {
+  const moment = date instanceof Date ? date : new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${moment.getFullYear()}${pad(moment.getMonth() + 1)}${pad(moment.getDate())}` +
+    `${pad(moment.getHours())}:${pad(moment.getMinutes())}`
+  );
+}
+
+function journalRowIds() {
+  return (state.journalsItems || [])
+    .map((item) => Number(item.id))
+    .filter((id) => Number.isFinite(id));
+}
+
+function isJournalSelected(id) {
+  return state.journalsSelectAll || state.journalsSelected.has(Number(id));
+}
+
+/** 筛选条件变化时丢弃勾选：否则「已选」会跨条件悄悄累积。 */
+function resetJournalSelection() {
+  state.journalsSelected = new Set();
+  state.journalsSelectAll = false;
+}
+
+function syncJournalSelectionUi() {
+  const ids = journalRowIds();
+  const selected = state.journalsSelectAll
+    ? Number(state.journals.total || 0)
+    : state.journalsSelected.size;
+
+  const info = $("jr-select-info");
+  if (info) {
+    info.textContent = selected
+      ? tpl(t("journals.selectedCount"), { count: selected })
+      : t("journals.noneSelected");
+  }
+  const exportButton = $("jr-export-selected");
+  if (exportButton) exportButton.disabled = selected === 0;
+  const matchButton = $("jr-select-match");
+  if (matchButton) {
+    matchButton.textContent = tpl(t("journals.selectFilter"), {
+      count: Number(state.journals.total || 0),
+    });
+  }
+  const checkAll = $("jr-check-all");
+  if (checkAll) {
+    checkAll.checked = ids.length > 0 && ids.every((id) => isJournalSelected(id));
+    checkAll.disabled = ids.length === 0;
+  }
+}
+
+/** 只改行选中样式，不重绘表格（重绘会打断勾选连击）。 */
+function syncJournalRowSelection() {
+  document.querySelectorAll("#jr-table tbody tr").forEach((row) => {
+    const box = row.querySelector("[data-journal-check]");
+    if (box) row.classList.toggle("selected", box.checked);
+  });
+}
+
+function journalColumns() {
+  return [
+    {
+      title: "",
+      className: "check",
+      render: (row) =>
+        `<input type="checkbox" data-journal-check="${esc(row.id)}"${
+          isJournalSelected(row.id) ? " checked" : ""
+        } aria-label="${esc(t("journals.selectPage"))}" />`,
+    },
+    { title: "#", key: "id", className: "num" },
+    {
+      title: t("journals.titleField"),
+      className: "title-cell",
+      // 标题与内容都可点开侧滑详情（编辑/删除在面板头部，行内按钮保持原样）
+      render: (row) =>
+        `<span class="clickable" data-journal="${esc(row.id)}">${esc(row.title || "—")}</span>`,
+    },
+    {
+      title: t("journals.content"),
+      className: "content",
+      render: (row) =>
+        `<span class="clickable" data-journal="${esc(row.id)}">${esc(row.content)}</span>`,
+    },
+    {
+      title: t("journals.type"),
+      className: "num",
+      render: (row) =>
+        `<span class="pill jt-${esc(row.type || "")}">${esc(journalTypeLabel(row.type))}</span>`,
+    },
+    {
+      title: t("journals.tags"),
+      render: (row) => {
+        const tags = Array.isArray(row.tags) ? row.tags : [];
+        return tags.length
+          ? tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("")
+          : "—";
+      },
+    },
+    { title: t("journals.emotion"), className: "num", render: (row) => esc(row.emotion || "—") },
+    {
+      title: t("journals.createdAt"),
+      className: "num",
+      render: (row) => esc(fmtTime(row.created_at)),
+    },
+    {
+      title: t("table.actions"),
+      className: "actions",
+      render: (row) =>
+        `<button class="link-btn" data-journal-edit="${esc(row.id)}">${esc(
+          t("journals.edit")
+        )}</button><button class="link-btn danger-soft" data-journal-del="${esc(
+          row.id
+        )}">${esc(t("journals.delete"))}</button>`,
+    },
+  ];
+}
+
+function paintJournalsTable() {
+  renderTable($("jr-table"), journalColumns(), state.journalsItems || [], {
+    emptyText: t("journals.empty"),
+    rowAttrs: (row) => (isJournalSelected(row.id) ? ' class="selected"' : ""),
+  });
+}
 
 async function loadJournals() {
   const target = $("jr-table");
@@ -863,27 +1574,16 @@ async function loadJournals() {
       offset: cursor.offset,
       limit: cursor.limit,
       keyword: cursor.keyword,
+      entry_type: cursor.type,
       sort: cursor.sort,
     });
     cursor.total = Number(result.total || 0);
-    renderTable(
-      target,
-      [
-        { title: "#", key: "id", className: "num" },
-        { title: "内容", className: "content", render: (row) => esc(row.content) },
-        {
-          title: "标签",
-          render: (row) => {
-            const tags = Array.isArray(row.tags) ? row.tags : [];
-            return tags.length ? tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("") : "—";
-          },
-        },
-        { title: "情绪", className: "num", render: (row) => esc(row.emotion || "—") },
-        { title: "时间", className: "num", render: (row) => esc(fmtTime(row.event_time)) },
-      ],
-      result.items || [],
-      { emptyText: "还没有周记（可用 /sab journal 内容 #标签 记录）" }
-    );
+    if (JOURNAL_TYPES.includes(result.default_type)) {
+      cursor.defaultType = result.default_type;
+    }
+    state.journalsItems = result.items || [];
+    paintJournalsTable();
+    syncPeekAfterReload("journal", state.journalsItems);
   } catch (error) {
     renderError(target, error);
   }
@@ -892,6 +1592,227 @@ async function loadJournals() {
   $("jr-page-info").textContent = `${from}-${to} / ${cursor.total}`;
   $("jr-prev").disabled = cursor.offset <= 0;
   $("jr-next").disabled = cursor.offset + cursor.limit >= cursor.total;
+  syncJournalSelectionUi();
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：现实桥管理（admin-diary-proxy 模式：面板增/编/删/导入导出）          */
+/* ---------------------------------------------------------------------- */
+
+function openJournalEditor(entry) {
+  entry = entry || {};
+  const isEdit = !!entry.id;
+  const tagsText = Array.isArray(entry.tags) ? entry.tags.join(", ") : String(entry.tags ?? "");
+  // 新增时预填「当天日期时间」的默认标题：与后端补的默认值一致，用户可随手改掉。
+  const type = JOURNAL_TYPES.includes(entry.type)
+    ? entry.type
+    : state.journals.type || state.journals.defaultType || JOURNAL_TYPES[0];
+  const title = isEdit ? String(entry.title || "") : defaultJournalTitle();
+  openModal(
+    isEdit ? `${t("journals.edit")} #${entry.id}` : t("journals.newTitle"),
+    `
+      <div class="form-grid">
+        <label class="field">
+          <span>${esc(t("journals.type"))}</span>
+          <select id="jrf-type">
+            ${JOURNAL_TYPES.map(
+              (value) =>
+                `<option value="${value}"${value === type ? " selected" : ""}>${esc(
+                  journalTypeLabel(value)
+                )}</option>`
+            ).join("")}
+          </select>
+        </label>
+        <label class="field grow">
+          <span>${esc(t("journals.titleField"))}</span>
+          <input type="text" id="jrf-title" value="${esc(title)}"
+            placeholder="${esc(t("journals.titleHint"))}" />
+        </label>
+        <label class="field">
+          <span>${esc(t("journals.emotion"))}</span>
+          <input type="number" id="jrf-emotion" min="1" max="5"
+            value="${esc(entry.emotion ?? "")}" />
+        </label>
+      </div>
+      <div class="form-grid" style="margin-top:8px">
+        <label class="field grow">
+          <span>${esc(t("journals.scope"))}</span>
+          <input type="text" id="jrf-scope" value="${esc(entry.scope || "global:*")}"
+            placeholder="${esc(t("journals.scopeHint"))}" ${isEdit ? "disabled" : ""} />
+        </label>
+        <label class="field grow">
+          <span>${esc(t("journals.tags"))}</span>
+          <input type="text" id="jrf-tags" value="${esc(tagsText)}" />
+        </label>
+      </div>
+      <label class="field grow" style="margin-top:8px">
+        <span>${esc(t("journals.content"))}</span>
+        <textarea id="jrf-content" rows="5">${esc(entry.content || "")}</textarea>
+      </label>
+      <div class="row" style="margin-top:12px;justify-content:flex-end">
+        <button class="btn ghost" id="journal-cancel">${esc(t("action.close"))}</button>
+        <button class="btn" id="journal-save" data-id="${esc(entry.id ?? "")}">${esc(
+          t("action.save")
+        )}</button>
+      </div>`
+  );
+}
+
+async function saveJournal() {
+  const id = Number($("journal-save").dataset.id || 0);
+  const payload = {
+    content: $("jrf-content").value,
+    title: $("jrf-title").value,
+    entry_type: $("jrf-type").value,
+    tags: $("jrf-tags").value,
+    emotion: $("jrf-emotion").value === "" ? null : Number($("jrf-emotion").value),
+  };
+  try {
+    let result;
+    if (id) {
+      result = await apiPost("journals/update", { id, ...payload });
+    } else {
+      payload.scope = $("jrf-scope").value.trim() || "global:*";
+      result = await apiPost("journals/add", payload);
+    }
+    toast(result.message || "已保存", "ok");
+    closeModal();
+    resetJournalSelection();
+    // 抽屉里点「编辑」→ 保存后要把面板内容一起刷新，否则停在旧正文上
+    await loadJournals();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+function downloadJsonExport(payload, filename) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importJsonFile(file, endpoint, successText) {
+  try {
+    const result = await uploadFile(endpoint, file);
+    toast(
+      (successText || "导入完成").replace("%1", String(result.imported ?? 0)).replace("%2", String(result.skipped ?? 0)),
+      "ok"
+    );
+    return true;
+  } catch (error) {
+    toast(error.message || String(error), "err");
+    return false;
+  }
+}
+
+/** 文件上传导入：必须走 bridge.upload（multipart，字段名固定 file），
+ * 不能用 apiPost——JSON body 无法承载文件，后端 request.files() 会拿不到。 */
+async function uploadFile(endpoint, file) {
+  const bridge = await ensureBridge();
+  return unwrap(await bridge.upload(endpoint, file));
+}
+
+/** 轻量确认弹窗：复用详情 modal，返回 Promise<boolean>。 */
+/**
+ * 轻量确认弹窗。
+ *
+ * ``text`` 默认按纯文本转义；需要多行排版时传 ``options.html = true``（调用方自行保证内容安全）。
+ * 返回的 Promise 在用户点「确认」时 resolve ``true``、点「关闭」时 resolve ``false``——
+ * 覆盖恢复这类不可逆操作必须能区分「没确认」和「确认了」，不能一厢情愿地当成同意。
+ */
+function confirmRequest(title, text, onConfirm, options = {}) {
+  const body = options.html ? String(text) : esc(text);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const cleanup = () => {
+      const ok = $("confirm-ok");
+      const cancel = $("confirm-cancel");
+      if (ok) ok.removeEventListener("click", onOk);
+      if (cancel) cancel.removeEventListener("click", onCancel);
+      closeModal();
+    };
+    const onOk = async () => {
+      finish(true);
+      try {
+        await onConfirm();
+      } catch (error) {
+        toast(error.message || String(error), "err");
+      }
+    };
+    const onCancel = () => finish(false);
+
+    openModal(
+      title,
+      `<p style="margin:0 0 12px">${body}</p>
+       <div class="row" style="justify-content:flex-end">
+         <button class="btn ghost" id="confirm-cancel">${esc(t("action.close"))}</button>
+         <button class="btn danger" id="confirm-ok">${esc(t("action.confirm"))}</button>
+       </div>`
+    );
+    $("confirm-ok").addEventListener("click", onOk);
+    $("confirm-cancel").addEventListener("click", onCancel);
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：每周总结（周度洞察产出，独立管理 + 导入导出）                        */
+/* ---------------------------------------------------------------------- */
+
+async function loadWeeklies() {
+  const target = $("wk-table");
+  const cursor = state.weeklies;
+  try {
+    const result = await apiGet("weeklies", {
+      offset: cursor.offset,
+      limit: cursor.limit,
+      keyword: cursor.keyword,
+    });
+    cursor.total = Number(result.total || 0);
+    state.weekliesItems = result.items || [];
+    syncPeekAfterReload("weekly", state.weekliesItems);
+    renderTable(
+      target,
+      [
+        { title: "#", key: "id", className: "num" },
+        {
+          title: "内容",
+          className: "content",
+          render: (row) =>
+            `<span class="clickable" data-weekly="${esc(row.id)}">${esc(row.content)}</span>`,
+        },
+        { title: "重要度", className: "num", render: (row) => esc(num(row.importance)) },
+        { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope)}</span>` },
+        { title: "时间", className: "num", render: (row) => esc(fmtTime(row.created_at)) },
+        {
+          title: t("table.actions"),
+          className: "actions",
+          render: (row) =>
+            `<button class="link-btn danger-soft" data-weekly-del="${row.id}">${esc(
+              t("journals.delete")
+            )}</button>`,
+        },
+      ],
+      result.items || [],
+      { emptyText: t("weeklies.empty") }
+    );
+  } catch (error) {
+    renderError(target, error);
+  }
+  const from = cursor.total === 0 ? 0 : cursor.offset + 1;
+  const to = Math.min(cursor.offset + cursor.limit, cursor.total);
+  $("wk-page-info").textContent = `${from}-${to} / ${cursor.total}`;
+  $("wk-prev").disabled = cursor.offset <= 0;
+  $("wk-next").disabled = cursor.offset + cursor.limit >= cursor.total;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1131,8 +2052,294 @@ async function loadSystem(force = false) {
       ],
       Object.keys(budget).length ? [budget] : []
     );
+    await loadBackups();
   } catch (error) {
     renderError($("sys-fw"), error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：备份与导出（配置 + 数据库快照 + 各类数据 → zip）                     */
+/* ---------------------------------------------------------------------- */
+
+function fmtBytes(size) {
+  const value = Number(size);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1048576).toFixed(2)} MB`;
+}
+
+async function loadBackups() {
+  const table = $("bk-table");
+  const meta = $("bk-meta");
+  try {
+    const result = await apiGet("backup/list");
+    const tables = result.tables || [];
+    const excluded = Object.keys(result.excluded || {});
+    meta.textContent = `${tpl(t("backup.savedAt"), { 1: result.dir || "—" })}（保留最近 ${
+      result.keep ?? "—"
+    } 份 · 全量 ${tables.length} 张表 · 不含 ${excluded.join(" / ") || "无"}）`;
+    renderTable(
+      table,
+      [
+        { title: t("backup.colFile"), key: "filename" },
+        { title: t("backup.colSize"), className: "num", render: (row) => esc(fmtBytes(row.size)) },
+        {
+          title: t("backup.colTime"),
+          className: "num",
+          render: (row) => esc(fmtTime(row.created_at)),
+        },
+        {
+          title: t("backup.colPath"),
+          render: (row) => `<span class="muted">${esc(row.path)}</span>`,
+        },
+      ],
+      result.items || [],
+      { emptyText: t("backup.empty") }
+    );
+  } catch (error) {
+    renderError(table, error);
+  }
+}
+
+/** 备份下载：优先走 bridge.download（官方通道），不可用时退回内联 base64。 */
+async function downloadBackup() {
+  const button = $("bk-export");
+  // 备份包固定包含配置 + 数据库快照 + 全部数据（不再让用户挑类型：
+  // 少一份勾选就少一种「以为备份全了」的错误）
+  const params = { notes: $("bk-notes").value.trim() };
+  button.disabled = true;
+  toast(t("backup.downloading"), "info");
+  try {
+    const bridge = await ensureBridge();
+    let filename = "super_astrbot_backup.zip";
+    if (typeof bridge.download === "function") {
+      const result = await bridge.download("backup/export", params);
+      filename = (result && result.filename) || filename;
+    } else {
+      const payload = await apiGet("backup/export", params);
+      filename = (payload && payload.filename) || filename;
+      if (payload && payload.content) {
+        const bytes = Uint8Array.from(atob(payload.content), (char) => char.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "application/zip" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    }
+    toast(tpl(t("backup.done"), { 1: filename }), "ok");
+    await loadBackups();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/** 文件 → base64（分块拼接，避免大文件触发参数长度上限）。 */
+async function fileToBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+/** 备份包导入：merge（默认）或 replace（完全覆盖，需二次确认并展示删除估算）。 */
+async function importBackup(file) {
+  const button = $("bk-import-label");
+  const mode = $("bk-mode").value === "replace" ? "replace" : "merge";
+  button.disabled = true;
+  try {
+    const content = await fileToBase64(file);
+    if (mode === "replace") {
+      // 覆盖会删数据：先取一次预览（不写库）把「将写入 / 预计删除」摆给用户看
+      const preview = await apiPost("backup/import", {
+        mode,
+        dry_run: true,
+        content_b64: content,
+      });
+      const ok = await confirmRequest(
+        t("backup.replaceConfirmTitle"),
+        `${t("backup.replaceConfirmBody")}<br />${tpl(t("backup.replaceConfirmPlan"), {
+          1: preview.rows_written ?? 0,
+          2: preview.estimated_deleted_total ?? 0,
+        })}<br />${t("backup.replaceConfirmTail")}`,
+        async () => {},
+        { html: true }
+      );
+      if (!ok) {
+        button.disabled = false;
+        return;
+      }
+    }
+    const result = await apiPost("backup/import", { mode, dry_run: false, content_b64: content });
+    toast(result.message || t("backup.imported"), "ok");
+    // 明细写在卡片里（toast 只放摘要，避免一长串挤在一起看不清）
+    const lines = [];
+    lines.push(
+      `${t("backup.resultMode")}：${
+        result.mode === "replace" ? t("backup.modeReplaceShort") : t("backup.modeMergeShort")
+      }`
+    );
+    if (result.config && result.config.message) lines.push(`配置：${result.config.message}`);
+    const tables = Object.entries(result.tables || {}).filter(([, rows]) => rows > 0);
+    if (tables.length) {
+      lines.push(`逐表恢复：${tables.map(([name, rows]) => `${name} ${rows} 行`).join("、")}`);
+    }
+    if (result.reindex) lines.push(result.reindex);
+    if (result.backup) lines.push(`恢复前快照：${result.backup}`);
+    if (result.database && result.database.message) lines.push(result.database.message);
+    if (Array.isArray(result.warnings) && result.warnings.length) {
+      lines.push(`提示：${result.warnings.join("；")}`);
+    }
+    $("bk-result").textContent = lines.join("　·　");
+    renderDatabaseRestoreEntry(result);
+    await loadBackups();
+  } catch (error) {
+    $("bk-result").textContent = error.message || String(error);
+    toast(error.message || String(error), "err");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/** 包内有数据库快照时给出「整库恢复」入口（未导出的表与 kv_state 只能靠它还原）。 */
+function renderDatabaseRestoreEntry(result) {
+  const host = $("bk-db-actions");
+  if (!host) return;
+  const path = result && result.database ? result.database.saved_to : "";
+  if (!path || !result.can_replace_database) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  host.hidden = false;
+  host.innerHTML =
+    `<button class="btn danger" id="bk-db-restore">${esc(t("backup.dbRestore"))}</button>` +
+    `<span class="muted">${esc(t("backup.dbRestoreHint"))}</span>`;
+  const button = $("bk-db-restore");
+  if (!button) return;
+  button.addEventListener("click", () =>
+    confirmRequest(t("backup.dbRestore"), t("backup.dbRestoreConfirm"), async () => {
+      const outcome = await apiPost("backup/replace-database", { path });
+      toast(outcome.message || t("backup.dbRestored"), "ok");
+      $("bk-result").textContent = `${outcome.message || ""}　·　${
+        outcome.backup ? `${t("backup.dbRestoreBackup")}：${outcome.backup}` : ""
+      }`;
+      await loadBackups();
+    })
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* 章节：身份诊断与作用域迁移                                              */
+/* ---------------------------------------------------------------------- */
+
+const VERDICT_KIND = {
+  empty: "off",
+  single: "warn",
+  unstable_id: "warn",
+  stable_id: "on",
+};
+
+async function loadIdentity() {
+  const summary = $("id-summary");
+  const hint = $("id-hint");
+  const table = $("id-table");
+  try {
+    const result = await apiGet("identities");
+    const analysis = result.analysis || {};
+    summary.innerHTML = [
+      kv(t("identity.strategy"), result.strategy || "—"),
+      kv(t("identity.scopeType"), result.scope_type || "—"),
+      kv(t("identity.umoCount"), String(result.total ?? 0)),
+      kv(t("identity.tracking"), result.tracking ? t("identity.on") : t("identity.off")),
+      kv(t("identity.verdict"), t(`verdict.${analysis.verdict}`)),
+    ].join("");
+    hint.textContent = analysis.hint || "";
+    renderTable(
+      table,
+      [
+        { title: t("identity.colUmo"), render: (row) => esc(row.umo) },
+        { title: t("identity.colPlatform"), render: (row) => esc(row.platform || "—") },
+        { title: t("identity.colSenderId"), render: (row) => esc(row.sender_id || "—") },
+        { title: t("identity.colSenderName"), render: (row) => esc(row.sender_name || "—") },
+        { title: t("identity.colScope"), render: (row) => esc(row.user_key || "—") },
+        { title: t("identity.colEvents"), className: "num", render: (row) => esc(row.events) },
+        {
+          title: t("identity.colLast"),
+          className: "num",
+          render: (row) => esc(fmtTime(row.last_seen)),
+        },
+      ],
+      result.items || [],
+      { emptyText: t("identity.empty") }
+    );
+    await loadScopes();
+  } catch (error) {
+    renderError(table, error);
+  }
+}
+
+async function loadScopes() {
+  const table = $("sc-table");
+  try {
+    const result = await apiGet("scopes");
+    renderTable(
+      table,
+      [
+        {
+          title: t("filter.kind"),
+          render: (row) => `<span class="mono">${esc(row.scope_type)}</span>`,
+        },
+        { title: t("identity.colScope"), render: (row) => esc(row.scope_id) },
+        { title: t("identity.colTotal"), className: "num", render: (row) => esc(row.total) },
+        { title: t("identity.colActive"), className: "num", render: (row) => esc(row.active) },
+        {
+          title: t("identity.colAttributed"),
+          className: "num",
+          render: (row) => esc(row.attributed),
+        },
+        {
+          title: t("identity.colLast"),
+          className: "num",
+          render: (row) => esc(fmtTime(row.last_at)),
+        },
+      ],
+      result.scopes || [],
+      { emptyText: t("identity.distEmpty") }
+    );
+  } catch (error) {
+    renderError(table, error);
+  }
+}
+
+async function migrateScope(dryRun) {
+  const payload = {
+    to: $("sc-to").value,
+    from_scope_type: $("sc-from").value,
+    dry_run: dryRun,
+  };
+  const out = $("sc-result");
+  try {
+    const result = await apiPost("scopes/migrate", payload);
+    out.textContent = result.message || "";
+    if (result.dry_run) {
+      toast(result.message || "", "info");
+      return;
+    }
+    toast(result.message || "", "ok");
+    await loadScopes();
+  } catch (error) {
+    out.textContent = error.message || String(error);
+    toast(error.message || String(error), "err");
   }
 }
 
@@ -1219,30 +2426,330 @@ async function loadModels() {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 记忆详情                                                                */
+/* 侧滑详情面板（记忆 / 现实桥 / 每周总结共用一只抽屉）                       */
 /* ---------------------------------------------------------------------- */
+
+/* 节奏与居中弹窗同源：入场交给 CSS animation，出场先加 .closing 播完再隐藏；
+   transitionend 只认面板自身，另有定时器兜底（reduced-motion 下不会触发过渡）。
+   抽屉层级低于 modal，因此抽屉里点「编辑」弹出的表单、删除确认框都盖在抽屉之上。 */
+let peekCloseTimer = 0;
+const peekState = { type: "", item: null, isEditing: false };
+
+function peekPanelFill(titleHtml, parts = {}) {
+  $("peek-title").innerHTML = titleHtml;
+  $("peek-badges").innerHTML = parts.badges || "";
+  $("peek-actions").innerHTML = parts.actions || "";
+  $("peek-body").innerHTML = parts.body || "";
+}
+
+function openPeekPanel() {
+  // 快速「关闭 → 再打开」时取消未播完的退场回调，别把刚打开的面板藏掉
+  window.clearTimeout(peekCloseTimer);
+  const panel = $("peek-panel");
+  const overlay = $("peek-overlay");
+  panel.classList.remove("closing");
+  overlay.classList.remove("closing");
+  panel.hidden = false;
+  overlay.hidden = false;
+  panel.setAttribute("aria-hidden", "false");
+  panel.removeAttribute("inert");
+}
+
+function closePeekPanel() {
+  peekState.type = "";
+  peekState.item = null;
+  peekState.isEditing = false;
+  const panel = $("peek-panel");
+  const overlay = $("peek-overlay");
+  if (panel.hidden) return;
+  panel.classList.add("closing");
+  overlay.classList.add("closing");
+  const done = () => {
+    window.clearTimeout(peekCloseTimer);
+    panel.classList.remove("closing");
+    overlay.classList.remove("closing");
+    panel.hidden = true;
+    overlay.hidden = true;
+    panel.setAttribute("aria-hidden", "true");
+    panel.setAttribute("inert", "");
+    peekPanelFill("—");
+  };
+  const onEnd = (event) => {
+    if (event.target !== panel) return;
+    panel.removeEventListener("transitionend", onEnd);
+    done();
+  };
+  panel.addEventListener("transitionend", onEnd);
+  peekCloseTimer = window.setTimeout(done, 400);
+}
+
+function peekBadges(items) {
+  return items
+    .filter(Boolean)
+    .map(([cls, text]) => `<span class="pill ${cls}">${esc(text)}</span>`)
+    .join("");
+}
+
+function peekSection(title, inner) {
+  return `<section class="peek-section"><h4 class="peek-section-title">${esc(
+    title
+  )}</h4>${inner}</section>`;
+}
+
+function peekMetaGrid(pairs) {
+  const cells = pairs
+    .map(
+      ([label, value]) =>
+        `<div class="peek-meta-item"><span class="peek-meta-label">${esc(
+          label
+        )}</span><span class="peek-meta-value">${esc(value)}</span></div>`
+    )
+    .join("");
+  return `<div class="peek-meta-grid">${cells}</div>`;
+}
+
+function peekActionButtons(editing) {
+  if (editing) {
+    return (
+      `<button class="btn" data-peek-save>${esc(t("peek.save"))}</button>` +
+      `<button class="btn ghost" data-peek-cancel>${esc(t("peek.cancel"))}</button>`
+    );
+  }
+  return (
+    `<button class="btn" data-peek-edit>${esc(t("peek.edit"))}</button>` +
+    `<button class="btn danger" data-peek-delete>${esc(t("peek.delete"))}</button>`
+  );
+}
+
+function peekEditSection(value) {
+  return peekSection(
+    t("peek.editContent"),
+    `<textarea class="peek-textarea" id="peek-edit-content">${esc(value)}</textarea>`
+  );
+}
+
+function peekTagsText(tags) {
+  return Array.isArray(tags) && tags.length ? tags.join("、") : "—";
+}
+
+function memoryStatusPill(status) {
+  if (status === "active") return "on";
+  if (status === "buffered" || status === "pending") return "warn";
+  return "off";
+}
+
+function reRenderPeek() {
+  const { type, item } = peekState;
+  if (!item) return;
+  if (type === "memory") renderMemoryPeek(item);
+  else if (type === "journal") renderJournalPeek(item);
+  else if (type === "weekly") renderWeeklyPeek(item);
+}
+
+function renderMemoryPeek(item) {
+  const editing = peekState.isEditing;
+  const meta = peekMetaGrid([
+    [t("peek.field.status"), t(`status.${item.status}`, item.status)],
+    [t("peek.field.kind"), item.kind],
+    [t("peek.field.source"), item.source],
+    [t("peek.field.scope"), item.scope],
+    [t("peek.field.importance"), num(item.importance)],
+    [t("peek.field.confidence"), num(item.confidence)],
+    [t("peek.field.accessCount"), String(item.access_count ?? 0)],
+    [t("peek.field.createdAt"), fmtTime(item.created_at)],
+    [t("peek.field.updatedAt"), item.updated_at ? fmtTime(item.updated_at) : "—"],
+    [t("peek.field.lastAccessAt"), item.last_access_at ? fmtTime(item.last_access_at) : "—"],
+    [t("peek.field.tags"), peekTagsText(item.tags)],
+    // 身份三列是「跨会话识别用户」的依据，放在详情里便于核对归属
+    [t("peek.field.senderId"), item.sender_id || "—"],
+    [t("peek.field.senderName"), item.sender_name || "—"],
+    [t("peek.field.originUmo"), item.origin_umo || "—"],
+  ]);
+  peekPanelFill(tpl(t("peek.memoryTitle"), { id: item.id }), {
+    badges: peekBadges([
+      [memoryStatusPill(item.status), t(`status.${item.status}`, item.status)],
+      ["info", item.kind],
+      ["off", tpl(t("peek.importance"), { value: num(item.importance) })],
+    ]),
+    actions: peekActionButtons(editing),
+    body: editing
+      ? peekEditSection(item.content)
+      : peekSection(t("peek.content"), `<pre class="peek-content">${esc(item.content)}</pre>`) +
+        peekSection(t("peek.metadata"), meta),
+  });
+}
+
+function renderJournalPeek(entry) {
+  const meta = peekMetaGrid([
+    [t("peek.field.title"), entry.title || t("peek.untitled")],
+    [t("peek.field.kind"), journalTypeLabel(entry.type)],
+    [t("peek.field.emotion"), entry.emotion ? String(entry.emotion) : "—"],
+    [t("peek.field.scope"), entry.scope || "—"],
+    [t("peek.field.tags"), peekTagsText(entry.tags)],
+    [t("peek.field.createdAt"), fmtTime(entry.created_at)],
+  ]);
+  peekPanelFill(tpl(t("peek.journalTitle"), { id: entry.id }), {
+    badges: peekBadges([
+      [`jt-${entry.type || "weekly"}`, journalTypeLabel(entry.type)],
+      entry.emotion ? ["info", tpl(t("peek.emotion"), { value: entry.emotion })] : null,
+    ]),
+    // 现实桥的编辑沿用既有表单（modal 在抽屉之上），面板这里只提供入口
+    actions: peekActionButtons(false),
+    body:
+      peekSection(
+        t("peek.field.title"),
+        `<pre class="peek-content">${esc(entry.title || t("peek.untitled"))}</pre>`
+      ) +
+      peekSection(
+        t("peek.content"),
+        `<pre class="peek-content">${esc(entry.content || t("peek.empty"))}</pre>`
+      ) +
+      peekSection(t("peek.metadata"), meta),
+  });
+}
+
+function renderWeeklyPeek(item) {
+  const editing = peekState.isEditing;
+  const meta = peekMetaGrid([
+    [t("peek.field.importance"), num(item.importance)],
+    [t("peek.field.kind"), item.kind || "insight"],
+    [t("peek.field.scope"), item.scope],
+    [t("peek.field.createdAt"), fmtTime(item.created_at)],
+  ]);
+  peekPanelFill(tpl(t("peek.weeklyTitle"), { id: item.id }), {
+    badges: peekBadges([
+      ["weekly-type", t("nav.weeklies")],
+      ["off", tpl(t("peek.importance"), { value: num(item.importance) })],
+    ]),
+    actions: peekActionButtons(editing),
+    body: editing
+      ? peekEditSection(item.content)
+      : peekSection(t("peek.content"), `<pre class="peek-content">${esc(item.content)}</pre>`) +
+        peekSection(t("peek.metadata"), meta),
+  });
+}
+
+/** 列表刷新后同步抽屉：同一条记录换成新数据，列表里已经没有了就直接关掉。 */
+function syncPeekAfterReload(type, items) {
+  if (peekState.type !== type || $("peek-panel").hidden || !peekState.item) return;
+  const updated = (items || []).find((item) => String(item.id) === String(peekState.item.id));
+  if (!updated) {
+    closePeekPanel();
+    return;
+  }
+  peekState.item = updated;
+  reRenderPeek();
+}
 
 async function openMemoryDetail(id) {
   try {
     const item = await apiGet("memory", { id });
-    const rows = [
-      ["#", item.id],
-      ["状态", item.status],
-      ["类型", item.kind],
-      ["来源", item.source],
-      ["作用域", item.scope],
-      ["重要度", item.importance],
-      ["置信度", item.confidence],
-      ["访问次数", item.access_count],
-      ["创建时间", fmtTime(item.created_at)],
-      ["最近访问", item.last_access_at ? fmtTime(item.last_access_at) : "从未"],
-      ["标签", Array.isArray(item.tags) && item.tags.length ? item.tags.join("、") : "无"],
-    ];
-    const table = rows.map(([key, value]) => kv(key, value)).join("");
-    openModal(`记忆 #${esc(item.id)}`, `<div class="kv-grid">${table}</div><pre>${esc(item.content)}</pre>`);
+    peekState.type = "memory";
+    peekState.item = item;
+    peekState.isEditing = false;
+    renderMemoryPeek(item);
+    openPeekPanel();
   } catch (error) {
     toast(error.message || String(error), "err");
   }
+}
+
+function openJournalDetail(id) {
+  const entry = (state.journalsItems || []).find((item) => String(item.id) === String(id));
+  if (!entry) {
+    toast(t("peek.gone"), "warn");
+    return;
+  }
+  peekState.type = "journal";
+  peekState.item = entry;
+  peekState.isEditing = false;
+  renderJournalPeek(entry);
+  openPeekPanel();
+}
+
+function openWeeklyDetail(id) {
+  const entry = (state.weekliesItems || []).find((item) => String(item.id) === String(id));
+  if (!entry) {
+    toast(t("peek.gone"), "warn");
+    return;
+  }
+  peekState.type = "weekly";
+  peekState.item = entry;
+  peekState.isEditing = false;
+  renderWeeklyPeek(entry);
+  openPeekPanel();
+}
+
+/** 抽屉内的「编辑」：记忆/每周总结就地把正文换成文本框，现实桥交给既有表单。 */
+function peekStartEdit() {
+  if (peekState.type === "journal") {
+    const entry = peekState.item;
+    if (entry) openJournalEditor(entry);
+    return;
+  }
+  peekState.isEditing = true;
+  reRenderPeek();
+  const box = $("peek-edit-content");
+  if (box) box.focus();
+}
+
+function peekCancelEdit() {
+  peekState.isEditing = false;
+  reRenderPeek();
+}
+
+async function peekSaveContent(button) {
+  const { type, item } = peekState;
+  const box = $("peek-edit-content");
+  if (!item || !box) return;
+  const content = box.value.trim();
+  if (!content) {
+    toast(t("peek.needContent"), "warn");
+    box.focus();
+    return;
+  }
+  const endpoint = type === "weekly" ? "weeklies/update" : "memories/update";
+  if (button) button.disabled = true;
+  try {
+    const result = await apiPost(endpoint, { id: Number(item.id), content });
+    toast(result.message || t("peek.saved"), "ok");
+    if (type === "weekly") {
+      item.content = content;
+      peekState.isEditing = false;
+      renderWeeklyPeek(item);
+      loadWeeklies();
+    } else {
+      await openMemoryDetail(item.id);
+      loadMemories();
+    }
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function peekDelete() {
+  const { type, item } = peekState;
+  if (!item) return;
+  const endpoints = { weekly: "weeklies/delete", journal: "journals/delete", memory: "memories/delete" };
+  const labelKeys = {
+    weekly: "peek.weeklyTitle",
+    journal: "peek.journalTitle",
+    memory: "peek.memoryTitle",
+  };
+  const endpoint = endpoints[type] || endpoints.memory;
+  const labelKey = labelKeys[type] || labelKeys.memory;
+  confirmRequest(t("peek.delete"), tpl(t(labelKey), { id: item.id }), async () => {
+    const result = await apiPost(endpoint, { id: Number(item.id) });
+    toast(result.message || t("peek.deleted"), "ok");
+    closePeekPanel();
+    if (type === "weekly") loadWeeklies();
+    else if (type === "journal") {
+      resetJournalSelection();
+      loadJournals();
+    } else loadMemories();
+  });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1678,6 +3185,7 @@ const MONITOR_LIVE_METRICS = [
   ["LLM 失败", "llm.errors"],
   ["检索次数", "retrieval.calls"],
   ["注入字符", "inject.chars"],
+  ["注入回退", "inject.fallbacks"],
   ["任务运行", "scheduler.runs"],
   ["任务失败", "scheduler.failures"],
 ];
@@ -1970,8 +3478,10 @@ const PAGE_TITLES = {
   memories: "nav.memories",
   recall: "nav.recall",
   journals: "nav.journals",
+  weeklies: "nav.weeklies",
   reviews: "nav.reviews",
   persona: "nav.persona",
+  identity: "nav.identity",
   graph: "nav.graph",
   monitor: "nav.monitor",
   models: "nav.models",
@@ -1984,6 +3494,7 @@ const LOADERS = {
   features: () => loadFeatures(),
   memories: () => loadMemories(),
   journals: () => loadJournals(),
+  weeklies: () => loadWeeklies(),
   reviews: () => loadReviews(),
   persona: () => loadPersona(),
   graph: () => loadGraph(),
@@ -1991,6 +3502,7 @@ const LOADERS = {
   models: () => loadModels(),
   prompts: () => loadPrompts(),
   system: () => loadSystem(true),
+  identity: () => loadIdentity(),
 };
 
 /** 统一执行分区加载器，并驱动顶部加载条。 */
@@ -2014,7 +3526,12 @@ function navigate(page, options = {}) {
   document.querySelectorAll(".page").forEach((node) => {
     node.classList.toggle("active", node.id === `page-${target}`);
   });
-  $("page-title").textContent = t(PAGE_TITLES[target]);
+  // 编辑风页题：编号前缀（01/02…）随导航顺序生成
+  const order = Object.keys(PAGE_TITLES);
+  const index = String(order.indexOf(target) + 1).padStart(2, "0");
+  const indexNode = $("page-index");
+  if (indexNode) indexNode.textContent = index;
+  $("page-title").innerHTML = `<span class="title-index">${index}</span>${esc(t(PAGE_TITLES[target]))}`;
   if (!options.skipLoad && target !== "recall") {
     runLoader(target);
   }
@@ -2037,6 +3554,11 @@ function applyStaticI18n() {
     } else if (node.tagName === "OPTION" || node.children.length === 0) {
       node.textContent = text;
     }
+  });
+  // 属性型文案（读屏与提示气泡）：纯图标按钮的可见文本是符号，兜底文案留在属性里
+  document.querySelectorAll("[data-i18n-aria]").forEach((node) => {
+    const key = node.getAttribute("data-i18n-aria");
+    node.setAttribute("aria-label", t(key, node.getAttribute("aria-label") || ""));
   });
 }
 
@@ -2077,6 +3599,16 @@ function bindEvents() {
 
   $("btn-theme").addEventListener("click", toggleTheme);
 
+  const syncNowButton = $("feat-sync-now");
+  if (syncNowButton) {
+    syncNowButton.addEventListener("click", () => {
+      syncNowButton.disabled = true;
+      loadFeatures({ silent: true }).finally(() => {
+        syncNowButton.disabled = false;
+      });
+    });
+  }
+
   // 记忆列表筛选
   $("mem-search").addEventListener("click", () => {
     state.memories.status = $("mem-status").value;
@@ -2109,26 +3641,255 @@ function bindEvents() {
     if (event.key === "Enter") runRecall();
   });
 
-  // 周记：筛选与分页
+  // 现实桥：类型/关键词筛选、排序与分页（筛选条件变化会清空勾选）
   const journalQuery = () => {
+    state.journals.type = $("jr-type").value;
     state.journals.keyword = $("jr-keyword").value.trim();
     state.journals.sort = $("jr-sort").value;
     state.journals.offset = 0;
+    resetJournalSelection();
     loadJournals();
   };
   $("jr-search").addEventListener("click", journalQuery);
   $("jr-sort").addEventListener("change", journalQuery);
+  $("jr-type").addEventListener("change", journalQuery);
   $("jr-keyword").addEventListener("keydown", (event) => {
     if (event.key === "Enter") journalQuery();
   });
   $("jr-prev").addEventListener("click", () => {
     state.journals.offset = Math.max(0, state.journals.offset - state.journals.limit);
+    resetJournalSelection();
     loadJournals();
   });
   $("jr-next").addEventListener("click", () => {
     state.journals.offset += state.journals.limit;
+    resetJournalSelection();
     loadJournals();
   });
+
+  // 现实桥：勾选（单选 / 本页全选 / 全选当前筛选 / 清空）
+  $("jr-table").addEventListener("change", (event) => {
+    const box = event.target.closest("[data-journal-check]");
+    if (!box) return;
+    const id = Number(box.dataset.journalCheck);
+    if (state.journalsSelectAll) {
+      // 从「全选当前筛选」降级为显式集合：先把本页其余条目落进集合再摘掉这一条
+      state.journalsSelectAll = false;
+      journalRowIds().forEach((item) => state.journalsSelected.add(item));
+    }
+    if (box.checked) state.journalsSelected.add(id);
+    else state.journalsSelected.delete(id);
+    syncJournalRowSelection();
+    syncJournalSelectionUi();
+  });
+  $("jr-check-all").addEventListener("change", (event) => {
+    const ids = journalRowIds();
+    if (state.journalsSelectAll) {
+      state.journalsSelectAll = false;
+      state.journalsSelected = new Set(ids);
+    }
+    ids.forEach((id) => {
+      if (event.target.checked) state.journalsSelected.add(id);
+      else state.journalsSelected.delete(id);
+    });
+    paintJournalsTable();
+    syncJournalSelectionUi();
+  });
+  $("jr-select-match").addEventListener("click", () => {
+    state.journalsSelectAll = true;
+    state.journalsSelected = new Set();
+    paintJournalsTable();
+    syncJournalSelectionUi();
+    if (Number(state.journals.total || 0) === 0) {
+      toast(t("journals.noneSelected"), "warn");
+    }
+  });
+  $("jr-select-none").addEventListener("click", () => {
+    resetJournalSelection();
+    paintJournalsTable();
+    syncJournalSelectionUi();
+  });
+
+  // 现实桥管理：新增 / 导出全部 / 导出所选 / 导入 / 行内编辑删除
+  $("jr-add").addEventListener("click", () => openJournalEditor(null));
+  $("jr-export").addEventListener("click", async () => {
+    try {
+      const payload = await apiGet("journals/export");
+      downloadJsonExport(payload, "super_astrbot_journals.json");
+      toast(t("journals.exported"), "ok");
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+  $("jr-export-selected").addEventListener("click", async () => {
+    const selectAll = state.journalsSelectAll;
+    const ids = [...state.journalsSelected];
+    if (!selectAll && ids.length === 0) {
+      toast(t("journals.noneSelected"), "warn");
+      return;
+    }
+    const button = $("jr-export-selected");
+    button.disabled = true;
+    try {
+      const payload = await apiPost("journals/export-selected", {
+        ids,
+        all: selectAll,
+        entry_type: state.journals.type || "",
+        keyword: state.journals.keyword || "",
+      });
+      downloadJsonExport(payload, "super_astrbot_journals_selected.json");
+      toast(
+        tpl(t("journals.exportSelectedDone"), { count: Number(payload.count || ids.length) }),
+        "ok"
+      );
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    } finally {
+      button.disabled = false;
+      syncJournalSelectionUi();
+    }
+  });
+  $("jr-import-label").addEventListener("click", () => $("jr-import").click());
+  $("jr-import").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const done = await importJsonFile(file, "journals/import", t("journals.imported"));
+    if (done) {
+      resetJournalSelection();
+      loadJournals();
+    }
+    event.target.value = "";
+  });
+  $("jr-table").addEventListener("click", (event) => {
+    const editNode = event.target.closest("[data-journal-edit]");
+    const delNode = event.target.closest("[data-journal-del]");
+    if (editNode) {
+      const entry = (state.journalsItems || []).find(
+        (item) => String(item.id) === String(editNode.dataset.journalEdit)
+      );
+      if (entry) openJournalEditor(entry);
+    } else if (delNode) {
+      const id = delNode.dataset.journalDel;
+      confirmRequest(t("journals.delete"), `#${id}`, async () => {
+        const result = await apiPost("journals/delete", { id: Number(id) });
+        toast(result.message || "已删除", "ok");
+        resetJournalSelection();
+        loadJournals();
+      });
+    } else {
+      return; // 不是行内按钮 → 交给文档级委托（点开侧滑详情）
+    }
+    // 行内按钮优先于整行点击：别再让文档级委托把面板也打开
+    event.stopPropagation();
+  });
+  $("modal-body").addEventListener("click", (event) => {
+    if (event.target.closest("#journal-save")) saveJournal();
+    else if (event.target.closest("#journal-cancel")) closeModal();
+  });
+
+  // 备份与导出
+  $("bk-export").addEventListener("click", downloadBackup);
+  $("bk-import-label").addEventListener("click", () => $("bk-import").click());
+  $("bk-import").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    await importBackup(file);
+    event.target.value = "";
+  });
+
+  // 身份诊断与作用域迁移
+  $("id-refresh").addEventListener("click", () => loadIdentity());
+  $("id-clear").addEventListener("click", async () => {
+    try {
+      const result = await apiPost("identities/clear", {});
+      toast(tpl(t("identity.cleared"), { 1: result.removed ?? 0 }), "ok");
+      await loadIdentity();
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+  $("sc-preview").addEventListener("click", () => migrateScope(true));
+  $("sc-apply").addEventListener("click", () => {
+    const to = $("sc-to").value;
+    confirmRequest(
+      t("identity.apply"),
+      `${t("identity.applyConfirm")}${$("sc-from").value} → ${to}`,
+      () => migrateScope(false)
+    );
+  });
+
+  // 待审：按当前筛选批量批准 / 驳回
+  const batchReview = (action) => {
+    confirmRequest(
+      action === "approve" ? t("reviews.approveAll") : t("reviews.rejectAll"),
+      `${t("reviews.batchConfirm")} origin=${$("rv-origin").value || "全部"} umo=${
+        $("rv-umo").value.trim() || "全部"
+      }`,
+      async () => {
+        const result = await apiPost("reviews/batch", {
+          action,
+          origin: $("rv-origin").value,
+          umo: $("rv-umo").value.trim(),
+        });
+        $("rv-batch-result").textContent = result.message || "";
+        toast(tpl(t("reviews.batchDone"), { 1: result.handled ?? 0 }), "ok");
+        await loadReviews();
+      }
+    );
+  };
+  $("rv-approve-all").addEventListener("click", () => batchReview("approve"));
+  $("rv-reject-all").addEventListener("click", () => batchReview("reject"));
+
+  // 每周总结：查询 / 翻页 / 导出 / 导入 / 行内删除
+  const weekliesQuery = () => {
+    state.weeklies.keyword = $("wk-keyword").value.trim();
+    state.weeklies.offset = 0;
+    loadWeeklies();
+  };
+  $("wk-search").addEventListener("click", weekliesQuery);
+  $("wk-keyword").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") weekliesQuery();
+  });
+  $("wk-prev").addEventListener("click", () => {
+    if (state.weeklies.offset > 0) {
+      state.weeklies.offset = Math.max(0, state.weeklies.offset - state.weeklies.limit);
+      loadWeeklies();
+    }
+  });
+  $("wk-next").addEventListener("click", () => {
+    state.weeklies.offset += state.weeklies.limit;
+    loadWeeklies();
+  });
+  $("wk-export").addEventListener("click", async () => {
+    try {
+      const payload = await apiGet("weeklies/export");
+      downloadJsonExport(payload, "super_astrbot_weeklies.json");
+      toast(t("journals.exported"), "ok");
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+  $("wk-import-label").addEventListener("click", () => $("wk-import").click());
+  $("wk-import").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const done = await importJsonFile(file, "weeklies/import", t("weeklies.imported"));
+    if (done) loadWeeklies();
+    event.target.value = "";
+  });
+  $("wk-table").addEventListener("click", (event) => {
+    const delNode = event.target.closest("[data-weekly-del]");
+    if (!delNode) return; // 不是行内删除 → 交给文档级委托（点开侧滑详情）
+    const id = delNode.dataset.weeklyDel;
+    confirmRequest(t("journals.delete"), `#${id}`, async () => {
+      const result = await apiPost("weeklies/delete", { id: Number(id) });
+      toast(result.message || "已删除", "ok");
+      loadWeeklies();
+    });
+    // 行内按钮优先于整行点击
+    event.stopPropagation();
+  });
+
 
   // 待审：来源筛选与分页
   const reviewQuery = () => {
@@ -2177,9 +3938,12 @@ function bindEvents() {
     try {
       const result = await apiPost("maintenance", { action: "reindex" });
       const stats = result.stats || {};
+      const note = result.note || stats.note || "";
+      // 向量没建起来的原因必须写在界面上：否则「向量 0 条」看起来像坏掉了。
+      $("sys-reindex-note").textContent = note;
       toast(
         `索引重建完成：关键词 ${stats.indexed ?? 0} 条，向量 ${stats.vectorized ?? 0} 条`,
-        "ok"
+        note ? "warn" : "ok"
       );
     } catch (error) {
       toast(error.message || String(error), "err");
@@ -2205,6 +3969,34 @@ function bindEvents() {
       openMemoryDetail(memoryNode.dataset.memory);
       return;
     }
+    const journalNode = event.target.closest("[data-journal]");
+    if (journalNode) {
+      openJournalDetail(journalNode.dataset.journal);
+      return;
+    }
+    const weeklyNode = event.target.closest("[data-weekly]");
+    if (weeklyNode) {
+      openWeeklyDetail(weeklyNode.dataset.weekly);
+      return;
+    }
+    // 侧滑面板头部的「编辑 / 保存 / 取消 / 删除」
+    if (event.target.closest("[data-peek-edit]")) {
+      peekStartEdit();
+      return;
+    }
+    if (event.target.closest("[data-peek-cancel]")) {
+      peekCancelEdit();
+      return;
+    }
+    const peekSave = event.target.closest("[data-peek-save]");
+    if (peekSave) {
+      peekSaveContent(peekSave);
+      return;
+    }
+    if (event.target.closest("[data-peek-delete]")) {
+      peekDelete();
+      return;
+    }
     const nodeItem = event.target.closest("[data-node]");
     if (nodeItem) {
       focusGraphNode(nodeItem.dataset.node);
@@ -2226,18 +4018,121 @@ function bindEvents() {
     }
   });
 
+  // 配置维护：导出 / 导入（导入后热应用，能力开关与各模块配置即时生效）
+  $("cfg-export").addEventListener("click", async () => {
+    try {
+      const payload = await apiGet("config/export");
+      downloadJsonExport(payload, "super_astrbot_config.json");
+      toast(t("journals.exported"), "ok");
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+  $("cfg-import-label").addEventListener("click", () => $("cfg-import").click());
+  $("cfg-import").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      const result = await uploadFile("config/import", file);
+      toast(result.message || t("system.configImported"), "ok");
+      // 配置可能影响能力开关与总览统计：清缓存刷新
+      state.overview = null;
+      if (state.page === "system") {
+        /* 系统页无独立 loader，能力状态在总览/功能页体现 */
+      }
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+    event.target.value = "";
+  });
+
+  // 记忆导入导出
+  $("mem-export").addEventListener("click", async () => {
+    try {
+      const payload = await apiGet("memories/export");
+      downloadJsonExport(payload, "super_astrbot_memories.json");
+      toast(t("journals.exported"), "ok");
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+  $("mem-import-label").addEventListener("click", () => $("mem-import").click());
+  $("mem-import").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      const result = await uploadFile("memories/import", file);
+      toast(
+        t("memories.imported")
+          .replaceAll("%1", String(result.imported ?? 0))
+          .replaceAll("%2", String(result.skipped ?? 0)),
+        "ok"
+      );
+      loadMemories();
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+    event.target.value = "";
+  });
+
   // 功能开关（复选框只有 click 无法覆盖键盘操作，用 change 更稳妥）
   document.addEventListener("change", (event) => {
     const input = event.target.closest("[data-feature]");
-    if (input) handleFeatureToggle(input.dataset.feature, input.checked, input);
+    if (input) {
+      handleFeatureToggle(input.dataset.feature, input.checked, input);
+      return;
+    }
+    const setting = event.target.closest("[data-setting]");
+    if (setting) saveFeatureSetting(setting.dataset.setting, setting);
+  });
+
+  // 功能页：域折叠 + 单个功能的具体设置折叠
+  $("feat-list").addEventListener("click", (event) => {
+    const groupButton = event.target.closest("[data-group-toggle]");
+    if (groupButton) {
+      const domain = groupButton.dataset.groupToggle;
+      const group = groupButton.closest(".fgroup");
+      const willOpen = !group.classList.contains("open");
+      group.classList.toggle("open", willOpen);
+      if (willOpen) state.featuresClosedGroups.delete(domain);
+      else state.featuresClosedGroups.add(domain);
+      return;
+    }
+    const settingsButton = event.target.closest("[data-settings-toggle]");
+    if (settingsButton) {
+      const key = settingsButton.dataset.settingsToggle;
+      const panel = document.querySelector(
+        `[data-settings-panel="${CSS.escape(key)}"]`
+      );
+      if (!panel) return;
+      const willOpen = !panel.classList.contains("open");
+      panel.classList.toggle("open", willOpen);
+      if (willOpen) state.featuresOpenSettings.add(key);
+      else state.featuresOpenSettings.delete(key);
+      settingsButton.classList.toggle("active", willOpen);
+      settingsButton.textContent = willOpen
+        ? t("features.settingsOpen")
+        : t("features.settings");
+    }
   });
 
   $("modal-close").addEventListener("click", closeModal);
   $("modal").addEventListener("click", (event) => {
     if (event.target === $("modal")) closeModal();
   });
+
+  // 侧滑详情面板：关闭按钮、遮罩点击、ESC
+  $("peek-close").addEventListener("click", closePeekPanel);
+  $("peek-overlay").addEventListener("click", closePeekPanel);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeModal();
+    if (event.key !== "Escape") return;
+    // 面板里点「编辑」/「删除」会弹出居中弹窗：ESC 先关弹窗，再关抽屉
+    const modal = $("modal");
+    if (modal && !modal.hidden) {
+      closeModal();
+      return;
+    }
+    closePeekPanel();
   });
 
   window.addEventListener("hashchange", () => {
@@ -2266,7 +4161,9 @@ async function init() {
 
   if (getBridge()) {
     try {
-      const context = await ensureBridge();
+      await ensureBridge();
+      // ensureBridge 返回的是 bridge 本身；ready() 的结果存在 state.context
+      const context = state.context;
       if (context) {
         if (context.locale) state.locale = context.locale;
         if (!theme && typeof context.isDark === "boolean") {
@@ -2279,7 +4176,9 @@ async function init() {
           if (next && next.locale && next.locale !== state.locale) {
             state.locale = next.locale;
             applyStaticI18n();
-            $("page-title").textContent = t(PAGE_TITLES[state.page]);
+            const idxNode = $("page-index");
+            const idxText = idxNode ? idxNode.textContent : "";
+            $("page-title").innerHTML = `<span class="title-index">${idxText}</span>${esc(t(PAGE_TITLES[state.page]))}`;
             runLoader(state.page);
           }
           if (next && typeof next.isDark === "boolean") {
@@ -2301,6 +4200,8 @@ async function init() {
   if (state.page !== "overview") {
     await runLoader(state.page);
   }
+  // 功能页与插件配置页的双向同步：轮询拉取外部改动（写方向即时落盘）
+  startFeatureSyncPolling();
 }
 
 if (document.readyState === "loading") {

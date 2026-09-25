@@ -13,9 +13,9 @@
 
 | 编号 | 主线 | 说明 |
 |---|---|---|
-| G1 | 持久化数据 | 一套自愈、幂等、跨重启一致的 SQLite 持久层，承载记忆、周记、画像与运行状态 |
+| G1 | 持久化数据 | 一套自愈、幂等、跨重启一致的 SQLite 持久层，承载记忆、现实桥记录、画像与运行状态 |
 | G2 | AI 代理机器人 | 对话前召回相关长期记忆并注入（不落史、不破坏前缀缓存），对话后按需沉淀 |
-| G3 | 自我学习 | 反思机制：定期回顾对话与周记，产出洞察并写回长期记忆（可选人工审批） |
+| G3 | 自我学习 | 反思机制：定期回顾对话与现实桥记录，产出洞察并写回长期记忆（可选人工审批） |
 
 ### 1.2 非目标（明确不做，防止范围蔓延）
 
@@ -39,7 +39,7 @@
 └───┬──────────────────────────────────────────────────────────┘
     │
     ├─ 业务域（禁止 import astrbot）
-    │    memory   长期记忆与检索        journal   周记 / 现实记忆
+    │    memory   长期记忆与检索        journal   现实桥（周记 / 日记 / 随笔）
     │    learning 反思式自我学习        context   请求级上下文治理
     │    group    群聊语义（读空气）     proactive 主动交互（双轨调度）
     │    persona  拟人化学习（风格/黑话/好感度）
@@ -86,8 +86,8 @@
 | `memory.vector_enabled` | 记忆 | on | `memory.enabled` + 存在 Embedding Provider | ✅ | 向量语义检索路；不可用时静默降级 |
 | `memory.rerank_enabled` | 记忆 | **off** | `memory.enabled` | ✅ | 重排序模型精选 top-k；不可用时回退本地词法重排（见 6.3） |
 | `reflection.enabled` | 自我学习 | on | `memory.enabled` | ✅ | 反思式自我学习 |
-| `journal.enabled` | 周记 | on | `basic.enabled` | ✅ | 周记现实记忆 |
-| `journal.weekly_reflection` | 周记 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
+| `journal.enabled` | 现实桥 | on | `basic.enabled` | ✅ | 现实桥：周记 / 日记 / 随笔三类现实记忆 |
+| `journal.weekly_reflection` | 现实桥 | on | `journal.enabled` + `reflection.enabled` | ✅ | 周度洞察生成 |
 | `agent.memory_tools` | Agent 工具 | **off** | `memory.enabled` | ❌ | 向模型暴露记忆检索/写入函数工具（见第 9 节） |
 | `context.enabled` | 上下文治理 | **off** | `basic.enabled` | ✅ | 请求级 token 治理：占位压缩 + 历史摘要（见第 10 节） |
 | `group.enabled` | 群聊语义 | **off** | `basic.enabled` | ✅ | 读空气插话 + 冷却配额 + 并发合并（见第 11 节） |
@@ -235,15 +235,24 @@ class EventView:
 | 表 | 用途 | 关键字段 |
 |---|---|---|
 | `schema_version` | 迁移版本 | `version`, `applied_at` |
-| `memories` | 记忆条目 | `id`, `scope_type`, `scope_id`, `content`, `kind`, `importance`, `confidence`, `source`, `created_at`, `updated_at`, `last_access_at`, `access_count`, `status` |
+| `memories` | 记忆条目 | `id`, `scope_type`, `scope_id`, `content`, `kind`, `importance`, `confidence`, `source`, `created_at`, `updated_at`, `last_access_at`, `access_count`, `status`, `sender_id`, `sender_name`, `origin_umo`（v5：说话者身份与来源会话） |
 | `memory_index` | FTS5 虚拟表（关键词检索） | `content`, `tokens` |
 | `memory_vectors` | 向量（可选路） | `memory_id`, `model_fingerprint`, `dim`, `vector`(BLOB) |
 | `memory_links` | 记忆关联（预留图谱） | `src_id`, `dst_id`, `relation`, `weight` |
-| `journals` | 周记 | `id`, `scope_type`, `scope_id`, `content`, `tags`(JSON), `emotion`, `event_time`, `created_at` |
+| `journals` | 现实桥记录 | `id`, `scope_type`, `scope_id`, `title`, `entry_type`(`weekly`/`diary`/`essay`), `content`, `tags`(JSON), `emotion`, `event_time`, `created_at` |
 | `reflection_logs` | 反思运行记录 | `id`, `scope_type`, `scope_id`, `started_at`, `finished_at`, `status`, `produced`, `error` |
 | `pending_reviews` | 待审记忆（审批模式） | `id`, `scope_type`, `scope_id`, `origin`, `payload`(JSON), `status`, `created_at`, `decided_at`, `decided_by`（`auto` 表示自动审核） |
 | `write_ops` | 可恢复写日志 | `op_id`, `step`, `payload`(JSON), `status`, `updated_at` |
 | `kv_state` | 运行状态（节流/游标/幂等） | `key`, `value`(JSON), `updated_at` |
+| `identity_seen` | 身份观测（判定平台用户 ID 是否跨会话稳定） |
+
+> **登记要求**：新增业务表必须同时进入 `BACKUP_TABLES`（否则备份漏数据）或 `EXCLUDED_TABLES`（写明排除原因）；
+> 新增恢复模式必须在 `RESTORE_MODES` 登记，并让 `replace` 路径（先清后灌 + 覆盖前清空 FTS）同步覆盖新表——
+> 两者都有测试守卫（备份覆盖性、模式归一化）。
+>
+> 全局备份覆盖 `super_astrbot/backup/service.py::BACKUP_TABLES` 登记的全部业务表；
+> 未包含的表（`schema_version` / `memory_index` / `kv_state` / `write_ops` / `sqlite_sequence`）
+> 及其原因会写进备份包的 `manifest.json` 与 `README.txt`，新增表时同步登记进 `BACKUP_TABLES`。 `umo`(PK), `platform`, `sender_id`, `sender_name`, `scope_type`, `scope_id`, `user_key`, `first_seen`, `last_seen`, `events` |
 | `graph_entities` / `graph_relations` / `memory_entities` | 知识图谱（实体 / 关系 / 记忆关联） | 见第 14 节 |
 | `metric_series` | 运行监控小时桶时序 | `(bucket_ts, metric, scope_type, scope_id)`, `count`, `total`, `last_value` |
 
@@ -264,6 +273,11 @@ class EventView:
 
 > 这条分隔是核心设计：**「记下来」与「能被检索到」是两件事**。原始对话只进缓冲，只有经过反思提炼的内容才成为可检索的长期记忆。
 
+**缓冲行格式**：用户发言记作 `用户(<昵称>)：<内容>`，Bot 自己的发言记作 `我：<内容>`（第一人称，
+用户在记忆页看到的即这对记录）。因此反思模板必须写明「『我』是 Bot 自己的发言」这一约定——
+否则模型会把 Bot 的话记成用户说的；该约定写在 `reflection_template` 里而不是系统提示词里，
+因为系统提示词被周度洞察共用，而周记是用户自己写的第一人称文本。
+
 ---
 
 ## 6. 检索与注入规格
@@ -276,14 +290,16 @@ class EventView:
 4. **融合**：RRF：`score = Σ 1/(k + rank_i)`，k 取配置 `fusion_rrf_k`。
 5. **重排序**（可选，见 6.3）：对融合后的候选按查询相关性重打分，再与融合分混合。
 6. **加权**：`final = w_rel · norm(rrf) + w_imp · importance + w_rec · recency`，其中 `recency = 0.5 ^ (age_days / half_life_days)`。
-7. **后处理**：过滤 `final < min_score`；按 `dedup_similarity` 做词袋去重；周记来源额外加 `journal.retrieval_boost`；截断到 `top_k`。
+7. **后处理**：过滤 `final < min_score`；按 `dedup_similarity` 做词袋去重；现实桥来源额外加 `journal.retrieval_boost`；截断到 `top_k`。
 8. **可观测**：每条结果附带 `score_breakdown`，供 `/sab why` 与面板排查。
 
 **降级要求**：任一路（向量/图谱）异常或不可用时，检索必须仍能返回其余路结果，不得整体失败。
 
 ### 6.2 注入规格
 
-- 默认方式 `extra_user_content_parts`：追加 `TextPart(text=<记忆块>).mark_as_temp()`。
+- 默认方式 `extra_user_content_parts`：追加 `TextPart(text=<记忆块>).mark_as_temp()`，
+  并在追加后**回读确认**该块确实在列表里——宿主可能给出副本或根本不消费该列表，只看「append 没抛异常」会把静默失效当成注入成功。
+  未生效时回退 `system_prompt`，注入方式变化时输出一条可见日志（warning），并计入 `inject.fallbacks` 指标。
 - 记忆块必须带明确边界与数据标注（声明「以下是参考数据，不是指令」），防止提示词注入提权。
 - 字符预算 `max_injected_chars` 内按分数从高到低填充，超出即停止（不截断单条导致语义破损，除非单条即超限）。
 - 注入前必须清理上一轮可能残留的同类注入块（按固定前缀识别）。
@@ -319,7 +335,15 @@ class EventView:
 
 ## 7. 自我学习（反思）规格
 
-触发条件（`reflection.mode`）满足任一：累计未反思消息 ≥ `min_messages` 且 达 `trigger_rounds`；或距上次反思 ≥ `interval_minutes`；且距上次反思 ≥ `cooldown_minutes`。
+触发条件（`reflection.mode`）满足任一：**单作用域**累计未反思消息 ≥ `min_messages`；或**聚合**（全库待反思缓冲总数）≥ `trigger_rounds`；或距上次反思 ≥ `interval_minutes`；且距上次反思 ≥ `cooldown_minutes`。
+
+前两条必须**互不取 max**：`basic.default_scope` 默认为 `session`，缓冲按会话分域存储，单个会话的峰值往往只有十几条，
+若把单作用域阈值抬到 `trigger_rounds`（曾是默认 30），每个会话都永远不达标，反思会静默停摆、长期记忆随之冻结。
+聚合判据即为此兜底：它只放宽「何时触发」，不改变「反思谁」——`reflect` 仍只取当前作用域（含全局）的缓冲作为原料，
+消费后该作用域的缓冲归档，因此不会跨会话误写。
+
+转录约定：转录行形如 `[MM-DD HH:MM] 我：…`（Bot 自己的发言）与 `[MM-DD HH:MM] 用户(昵称)：…`（用户发言），
+模板中显式声明该约定，确保模型不把 Bot 的发言归到用户身上。
 
 流程：取未反思消息 → 组装反思提示词 → 调用反思模型（`provider_id`，缺省用会话默认）→ 解析结构化产出（`<insight>` JSON）→ 校验（类型白名单、条数上限 `max_facts_per_run`、长度上限）→ `approval_required` 为真时入 `pending_reviews`，否则直接写入 `memories`（`kind=insight`，`source=reflection`）→ 记录 `reflection_logs` → 推进游标。
 
@@ -327,11 +351,45 @@ class EventView:
 
 ---
 
-## 8. 周记规格
+## 7.5 记忆身份与作用域规格（跨会话识别用户）
 
-- 写入：命令 `/sab journal <内容> [#标签]`，或面板录入；字段含 `content`、`tags`、`emotion`(可选 1–5)、`event_time`（默认当前）、`scope`。
-- 检索：周记作为 `kind=journal` 的高优先记忆参与召回，并按 `retrieval_boost` 加权。
-- 周度反思：每 `weekly_reflection_weekday` 的 `weekly_reflection_hour` 触发，读取本周周记 → 产出洞察 → 写入 `memories`（`kind=insight`, `source=weekly_reflection`）。任务必须**当日幂等**、跨重载不重复。
+**目标**：记忆的隔离键落到「用户」，并让「平台用户标识是否稳定」成为可观测的事实，而不是靠猜。
+
+- **身份解析**（`memory/identity.py`，纯函数）：
+  - `sender_id`（默认）：用平台用户 ID；
+  - `sender_name`：用昵称（接受重名歧义，供 ID 不稳定的平台使用）；
+  - `auto`：ID 优先，缺失时回退昵称。
+  - 两个来源都没有时落到 `unknown`，绝不产生空作用域键（否则所有人记忆会挤在一起）。
+- **写入**：所有记忆写入路径（对话采集、`/sab remember`、现实桥、面板录入、JSON 导入）
+  都写入 `sender_id` / `sender_name` / `origin_umo`；派生记忆（反思、周度洞察）留空。
+- **观测**：每条会话每次采集旁路 upsert 一行 `identity_seen`（可关：`basic.identity_tracking`）。
+  判定规则：同一昵称对应多个 `sender_id` → `unstable_id`（建议改策略）；同一 `sender_id`
+  跨多个会话 → `stable_id`（可放心用 user 作用域）；样本不足 → `single`。
+- **作用域迁移**（面板「身份 → 作用域分布与迁移」，`POST /scopes/migrate`）：
+  - 目标：`user`（`scope_id` 改写为该行 `sender_id`，只能处理带身份的行）、`global`（整体提升）、
+    `archive`（只归档）、`user_else_archive`（能归属的归用户、其余归档）；
+  - 口径：`matched`（符合条件的总数）/ `attributed`（带身份数）/ `moved` / `archived` / `skipped`，
+    **预览与执行共用同一份计算**（`MemoryRepository._migration_plan`），预览不写库；
+  - 安全：执行前自动做数据库一致性快照（落 `data/` 目录），并把本次动作写入 `kv_state` 便于追溯；
+  - 边界：`journals` 与图谱表没有发送者字段，只在 `to=global` 时整体搬迁，其余目标在响应里
+    明确说明「未改动」，不谎报归属。
+
+---
+
+## 8. 现实桥规格（周记 / 日记 / 随笔）
+
+三类文本共用 ``journals`` 表与同一条写入、检索链路，仅以 `entry_type` 区分展示与筛选。
+
+- 类型：`weekly`（周记）、`diary`（日记）、`essay`（随笔）；未知取值一律回退 `weekly`。
+- 标题：用户填写的标题优先；留空时取**条目时间**所在的当天日期时间，格式 `%Y%m%d%H:%M`（例 `2015061517:00`）。
+  历史行（v4 迁移前）`title` 为空串，由读取侧按同规则补默认标题，迁移保持「只增不改」。
+- 写入：命令 `/sab journal|diary|essay <内容> [#标签]`，或 `/sab 周记|日记|随笔 <标题> | <正文> [#标签]`；
+  面板录入同构，编辑器提供三选一类型与预填默认标题。字段含 `content`、`title`、`entry_type`、
+  `tags`、`emotion`(可选 1–5)、`event_time`（默认当前）、`scope`。
+- 修改：`/sab edit <编号> [周记|日记|随笔] [标题 | ] 正文 [#标签]`；未写标题则保持原值。
+- 检索：三类文本均作为 `kind=journal` 的高优先记忆参与召回，并按 `retrieval_boost` 加权。
+- 导出：面板支持按类型/关键词筛选后「全选当前筛选」导出，或勾选若干条导出所选（`journals/export-selected`）。
+- 周度反思：每 `weekly_reflection_weekday` 的 `weekly_reflection_hour` 触发，读取本周记录 → 产出洞察 → 写入 `memories`（`kind=insight`, `source=weekly_reflection`）。任务必须**当日幂等**、跨重载不重复。
 
 ---
 
@@ -556,8 +614,10 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 
 ### 12.2 内容生成
 
-1. 素材：该会话作用域内的最近 `material_memories` 条长期记忆、`material_journals` 条周记、
-   最近对话缓冲；**素材为空即跳过**（宁可不发，也不硬编一句问候）；
+1. 素材：该会话作用域内的最近 `material_memories` 条长期记忆、`material_journals` 条现实桥记录、
+   最近对话缓冲；**素材为空即跳过**（宁可不发，也不硬编一句问候）。
+   对话缓冲两侧发言都在里面（Bot 侧为 `我：`），因此「最近对话」小节标题会标注说话者，
+   避免模型把自己的话当成用户说的；
 2. 生成：调用 LLM（`purpose="proactive"`，可用 `provider_id` 指定便宜的模型），
    提示词要求口语化、一句话、不超过 `max_chars`、不得自称「主动/定时/系统」、
    不得编造素材之外的事实，并附上「上一条主动消息」要求换话题；
@@ -832,7 +892,7 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | `scheduler.runs` / `scheduler.failures` / `scheduler.duration_ms` | 调度器任务观察者 |
 | `retrieval.calls` / `retrieval.latency_ms` / `retrieval.hits` | 记忆召回返回后 |
 | `rerank.calls` / `rerank.failures` / `rerank.latency_ms` / `rerank.candidates` | 重排序执行回调（失败已由检索层回退，指标用于判断回退频率） |
-| `inject.blocks` / `inject.chars` | 记忆与拟人化注入成功时 |
+| `inject.blocks` / `inject.chars` / `inject.fallbacks` | 记忆与拟人化注入成功时；`fallbacks` 记「期望临时内容块、实际回退系统提示词或未注入」的次数 |
 | `memory.writes` / `memory.total` | 缓冲与反思写入、每日维护刷新 gauge |
 | `review.pending` / `review.auto_approved` / `review.auto_rejected` | 自动审核与 gauge 刷新 |
 | `persona.learned` / `graph.indexed` / `graph.entities` | 拟人化学习与图谱索引回调 |
@@ -938,12 +998,25 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
   `graph`、`help`。
   之所以不注册多条顶层/子指令：AstrBot 的指令冲突检测以指令「完整名」为键，
   注册项越少撞名概率越低，也不依赖框架的参数推导行为。
-- 面板（`pages/dashboard`）十二个分区：总览、功能、记忆、检索、周记、待审、学习、图谱、监控、模型、提示词、系统。
+- 面板（`pages/dashboard`）十四个分区：总览、功能、记忆、检索、现实桥、每周总结、待审、学习、图谱、监控、模型、提示词、系统、身份。
+- 单条编辑/删除接口：`POST /memories/update`、`POST /memories/delete`、`POST /weeklies/update`
+  （每周总结就是 `memories` 里 `source='weekly_reflection'` 的行，编辑与记忆共用同一条写入路径）。
+- 备份与身份相关接口：`GET /identities`（观测 + 稳定性判定）、`POST /identities/clear`、`GET /scopes`（作用域分布）、`POST /scopes/migrate`（预览/执行）、`POST /reviews/batch`（批量审批）、`GET|POST /backup/export`（生成并下载全局备份 zip，优先 `file_response`，回退内联 base64）、`GET /backup/list`（历史备份 + 备份范围与排除项）、`POST /backup/import`（逐表恢复；`mode=merge|replace`、`dry_run` 走查询参数或 JSON 体，支持 multipart 字段 `file` 或 JSON `content_b64`）、`POST /backup/replace-database`（整库替换，仅接受 backups/ 下的快照）。
   前端**只经 `window.AstrBotPluginPage` bridge 请求**，不使用 `fetch`（插件页位于
   无 `allow-same-origin` 的 sandbox iframe，直连请求必然失败）；入口脚本必须
   `type="module"`，确保在 AstrBot 注入 bridge 之后执行。
-- **列表交互**：记忆 / 周记 / 待审支持排序、关键词或来源筛选与分页。排序键经**白名单映射**到固定
+- **列表交互**：记忆 / 现实桥 / 待审支持排序、关键词或来源筛选与分页；现实桥另有类型筛选、行勾选与「全选当前筛选」批量导出。排序键经**白名单映射**到固定
   `ORDER BY`（杜绝字符串拼接注入），非法键回退默认排序；筛选与分页参数由后端校验后下推到仓储层。
+- **详情侧滑面板**（记忆 / 现实桥 / 每周总结共用，`pages/dashboard` 的 `peek-panel`）：
+  点列表行（记忆 与 每周总结 的内容、现实桥的标题与内容）即从右侧滑出抽屉，头部为徽章 +「编辑」「删除」；
+  记忆与每周总结在抽屉内就地改正文（`memories/update` / `weeklies/update`），现实桥的编辑沿用既有表单弹窗，
+  删除一律走确认框。列表刷新后抽屉内容随之同步，条目被删掉则自动收起。
+  **层级**：抽屉（68/69）必须低于居中弹窗（70）——否则「编辑」表单与删除确认框会被抽屉盖住；
+  提示条提到最上层（80），保证抽屉打开时保存/删除反馈可见。
+  **动效**：复用与居中弹窗同一套令牌与节奏（入场 animation `--dur-enter` + `--ease-out`、
+  出场 `.closing` 走 `--dur-exit`，出场比入场快），只动 `transform`/`opacity`；
+  `prefers-reduced-motion` 下退化为纯透明度过渡。编辑正文会**重建该条的索引**（分词后的关键词 + 向量），
+  避免「改完却搜不到 / 按旧语义召回」。
 - **模型分区**（`GET /models`）：集中说明三类模型的**职责分工**——**对话模型**（生成与推理，
   各功能辅助调用模型均属此类）、**嵌入模型**（仅用于向量检索路的向量化）、**重排序模型**（可选，
   召回后精选 top-k）；展示当前提供商、可用提供商列表与各功能实际使用的辅助调用模型。
@@ -953,9 +1026,10 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
   开关经 `POST feature-toggle` 写配置 → 落盘 → `refresh_capabilities()` 热应用，
   并回传实际生效状态；界面区分「需重载」（禁用）与「环境不支持」（禁用并说明），
   前置未开启时给出提示；总览页的能力指示可点击跳转至对应开关。
-- 插件图标：仓库根 `logo.png` 为插件列表图标（亮色主题版，深色字形）；
-  面板品牌区按主题切换 `pages/dashboard/logo-light.svg`（浅色主题）与
-  `logo-dark.svg`（深色主题），`logo.svg` 作为同名兜底保留。
+- 插件图标：仓库根 `logo.png` 为插件列表图标（亮色主题版，深色字形）。
+  面板品牌区当前用**文字品牌**（`brand-name` 大字标 + `SA` 字标），不加载位图；
+  `pages/dashboard/logo-light.svg`（浅色主题）/ `logo-dark.svg`（深色主题）与同名的
+  `logo.svg`（兜底）作为**品牌资产保留**，切回「主题切换矢量图标」形态时直接可用。
 - 配置页的「嵌入模型提供商」下拉由 `app.sync_schema_options()` 运行时注入（框架的
   `select_provider` 硬编码为对话模型）；无可用嵌入提供商时字段退回文本框。
   由于 AstrBot **先加载插件、后初始化 `ProviderManager`**，启动期探测必然为空，
@@ -1021,7 +1095,20 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 2. 未配置 Embedding Provider 时插件正常可用（自动降级），配置后自动启用向量路。
 3. 对话能召回并注入相关记忆，注入内容**不写入**对话历史。
 4. 反思在满足条件时触发，产出写入记忆且可在 `/sab search` 中检索到。
-5. 周记可写入、可检索、可被周度反思消费，且周度任务当日只执行一次。
+5. 现实桥记录（周记 / 日记 / 随笔）可写入、可检索、可被周度反思消费，且周度任务当日只执行一次。
+5.1 **记忆身份**：新写入的记忆带 `sender_id` / `sender_name` / `origin_umo`；`default_scope=user` 且身份策略为 `auto` 时，同一昵称在两会话落到同一用户作用域。
+5.2 **身份诊断**：面板「身份」页给出「同一昵称是否对应多个 ID」的结论；身份观测可随时清空，关闭观测开关后不再写观测行。
+5.3 **作用域迁移**：预览不写库且口径与执行一致；执行前自动生成数据库快照；无法归属的历史记录计入 `skipped` 或走归档，不虚报归属。
+5.4 **全局备份与恢复**：一次导出得到含 `manifest.json`（逐表行数、每个文件的大小与 sha256、未包含的表及原因）的 zip，内含**全部 14 张业务表**（`tables/*.json`，字段一字不改，含已遗忘与缓冲态记忆）、插件配置、可直接打开的数据库快照，以及仅供查看的 `views/*.json`。
+    恢复有**两种模式**（`mode`，默认 `merge`）：
+    - `merge`：逐表 `INSERT OR REPLACE`（备份优先）——备份里有的行一定恢复，备份之后新产生的行不受影响；
+    - `replace`：逐表**先清后灌**——恢复后与备份逐表一致，备份里没有的行必然不存在（空表同样会被清空）。
+    顺序不可颠倒：**数据库快照 → 逐表写入（单事务）→ 重建关键词索引**。快照先于任何 `DELETE` 落盘；
+    多表写入整体原子，任一表失败全部回滚并回报快照路径；覆盖模式先清空 FTS 再重建（残留 token 会挂到同 id 的新行上）；
+    索引补偿只重建关键词，向量表随包回灌、不重跑嵌入接口。整库替换（`POST /backup/replace-database`）
+    是唯一能连 `kv_state`、`write_ops` 等运行态一起还原的方式，只接受 `backups/` 下的快照文件。
+    二进制列以 `{"$b64": ...}` 自描述包装往返；恢复保留原始主键，因此 `journals.memory_id` 等关联不被打断。
+5.5 **旧格式（format 1）包**：包内无 `tables/`，只含 `data/*.json` 视图（记忆 / 现实桥 / 每周总结）。这类包**不支持按表覆盖恢复**；含数据库快照时提供「整库恢复」入口（断开连接 → 另存当前库为 `<库名>.pre-restore-<时间戳>` → 快照覆盖 → 重连并迁移，失败自动回滚），无快照时明确告知这些数据无法恢复。
 6. 所有外部调用失败均降级为「不影响正常对话」，并输出一次告警。
 7. Agent 记忆工具：开启后可被模型调用并读写当前会话记忆，写入的记忆 `source='agent'`；
    默认关闭或框架不支持时不注册工具，插件仍正常就绪。
@@ -1057,8 +1144,8 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
     连续失败 3 次后进入冷却，冷却期内不再发起调用。
 18. 模型分区与列表交互：`GET /models` 返回三类模型的当前提供商与可用列表、各功能辅助调用模型；
     辅助调用模型配置为嵌入 / 重排序提供商时，调用前被识别并回退到默认对话模型，不报错。
-    记忆 / 周记 / 待审的排序（白名单）、关键词或来源筛选、分页均由后端校验，非法排序键回退默认，
-    结果正确且稳定。
+    记忆 / 现实桥 / 待审的排序（白名单）、关键词或来源筛选、分页均由后端校验，非法排序键回退默认，
+    结果正确且稳定；现实桥另有类型筛选与勾选（含「全选当前筛选」）导出所选 JSON。
 19. `ruff check .` 与 `ruff format .` 通过。
 
 ---
@@ -1068,7 +1155,7 @@ AstrBot 的 `WakingCheckStage` 会：① 按 wake 前缀 / 被 @ / 引用 Bot �
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 | 规格 + 脚手架 + Harness + Loop + Storage | ✅ 已完成 |
-| P1 | Memory 闭环 + 周记 + 命令 + 面板 | ✅ 已完成 |
+| P1 | Memory 闭环 + 现实桥 + 命令 + 面板 | ✅ 已完成 |
 | P1.6 | 修复指令冲突面/嵌入模型下拉/面板加载失败；控制台重建为六分区 | ✅ 已完成（v0.2.0） |
 | P1.7 | 功能管理界面（能力热开关）；修复调度器误报与向量能力永久不可用 | ✅ 已完成（v0.3.0） |
 | P1.8 | 全量代码审查：作用域越界删除、存储串行化、LIKE 转义、向量作用域扫描、写放大与死代码清理 | ✅ 已完成（v0.3.1） |

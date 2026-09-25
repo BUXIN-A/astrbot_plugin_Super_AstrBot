@@ -206,3 +206,116 @@ def test_vector_load_scoped_filters_by_scope(tmp_path: Path) -> None:
         return [row[0] for row in rows]
 
     assert asyncio.run(_run()) == [1]
+
+
+def test_journals_table_has_bridge_columns(tmp_path: Path) -> None:
+    """迁移 v4：``journals`` 增补标题与类型列，历史行由列默认值补齐。
+
+    增量迁移必须保证旧数据可读：因此这里直接按「没有这两列」的方式插一行，
+    再确认读回来时带上了默认标题位（空串）与默认类型（weekly）。
+    """
+
+    async def _run() -> tuple[list[str], dict]:
+        from super_astrbot.storage import JournalRepository
+
+        db = Database(tmp_path / "bridge.db")
+        await db.connect()
+        columns = [
+            str(row["name"]) for row in await db.query("PRAGMA table_info(journals)")
+        ]
+        await db.execute(
+            "INSERT INTO journals(scope_type, scope_id, content, tags, emotion,"
+            " event_time, memory_id, created_at) VALUES ('global','*','旧库记录','[]',3,1.0,NULL,1.0)"
+        )
+        repo = JournalRepository(db)
+        row = (await repo.export_all())[0]
+        await db.close()
+        return columns, row
+
+    columns, row = asyncio.run(_run())
+    assert "title" in columns and "entry_type" in columns
+    assert row["content"] == "旧库记录"
+    assert row["title"] == "", "历史行标题留空，由读取方按条目时间补默认标题"
+    assert row["entry_type"] == "weekly"
+
+
+def test_upgrade_from_v4_database_adds_identity_columns(tmp_path: Path) -> None:
+    """真实升级路径：已有 v4 库（线上就是这种）→ 打开后补到 v5，历史数据不丢。
+
+    做法：先用「只到 v4」的迁移清单建库并写入历史记忆（无身份列），
+    再用完整清单打开同一个文件，验证 v5 增量迁移生效且旧行可读。
+    """
+    from super_astrbot.storage import IdentityRepository, MemoryRepository
+    # db.py 在导入时就把 MIGRATIONS/CURRENT_VERSION 绑成了自己的名字，
+    # 因此必须打在它那一侧，改 migrations 模块的变量不会影响已绑定的引用。
+    from super_astrbot.storage import db as db_module
+
+    async def _run() -> dict:
+        db_path = tmp_path / "legacy.db"
+
+        # 1) 造一个 v4 时代的库
+        full = db_module.MIGRATIONS
+        db_module.MIGRATIONS = tuple(m for m in full if m.version <= 4)
+        db_module.CURRENT_VERSION = 4
+        try:
+            legacy = Database(db_path)
+            await legacy.connect()
+            await legacy.execute(
+                "INSERT INTO memories(scope_type, scope_id, kind, content, importance,"
+                " confidence, source, tags, created_at, updated_at, last_access_at,"
+                " access_count, status) VALUES ('session','umo-a','fact','历史记忆',0.5,0.8,"
+                "'capture','[]',1.0,1.0,0,0,'active')"
+            )
+            version_before = int(
+                await legacy.scalar("SELECT MAX(version) FROM schema_version", default=0)
+            )
+            columns_before = [
+                str(row["name"]) for row in await legacy.query("PRAGMA table_info(memories)")
+            ]
+            await legacy.close()
+        finally:
+            db_module.MIGRATIONS = full
+            db_module.CURRENT_VERSION = full[-1].version
+
+        # 2) 用当前代码打开同一个库 → v5 增量迁移
+        upgraded = Database(db_path)
+        await upgraded.connect()
+        try:
+            version_after = int(
+                await upgraded.scalar("SELECT MAX(version) FROM schema_version", default=0)
+            )
+            columns_after = [
+                str(row["name"]) for row in await upgraded.query("PRAGMA table_info(memories)")
+            ]
+            tables = [
+                str(row["name"])
+                for row in await upgraded.query(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ]
+            row = (await MemoryRepository(upgraded).export_visible())[0]
+            identities = IdentityRepository(upgraded)
+            await identities.observe(umo="umo-a", sender_id="u1", sender_name="谷雨", now=2.0)
+            observed = await identities.list_all()
+            return {
+                "version_before": version_before,
+                "version_after": version_after,
+                "columns_before": columns_before,
+                "columns_after": columns_after,
+                "tables": tables,
+                "row": row,
+                "observed": observed,
+            }
+        finally:
+            await upgraded.close()
+
+    data = asyncio.run(_run())
+    assert data["version_before"] == 4 and data["version_after"] == CURRENT_VERSION
+    assert "sender_id" not in data["columns_before"]
+    for column in ("sender_id", "sender_name", "origin_umo"):
+        assert column in data["columns_after"], f"v5 未补上 {column}"
+    assert "identity_seen" in data["tables"]
+    # 历史行原样可读，只是身份为空（不猜归属）
+    assert data["row"]["content"] == "历史记忆"
+    assert data["row"]["sender_id"] == "" and data["row"]["origin_umo"] == ""
+    assert data["observed"][0]["sender_name"] == "谷雨"

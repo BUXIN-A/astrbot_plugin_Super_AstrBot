@@ -112,6 +112,9 @@ class MemoryItem:
     last_access_at: float = 0.0
     access_count: int = 0
     status: str = STATUS_ACTIVE
+    sender_id: str = ""
+    sender_name: str = ""
+    origin_umo: str = ""
 
     # --- 检索结果附加（不入库） ---
     score: float = 0.0
@@ -143,12 +146,20 @@ class MemoryItem:
             last_access_at=_as_float(_get("last_access_at", 0.0)),
             access_count=_as_int(_get("access_count", 0)),
             status=str(_get("status", STATUS_ACTIVE) or STATUS_ACTIVE),
+            sender_id=str(_get("sender_id", "") or ""),
+            sender_name=str(_get("sender_name", "") or ""),
+            origin_umo=str(_get("origin_umo", "") or ""),
         )
 
 
 @dataclass
 class MemoryDraft:
-    """写入记忆的请求体（由业务域构造，交由生命周期落库）。"""
+    """写入记忆的请求体（由业务域构造，交由生命周期落库）。
+
+    ``created_at`` 等时间/访问统计字段只在**导入历史数据**时使用：留 ``None`` 表示
+    「按写入时刻算」。若导入时不回填，备份恢复出来的记忆会全部盖上导入时间戳，
+    时间线与衰减判断随之失真。
+    """
 
     scope_type: str
     scope_id: str
@@ -159,3 +170,10 @@ class MemoryDraft:
     source: str = SOURCE_MANUAL
     tags: list[str] = field(default_factory=list)
     status: str = STATUS_ACTIVE
+    sender_id: str = ""
+    sender_name: str = ""
+    origin_umo: str = ""
+    created_at: float | None = None
+    updated_at: float | None = None
+    last_access_at: float | None = None
+    access_count: int | None = None

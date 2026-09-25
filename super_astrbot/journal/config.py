@@ -1,4 +1,4 @@
-"""周记领域配置。"""
+"""现实桥（周记 / 日记 / 随笔）领域配置。"""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_int, get_path
+from ..spec.entry_types import DEFAULT_ENTRY_TYPE, normalize_entry_type
 
 
 @dataclass
 class JournalConfig:
-    """周记配置。"""
+    """现实桥配置。"""
 
     enabled: bool = True
     allow_user_write: bool = True
@@ -19,6 +20,7 @@ class JournalConfig:
     weekly_weekday: int = 6
     weekly_hour: int = 22
     default_tags: tuple[str, ...] = ("生活",)
+    default_entry_type: str = DEFAULT_ENTRY_TYPE
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "JournalConfig":
@@ -39,10 +41,13 @@ class JournalConfig:
                 get_path(config, "journal.weekly_reflection_hour", 22), 22, low=0, high=23
             ),
             default_tags=tags or ("生活",),
+            default_entry_type=normalize_entry_type(
+                get_path(config, "journal.default_entry_type", DEFAULT_ENTRY_TYPE)
+            ),
         )
 
     def can_write(self, *, is_admin: bool) -> bool:
-        """判断当前发送者是否有权写周记。"""
+        """判断当前发送者是否有权写现实记录。"""
         if not self.enabled:
             return False
         if self.admin_only_write:

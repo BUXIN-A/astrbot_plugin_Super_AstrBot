@@ -190,3 +190,50 @@ def test_forget_removes_index_and_vectors(tmp_path: Path) -> None:
     found, vector_count = asyncio.run(_run())
     assert found is False
     assert vector_count == 0
+
+
+def test_update_content_rebuilds_keyword_and_vector_indexes(tmp_path: Path) -> None:
+    """面板改正文后必须重建该条的索引。
+
+    踩过的坑：``update_content`` 曾把**原始正文**直接写进 FTS 的 tokens 列，而这一列约定
+    存「分词结果」（见 ``index_tokens``）——写原始正文会让 unicode61 把整段中文当成一个词，
+    这条记忆此后只能靠 LIKE 兜底才被搜到；向量则一直停在旧语义上。
+    """
+
+    async def _gather() -> tuple[list[int], int, bool, int]:
+        stack = await build_stack(tmp_path, vector_available=True)
+        scope = MemoryScope.for_session("s1")
+        memory_id = await stack.memory.remember_text(scope, "用户喜欢在周末爬山放松")
+        before = stack.embedding.calls
+        ok = await stack.memory.update_content(memory_id, "用户改成傍晚沿着江边跑步")
+        # 直接问 FTS：走 LIKE 兜底的话「江边」也能命中，因此必须用 fts_search 验证分词写对了
+        hits = await stack.memories.fts_search([scope], "江边", limit=5)
+        old_hits = await stack.memories.fts_search([scope], "爬山", limit=5)
+        after = stack.embedding.calls
+        await stack.close()
+        return [row[0] for row in hits], after - before, ok, len(old_hits)
+
+    hit_ids, embed_calls, ok, old_hits = asyncio.run(_gather())
+    assert ok is True
+    assert hit_ids, "编辑后的正文应能通过 FTS（分词后）检索到"
+    assert old_hits == 0, "旧正文不该再命中"
+    assert embed_calls >= 1, "编辑后应重算向量，否则语义路会按旧正文召回"
+
+
+def test_update_content_rejects_missing_or_blank(tmp_path: Path) -> None:
+    """行不存在或内容为空要返回 False，面板才能如实提示，而不是「保存成功」却什么也没变。"""
+
+    async def _run() -> tuple[bool, bool, str]:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        memory_id = await stack.memory.remember_text(scope, "原始内容够长")
+        blank = await stack.memory.update_content(memory_id, "   ")
+        missing = await stack.memory.update_content(999_999, "新内容")
+        row = await stack.memories.get(memory_id)
+        await stack.close()
+        return blank, missing, str((row or {}).get("content") or "")
+
+    blank, missing, content = asyncio.run(_run())
+    assert blank is False
+    assert missing is False
+    assert content == "原始内容够长", "被拒绝的写入不应改动原内容"
