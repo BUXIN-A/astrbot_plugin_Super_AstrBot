@@ -17,11 +17,13 @@ from ..spec.scopes import MemoryScope, retrieval_scopes
 from ..storage import (
     DEFAULT_JOURNAL_SORT,
     DEFAULT_MEMORY_SORT,
+    IdentityRepository,
     JournalRepository,
     MemoryRepository,
 )
 from .config import INJECTION_DISABLED, INJECTION_SYSTEM, MemoryConfig
 from .formatter import build_memory_body, format_search_results
+from .identity import MemoryIdentity, describe_observation
 from .lifecycle import MemoryLifecycle
 from .models import (
     KIND_EPISODE,
@@ -34,6 +36,7 @@ from .models import (
     STATUS_PENDING,
     MemoryDraft,
     MemoryItem,
+    SOURCE_WEEKLY,
 )
 from .retriever import HybridRetriever, RetrievalResult
 
@@ -61,6 +64,7 @@ class MemoryService:
         journals: JournalRepository,
         injector: Any | None = None,
         embedding: Any | None = None,
+        identities: IdentityRepository | None = None,
         logger: Any | None = None,
     ) -> None:
         self._config = config
@@ -70,6 +74,7 @@ class MemoryService:
         self._journals = journals
         self._injector = injector
         self._embedding = embedding
+        self._identities = identities
         self._logger = logger
         self._buffer_writes: dict[str, int] = {}
 
@@ -100,8 +105,22 @@ class MemoryService:
         source: str = SOURCE_MANUAL,
         tags: Sequence[str] | None = None,
         status: str = STATUS_ACTIVE,
+        identity: MemoryIdentity | None = None,
+        created_at: float | None = None,
+        updated_at: float | None = None,
+        last_access_at: float | None = None,
+        access_count: int | None = None,
     ) -> int:
-        """便捷写入：直接给作用域与文本。"""
+        """便捷写入：直接给作用域与文本。
+
+        ``identity`` 记录说话者（平台 ID / 昵称 / 来源会话），是「跨会话识别用户」
+        与历史归因的依据；不传则留空（例如反思产出这类派生记忆）。
+
+        ``created_at`` / ``updated_at`` / ``last_access_at`` / ``access_count`` 仅在
+        导入历史数据时传入——不传就按写入时刻算。**导入备份必须传**，否则恢复出来的
+        记忆会全部盖上导入时间，时间线与衰减判断随之失真。
+        """
+        who = identity or MemoryIdentity()
         return await self._lifecycle.add(
             MemoryDraft(
                 scope_type=scope.scope_type.value,
@@ -113,6 +132,13 @@ class MemoryService:
                 source=source,
                 tags=list(tags or []),
                 status=status,
+                sender_id=who.sender_id,
+                sender_name=who.sender_name,
+                origin_umo=who.origin_umo or scope.scope_id,
+                created_at=created_at,
+                updated_at=updated_at,
+                last_access_at=last_access_at,
+                access_count=access_count,
             )
         )
 
@@ -124,12 +150,14 @@ class MemoryService:
         source: str = SOURCE_CAPTURE,
         tags: Sequence[str] | None = None,
         now: float | None = None,
+        identity: MemoryIdentity | None = None,
     ) -> int | None:
         """把一段对话放入缓冲（不建索引、不参与检索），作为反思原料。"""
         content = (text or "").strip()
         if not content:
             return None
         moment = now if now is not None else time.time()
+        who = identity or MemoryIdentity()
         memory_id = await self._lifecycle.add(
             MemoryDraft(
                 scope_type=scope.scope_type.value,
@@ -141,6 +169,9 @@ class MemoryService:
                 source=source,
                 tags=list(tags or []),
                 status=STATUS_BUFFERED,
+                sender_id=who.sender_id,
+                sender_name=who.sender_name,
+                origin_umo=who.origin_umo or scope.scope_id,
             ),
             index=False,
             with_vector=False,
@@ -174,8 +205,21 @@ class MemoryService:
         return await self._lifecycle.archive(ids, now=now)
 
     async def count_buffer(self, scope: MemoryScope) -> int:
-        """待反思的缓冲条数。"""
+        """待反思的缓冲条数（当前作用域 + 全局并集）。
+
+        注意：这不是「该用户的全部缓冲」。``default_scope=session`` 时每个会话各自成域，
+        本方法只看得到调用方所在的那个域（外加全局），跨会话的缓冲总量见
+        ``count_buffer_total``。
+        """
         return await self._memories.count_by_status(retrieval_scopes(scope), STATUS_BUFFERED)
+
+    async def count_buffer_total(self) -> int:
+        """全库待反思缓冲总数（跨所有作用域与用户）。
+
+        供反思触发判定做「聚合兜底」：缓冲按会话分片时，单个会话可能长期达不到轮数阈值，
+        但总量其实早已足够。
+        """
+        return await self._memories.count_by_status_all(STATUS_BUFFERED)
 
     async def delete(self, ids: Sequence[int]) -> int:
         return await self._lifecycle.forget(ids)
@@ -287,19 +331,72 @@ class MemoryService:
         keyword: str = "",
         status: str = STATUS_ACTIVE,
         kind: str = "",
+        source: str = "",
         sort: str = DEFAULT_MEMORY_SORT,
     ) -> list[MemoryItem]:
         """跨作用域列出记忆（面板总览用）。"""
         rows = await self._memories.list_all_page(
-            offset=offset, limit=limit, keyword=keyword, status=status, kind=kind, sort=sort
+            offset=offset,
+            limit=limit,
+            keyword=keyword,
+            status=status,
+            kind=kind,
+            source=source,
+            sort=sort,
         )
         return [MemoryItem.from_row(row) for row in rows]
 
     async def count_filtered(
-        self, *, status: str = STATUS_ACTIVE, kind: str = "", keyword: str = ""
+        self,
+        *,
+        status: str = STATUS_ACTIVE,
+        kind: str = "",
+        source: str = "",
+        keyword: str = "",
     ) -> int:
         """与 ``list_all`` 同条件的总数。"""
-        return await self._memories.count_filtered(status=status, kind=kind, keyword=keyword)
+        return await self._memories.count_filtered(
+            status=status, kind=kind, source=source, keyword=keyword
+        )
+
+    async def list_weeklies(
+        self, *, offset: int = 0, limit: int = 20, keyword: str = ""
+    ) -> list[MemoryItem]:
+        """列出每周总结（周度洞察产出，``source=weekly_reflection``）。"""
+        return await self.list_all(
+            offset=offset, limit=limit, keyword=keyword, source=SOURCE_WEEKLY
+        )
+
+    async def count_weeklies(self, *, keyword: str = "") -> int:
+        return await self.count_filtered(keyword=keyword, source=SOURCE_WEEKLY)
+
+    async def export_weeklies(self) -> list[dict[str, Any]]:
+        """导出全部每周总结（面板导出 JSON 用）。"""
+        return await self._memories.export_by_source(SOURCE_WEEKLY)
+
+    async def export_all_memories(self) -> list[dict[str, Any]]:
+        """导出全部有效记忆（排除已遗忘与对话缓冲，备份用）。"""
+        return await self._memories.export_visible()
+
+    async def update_content(self, memory_id: int, content: str, *, at: float | None = None) -> bool:
+        """更新记忆正文并重建索引（面板编辑记忆 / 每周总结，现实桥编辑时连带同步）。
+
+        行不存在或内容为空时返回 ``False``：面板据此提示「记录不存在或内容为空」，
+        而不是假装保存成功。
+        """
+        text = (content or "").strip()
+        if not text:
+            return False
+        try:
+            target = int(memory_id)
+        except (TypeError, ValueError):
+            return False
+        moment = at if at is not None else time.time()
+        if await self._memories.get(target) is None:
+            return False
+        await self._memories.update_fields(target, content=text, updated_at=moment)
+        await self._lifecycle.refresh_indexes(target, text, now=moment)
+        return True
 
     async def list_all_journals(
         self,
@@ -308,14 +405,98 @@ class MemoryService:
         limit: int = 20,
         keyword: str = "",
         sort: str = DEFAULT_JOURNAL_SORT,
+        entry_type: str = "",
     ) -> list[dict[str, Any]]:
         return await self._journals.list_all_page(
-            offset=offset, limit=limit, keyword=keyword, sort=sort
+            offset=offset, limit=limit, keyword=keyword, sort=sort, entry_type=entry_type
         )
 
-    async def count_all_journals(self, *, keyword: str = "") -> int:
-        """周记总数（跨作用域，面板统计用）。"""
-        return await self._journals.count_all(keyword=keyword)
+    async def count_all_journals(self, *, keyword: str = "", entry_type: str = "") -> int:
+        """现实桥记录总数（跨作用域，面板统计用）。"""
+        return await self._journals.count_all(keyword=keyword, entry_type=entry_type)
+
+    # ------------------------------------------------------------------ #
+    # 身份与作用域维护
+    # ------------------------------------------------------------------ #
+
+    async def observe_identity(
+        self,
+        *,
+        umo: str,
+        platform: str = "",
+        sender_id: str = "",
+        sender_name: str = "",
+        scope: MemoryScope | None = None,
+        user_key: str = "",
+        now: float | None = None,
+    ) -> None:
+        """记录一次身份观测；仓储缺失时静默跳过（不影响主链路）。"""
+        if self._identities is None or not umo:
+            return
+        moment = now if now is not None else time.time()
+        try:
+            await self._identities.observe(
+                umo=umo,
+                platform=platform,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                scope_type=scope.scope_type.value if scope else "",
+                scope_id=scope.scope_id if scope else "",
+                user_key=user_key,
+                now=moment,
+            )
+        except Exception as exc:  # 观测失败绝不能影响对话
+            if self._logger is not None:
+                self._logger.debug("身份观测写入失败：%s", exc)
+
+    async def identity_observations(self, *, limit: int = 200) -> dict[str, Any]:
+        """身份观测明细 + 稳定性判定（面板「身份诊断」用）。"""
+        if self._identities is None:
+            return {"items": [], "total": 0, "analysis": describe_observation([])}
+        rows = await self._identities.list_all(limit=limit)
+        return {
+            "items": rows,
+            "total": await self._identities.count(),
+            "analysis": describe_observation(rows),
+        }
+
+    async def clear_identity_observations(self) -> int:
+        if self._identities is None:
+            return 0
+        return await self._identities.clear()
+
+    async def scope_distribution(self, *, limit: int = 50) -> dict[str, Any]:
+        """记忆作用域分布（迁移前必须先看这张表）。"""
+        return await self._memories.scope_distribution(limit=limit)
+
+    async def migrate_scope(
+        self,
+        *,
+        to: str,
+        from_scope_type: str = "",
+        ids: Sequence[int] | None = None,
+        only_attributed: bool = True,
+        dry_run: bool = True,
+    ) -> dict[str, int]:
+        """按策略迁移记忆作用域（详见 ``MemoryRepository.migrate_scope``）。"""
+        return await self._memories.migrate_scope(
+            to=to,
+            from_scope_type=from_scope_type,
+            ids=ids,
+            only_attributed=only_attributed,
+            dry_run=dry_run,
+        )
+
+    async def migrate_journal_scope(
+        self, *, scope_type: str, to_scope_type: str, to_scope_id: str, dry_run: bool = True
+    ) -> dict[str, int]:
+        """现实桥记录的同步迁移（与记忆迁移配套调用）。"""
+        return await self._journals.migrate_scope(
+            scope_type=scope_type,
+            to_scope_type=to_scope_type,
+            to_scope_id=to_scope_id,
+            dry_run=dry_run,
+        )
 
     async def stats_all(self) -> dict[str, Any]:
         """全局统计（面板总览用）。"""
@@ -346,9 +527,33 @@ class MemoryService:
     async def repair(self) -> int:
         return await self._lifecycle.repair_incomplete_writes()
 
-    async def reindex(self, scope: MemoryScope | None = None) -> dict[str, int]:
+    async def reindex(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """重建索引，并把「为什么没建向量」一并说清楚。
+
+        向量路不可用时 ``vectorized`` 恒为 0；不解释原因的话，运维只会看到
+        「重建完成、向量 0 条」而误以为插件坏了——实际是没配嵌入提供商。
+        """
         scopes = retrieval_scopes(scope) if scope is not None else None
-        return await self._lifecycle.reindex(scopes)
+        stats: dict[str, Any] = dict(await self._lifecycle.reindex(scopes))
+        vector_ready = bool(
+            self._embedding is not None and getattr(self._embedding, "available", False)
+        )
+        stats["vector_ready"] = vector_ready
+        if vector_ready:
+            stats["note"] = ""
+        else:
+            stats["note"] = (
+                "向量路未启用：未检测到可用的嵌入提供商，本次只重建了关键词索引。"
+                "在插件配置的「记忆与检索」里指定嵌入模型后重试即可。"
+            )
+        return stats
+
+    async def reindex_keywords(self, *, clear: bool = False) -> dict[str, int]:
+        """只重建关键词索引（恢复后的索引补偿，不调用嵌入接口）。
+
+        ``clear=True`` 对应覆盖恢复：先清空 FTS 再按新正文重建。
+        """
+        return await self._lifecycle.reindex_keywords(clear=clear)
 
     async def reset_scope(self, scope: MemoryScope) -> dict[str, int]:
         """清空某作用域的记忆（含正式记忆与对话缓冲）。

@@ -1,0 +1,43 @@
+"""全局备份领域：把全部业务表连同配置与数据库快照打成可校验的 zip。"""
+
+from .service import (
+    BACKUP_DIR_NAME,
+    BACKUP_TABLES,
+    DB_ENTRY,
+    DEFAULT_KEEP,
+    EXCLUDED_TABLES,
+    MANIFEST_NAME,
+    RESTORE_MERGE,
+    RESTORE_MODES,
+    RESTORE_REPLACE,
+    TABLE_DIR,
+    VIEW_DIR,
+    BackupArtifact,
+    BackupService,
+    RestoreError,
+    RestoreOutcome,
+    decode_rows,
+    encode_rows,
+    normalize_mode,
+)
+
+__all__ = [
+    "BACKUP_DIR_NAME",
+    "BACKUP_TABLES",
+    "DB_ENTRY",
+    "DEFAULT_KEEP",
+    "EXCLUDED_TABLES",
+    "MANIFEST_NAME",
+    "TABLE_DIR",
+    "VIEW_DIR",
+    "BackupArtifact",
+    "BackupService",
+    "RestoreError",
+    "RestoreOutcome",
+    "RESTORE_MERGE",
+    "RESTORE_MODES",
+    "RESTORE_REPLACE",
+    "normalize_mode",
+    "encode_rows",
+    "decode_rows",
+]

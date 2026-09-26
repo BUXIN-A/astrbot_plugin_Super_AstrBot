@@ -13,18 +13,33 @@ import time
 from typing import Any, Sequence
 
 from ..harness.protocols import EventView
-from ..memory import KIND_FACT, SOURCE_MANUAL
+from ..memory import KIND_FACT, SOURCE_MANUAL, MemoryIdentity
 from ..spec.capabilities import get_path
+from ..spec.entry_types import (
+    ENTRY_TYPE_DIARY,
+    ENTRY_TYPE_ESSAY,
+    ENTRY_TYPE_WEEKLY,
+    entry_type_label,
+    is_entry_type,
+    normalize_entry_type,
+)
 from ..spec.errors import safe_detail
 from ..spec.scopes import MemoryScope, ScopeType
+from .parser import parse_journal_payload
 
 HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）：
 /sab status          查看运行状态、框架诊断与能力开关
 /sab search <关键词>  检索记忆（含检索路、耗时与打分明细）
 /sab why <关键词>     同 search，调参时查看打分构成
 /sab remember <内容>  手动写入一条长期记忆
-/sab journal <内容> [#标签]  写一条周记（现实记忆）
-/sab journals        查看最近周记
+现实桥（现实记忆，三类文本共用一条写入链路）：
+/sab journal <内容>   写一条周记（别名：周记 / 现实桥 / 桥）
+/sab diary <内容>     写一条日记（别名：日记）
+/sab essay <内容>     写一条随笔（别名：随笔 / 随记）
+  以上三类的完整写法：/sab 日记 <标题> | <正文> [#标签]
+  标题留空时自动使用当天日期时间（例 2015061517:00）
+/sab journals [周记|日记|随笔] [条数]  查看最近记录（默认 5 条）
+/sab edit <编号> [周记|日记|随笔] [标题 | ] 正文 [#标签]  修改一条记录
 /sab review          查看待审记忆
 /sab approve <编号>   批准一条待审记录
 /sab reject <编号>    驳回一条待审记录
@@ -35,8 +50,7 @@ HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）�
 /sab quiet [on|off]  暂停/恢复本会话的主动消息（免打扰）
 /sab help            显示本帮助
 
-可视化管理：AstrBot 插件详情页 → Pages → dashboard"""
-
+可视化管理：AstrBot 插件详情页 → Pages → dashboard（「现实桥」页）"""
 
 class CommandService:
     """指令门面。"""
@@ -53,6 +67,15 @@ class CommandService:
         return bool(get_path(self._config, "basic.admin_only_commands", True))
 
     def _scope(self, view: EventView) -> MemoryScope:
+        """与对话链路共用同一份作用域解析（含身份策略）。
+
+        这里曾直接用 ``sender_id`` 兜底，而对话链路走 ``identity_strategy``：
+        一旦把身份策略切成 auto / sender_name（ID 不稳定的平台），指令就会落到
+        另一个作用域，表现为「明明记过，指令却查不到」。
+        """
+        resolver = getattr(self._app, "memory_scope_for", None)
+        if callable(resolver):
+            return resolver(view)
         config = self._app.memory_config
         scope_type = config.default_scope if config is not None else ScopeType.SESSION
         return MemoryScope.from_event(scope_type, umo=view.umo, user_id=view.sender_id or "unknown")
@@ -97,12 +120,23 @@ class CommandService:
         memory = data.get("memory") or {}
         if memory:
             lines.append(
-                "- 记忆：正式 {active} 条／缓冲 {buffered} 条／周记 {journals} 条"
+                "- 记忆：正式 {active} 条／缓冲 {buffered} 条／现实桥 {journals} 条"
                 "（检索路：{routes}）".format(
                     active=memory.get("active", 0),
                     buffered=memory.get("buffered", 0),
                     journals=memory.get("journals", 0),
                     routes="、".join(memory.get("routes") or []) or "无",
+                )
+            )
+
+        identity = data.get("identity") or {}
+        if identity:
+            lines.append(
+                "- 身份：作用域 {scope}（策略 {strategy}），已观测会话 {umo_count} 个：{hint}".format(
+                    scope=identity.get("scope_type") or "session",
+                    strategy=identity.get("strategy") or "sender_id",
+                    umo_count=identity.get("umo_count", 0),
+                    hint=identity.get("hint") or "—",
                 )
             )
 
@@ -254,52 +288,141 @@ class CommandService:
                 importance=0.7,
                 confidence=0.9,
                 source=SOURCE_MANUAL,
+                identity=MemoryIdentity.from_view(view),
             )
         except Exception as exc:
             return f"写入失败：{safe_detail(exc)}"
         return f"已记住（记忆 #{memory_id}）：{text}"
 
-    async def journal_add(self, view: EventView, payload: str) -> str:
+    async def journal_add(
+        self, view: EventView, payload: str, *, entry_type: str = ENTRY_TYPE_WEEKLY
+    ) -> str:
+        """写入一条现实记录；``entry_type`` 由动作名（周记 / 日记 / 随笔）决定。"""
         journal = self._app.journal
         if journal is None:
             return self._not_ready()
 
+        label = entry_type_label(entry_type)
         raw = (payload or "").strip()
         if not raw:
-            return "用法：/sab journal <内容> [#标签1 #标签2]"
-
-        tags = [token[1:] for token in raw.split() if token.startswith("#")]
-        content = " ".join(token for token in raw.split() if not token.startswith("#")).strip()
-        if not content:
-            return "周记内容不能为空。"
-
+            return (
+                f"用法：/sab {label} <内容> [#标签]，或 /sab {label} 标题 | 内容 #标签\n"
+                "不写标题时自动使用当天日期时间。"
+            )
         if not journal.config.can_write(is_admin=view.is_admin):
-            return "当前配置不允许你写周记。"
+            return "当前配置不允许你写现实记录。"
+
+        title, content, tags = parse_journal_payload(raw)
+        if not content:
+            return f"{label}内容不能为空。"
 
         try:
-            result = await journal.add(self._scope(view), content, tags=tags)
+            result = await journal.add(
+                self._scope(view),
+                content,
+                title=title or None,
+                entry_type=entry_type,
+                tags=tags or None,
+                identity=MemoryIdentity.from_view(view),
+            )
         except Exception as exc:
-            return f"写入周记失败：{safe_detail(exc)}"
+            return f"写入{label}失败：{safe_detail(exc)}"
         if not result:
-            return "周记内容为空，未写入。"
+            return f"{label}内容为空，未写入。"
         tag_text = "、".join(result.get("tags") or []) or "无"
-        return f"周记已记录（#{result['journal_id']}，标签：{tag_text}）：{content}"
+        return (
+            f"{label}已记录（#{result['journal_id']}，标题：{result.get('title')}，"
+            f"标签：{tag_text}）：{content}"
+        )
 
-    async def journal_list(self, view: EventView, limit: int = 5) -> str:
+    async def journal_edit(self, view: EventView, args: Sequence[str]) -> str:
+        """修改一条现实记录：``/sab edit <编号> [类型] [标题 | ] 正文 [#标签]``。
+
+        未写标题时保持原标题不变（标题已在写入时按当天日期时间生成过）。
+        """
         journal = self._app.journal
         if journal is None:
             return self._not_ready()
+        usage = "用法：/sab edit <编号> [周记|日记|随笔] [标题 | ] 正文 [#标签]"
+        if not args:
+            return usage
         try:
-            rows = await journal.list_recent(self._scope(view), limit=max(1, min(20, limit)))
+            journal_id = int(str(args[0]).strip().lstrip("#"))
+        except (TypeError, ValueError):
+            return f"请提供有效的记录编号，例如 /sab edit 12 新的正文\n{usage}"
+
+        rest = [str(item) for item in args[1:]]
+        entry_type: str | None = None
+        if rest and is_entry_type(rest[0]):
+            entry_type = normalize_entry_type(rest[0])
+            rest = rest[1:]
+        if not rest:
+            return usage
+        if not journal.config.can_write(is_admin=view.is_admin):
+            return "当前配置不允许你修改现实记录。"
+
+        title, content, tags = parse_journal_payload(" ".join(rest))
+        if not content:
+            return "新的正文不能为空。"
+        try:
+            ok = await journal.update(
+                journal_id,
+                content=content,
+                title=title or None,
+                entry_type=entry_type,
+                tags=tags or None,
+            )
         except Exception as exc:
-            return f"读取周记失败：{safe_detail(exc)}"
+            return f"修改失败：{safe_detail(exc)}"
+        if not ok:
+            return f"#{journal_id} 不存在或内容为空。"
+        changes = []
+        if title:
+            changes.append(f"标题：{title}")
+        if entry_type:
+            changes.append(f"类型：{entry_type_label(entry_type)}")
+        suffix = f"（{'，'.join(changes)}）" if changes else ""
+        return f"已更新 #{journal_id}{suffix}：{content}"
+
+    async def journal_list(self, view: EventView, arg: str = "") -> str:
+        """查看最近记录：``/sab journals [周记|日记|随笔] [条数]``。"""
+        journal = self._app.journal
+        if journal is None:
+            return self._not_ready()
+
+        entry_type = ""
+        limit = 5
+        for token in str(arg or "").split():
+            if not entry_type and is_entry_type(token):
+                entry_type = normalize_entry_type(token)
+                continue
+            try:
+                limit = int(token)
+            except ValueError:
+                return "用法：/sab journals [周记|日记|随笔] [条数]"
+
+        try:
+            rows = await journal.list_recent(
+                self._scope(view),
+                limit=max(1, min(20, limit)),
+                entry_type=entry_type,
+            )
+        except Exception as exc:
+            return f"读取记录失败：{safe_detail(exc)}"
         if not rows:
-            return "还没有周记。可用 /sab journal <内容> 记录。"
-        lines = ["最近周记："]
+            scope_text = f"{entry_type_label(entry_type)}" if entry_type else "现实记录"
+            return f"还没有{scope_text}。可用 /sab 日记 <内容> 记录。"
+
+        head = f"最近{entry_type_label(entry_type)}：" if entry_type else "最近现实记录："
+        lines = [head]
         for row in rows:
             date = time.strftime("%Y-%m-%d", time.localtime(float(row.get("event_time") or 0)))
+            title = str(row.get("title") or "").strip()
             content = str(row.get("content") or "").replace("\n", " ")
-            lines.append(f"- #{row.get('id')} [{date}] {content[:120]}")
+            prefix = f"【{entry_type_label(row.get('entry_type'))}】"
+            lines.append(
+                f"- #{row.get('id')} {prefix}{date} {title}｜{content[:100]}"
+            )
         return "\n".join(lines)
 
     async def review_list(self, view: EventView) -> str:
@@ -393,10 +516,12 @@ class CommandService:
             stats = await memory.reindex(self._scope(view))
         except Exception as exc:
             return f"重建索引失败：{safe_detail(exc)}"
-        return (
+        line = (
             f"索引重建完成：FTS {stats.get('indexed', 0)} 条，"
             f"向量 {stats.get('vectorized', 0)} 条，跳过 {stats.get('skipped', 0)} 条。"
         )
+        note = str(stats.get("note") or "")
+        return f"{line}\n{note}" if note else line
 
     async def quiet(self, view: EventView, arg: str) -> str:
         """暂停/恢复当前会话的主动消息（免打扰）。"""
@@ -563,8 +688,14 @@ class CommandService:
             "search": lambda: self.search(view, " ".join(args)),
             "why": lambda: self.why(view, " ".join(args)),
             "remember": lambda: self.remember(view, " ".join(args)),
-            "journal": lambda: self.journal_add(view, " ".join(args)),
-            "journals": lambda: self.journal_list(view),
+            # 现实桥：动作名携带文本类型
+            "journal": lambda: self.journal_add(
+                view, " ".join(args), entry_type=ENTRY_TYPE_WEEKLY
+            ),
+            "diary": lambda: self.journal_add(view, " ".join(args), entry_type=ENTRY_TYPE_DIARY),
+            "essay": lambda: self.journal_add(view, " ".join(args), entry_type=ENTRY_TYPE_ESSAY),
+            "journal-edit": lambda: self.journal_edit(view, args),
+            "journals": lambda: self.journal_list(view, " ".join(args)),
             "review": lambda: self.review_list(view),
             "approve": lambda: self.review_approve(view, args[0] if args else ""),
             "reject": lambda: self.review_reject(view, args[0] if args else ""),

@@ -71,6 +71,13 @@ METRIC_INJECT_BLOCKS = "inject.blocks"
 METRIC_INJECT_CHARS = "inject.chars"
 """注入字符数累计（total）。"""
 
+METRIC_INJECT_FALLBACKS = "inject.fallbacks"
+"""注入降级次数（count）：期望临时内容块、实际回退系统提示词或直接未注入。
+
+单独成指标的原因：``inject.blocks`` 只说明「注入发生了」，无法区分走的哪条路；
+宿主不消费 ``extra_user_content_parts`` 时注入会静默变质，需要一个可观测的计数。
+"""
+
 METRIC_MEMORY_WRITES = "memory.writes"
 """记忆写入次数（count）。"""
 
@@ -123,6 +130,7 @@ CORE_METRICS: tuple[str, ...] = (
     METRIC_RERANK_CALLS,
     METRIC_RERANK_FAILURES,
     METRIC_INJECT_CHARS,
+    METRIC_INJECT_FALLBACKS,
     METRIC_SCHEDULER_RUNS,
     METRIC_SCHEDULER_FAILURES,
     METRIC_MEMORY_WRITES,

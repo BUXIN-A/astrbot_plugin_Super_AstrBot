@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_float, as_int, as_str, get_path
 from ..spec.scopes import ScopeType
+from .identity import DEFAULT_IDENTITY_STRATEGY, normalize_strategy
 from .retriever.hybrid import RetrievalConfig
 from .retriever.rerank import FALLBACK_LEXICAL, FALLBACK_MODES, RerankSettings
 
@@ -44,6 +45,8 @@ class MemoryConfig:
     dedup_similarity: float = 0.92
     vector_max_scan: int = 5000
     journal_boost: float = 0.15
+    identity_strategy: str = DEFAULT_IDENTITY_STRATEGY
+    """用户作用域键的来源策略：sender_id / sender_name / auto（见 ``memory.identity``）。"""
 
     # --- 重排序（Rerank） ---
     rerank_enabled: bool = False
@@ -79,6 +82,9 @@ class MemoryConfig:
             capture_groups=as_bool(get_path(config, "memory.capture_groups", True), True),
             capture_private=as_bool(get_path(config, "memory.capture_private", True), True),
             default_scope=ScopeType.parse(get_path(config, "basic.default_scope", "session")),
+            identity_strategy=normalize_strategy(
+                get_path(config, "basic.identity_strategy", DEFAULT_IDENTITY_STRATEGY)
+            ),
             fts_enabled=as_bool(get_path(config, "memory.fts_enabled", True), True),
             vector_enabled=as_bool(get_path(config, "memory.vector_enabled", True), True),
             embedding_provider_id=as_str(get_path(config, "memory.embedding_provider_id", "")),

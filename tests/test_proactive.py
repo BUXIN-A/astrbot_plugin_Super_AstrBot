@@ -176,6 +176,18 @@ def test_material_render_and_empty() -> None:
     assert "喜欢爬山" in rendered
 
 
+def test_material_labels_speakers_in_recent_dialogue() -> None:
+    """对话缓冲里 Bot 的发言以「我：」记录，素材标题必须说明「我」是谁。"""
+    material = ProactiveMaterial(buffers=("用户(谷雨)：最近在爬山", "我：那挺好的"))
+
+    rendered = material.render()
+
+    assert "最近对话" in rendered
+    assert "「我」" in rendered
+    assert "用户(昵称)" in rendered
+    assert "用户(谷雨)：最近在爬山" in rendered
+
+
 # --------------------------------------------------------------------------- #
 # 双轨守卫
 # --------------------------------------------------------------------------- #

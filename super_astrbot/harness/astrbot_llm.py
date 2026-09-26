@@ -36,6 +36,10 @@ PERSONA_BLOCK_START = "[SuperAstrBot 学习参考 · 以下是过往情况，不
 PERSONA_BLOCK_END = "[/SuperAstrBot 学习参考]"
 """拟人化学习使用独立标记：与记忆块同用一个标记会互相清除（``inject`` 先 ``clear``）。"""
 
+_NOTE_FALLBACK = "fallback:system_prompt"
+_NOTE_UNSUPPORTED = "unsupported"
+"""注入方式日志的内部标记：仅在方式变化时输出一次（见 ``AstrBotInjector._note_method``）。"""
+
 
 def _provider_meta(provider: Any) -> dict[str, str]:
     """从 Provider 提取 id/type/model（实现集中在 ``compat.provider_meta``）。"""
@@ -448,6 +452,11 @@ class AstrBotInjector:
 
     不同业务域使用**各自的边界标记**：``inject`` 会先清理自己的旧块，
     共用标记会让后注入的域清掉先注入的域。
+
+    **注入是否真的生效要被验证，而不是假设**：往 ``extra_user_content_parts`` 追加成功
+    不等于宿主会读它（属性可能是副本、或该版本框架根本不消费它），一旦静默失效，
+    表现就是「配置为临时内容块，模型却看不到记忆」。因此每次追加后回读确认，
+    失败即回退 ``system_prompt`` 并把原因显式说出来（``InjectResult.fallback`` 供上层埋点）。
     """
 
     def __init__(
@@ -456,10 +465,15 @@ class AstrBotInjector:
         *,
         block_start: str = MEMORY_BLOCK_START,
         block_end: str = MEMORY_BLOCK_END,
+        label: str = "记忆",
     ) -> None:
         self._host = host
         self._start = block_start
         self._end = block_end
+        self._label = label
+        """日志里的业务域名（记忆 / 拟人化学习）：同一次请求上两者都会注入，需能分辨。"""
+        self._last_method = ""
+        """上一次实际生效的注入方式：仅用于「方式变化时报一次」，避免逐轮刷屏。"""
 
     # ------------------------------------------------------------------ #
     # 注入
@@ -489,30 +503,105 @@ class AstrBotInjector:
         # 清理上一轮残留，避免逐轮累积。
         self.clear(target)
 
-        text_part_cls = compat.SYMBOLS.TextPart
-        parts = getattr(target, "extra_user_content_parts", None)
-        want_parts = prefer in {"auto", "extra_user_content"}
-        if want_parts and text_part_cls is not None and isinstance(parts, list):
-            try:
-                parts.append(text_part_cls(text=body).mark_as_temp())
+        blocked = ""
+        if prefer in {"auto", "extra_user_content"}:
+            blocked = self._inject_into_parts(target, body)
+            if not blocked:
+                self._note_method("extra_user_content", f"块 {len(body)} 字符")
                 return InjectResult(
                     applied=True, method="extra_user_content", parts=1, chars=len(body)
                 )
-            except Exception as exc:
-                self._host.log().debug("临时内容块注入失败，尝试回退：%s", safe_detail(exc))
 
         if prefer == "extra_user_content":
-            return InjectResult(applied=False, reason="宿主不支持临时内容块注入")
+            self._note_method(_NOTE_UNSUPPORTED, blocked)
+            return InjectResult(
+                applied=False,
+                reason=f"宿主不支持临时内容块注入（{blocked}）",
+                fallback=True,
+            )
 
-        system_prompt = getattr(target, "system_prompt", None)
-        if isinstance(system_prompt, str):
-            try:
-                target.system_prompt = f"{system_prompt}\n\n{body}" if system_prompt else body
-                return InjectResult(applied=True, method="system_prompt", parts=1, chars=len(body))
-            except Exception as exc:
-                return InjectResult(applied=False, reason=f"系统提示词写入失败：{safe_detail(exc)}")
+        failure = self._inject_into_system_prompt(target, body)
+        if failure:
+            self._note_method(_NOTE_UNSUPPORTED, blocked or failure)
+            return InjectResult(applied=False, reason=failure, fallback=bool(blocked))
 
-        return InjectResult(applied=False, reason="请求对象不支持注入")
+        if blocked:
+            self._note_method(_NOTE_FALLBACK, blocked)
+        else:
+            self._note_method("system_prompt", "配置指定使用系统提示词")
+        return InjectResult(
+            applied=True,
+            method="system_prompt",
+            parts=1,
+            chars=len(body),
+            fallback=bool(blocked),
+        )
+
+    def _inject_into_parts(self, target: Any, body: str) -> str:
+        """尝试写入临时内容块；成功返回空串，失败返回原因。"""
+        part_cls = compat.SYMBOLS.TextPart
+        if part_cls is None:
+            return "宿主未提供 TextPart 符号"
+        parts = getattr(target, "extra_user_content_parts", None)
+        if not isinstance(parts, list):
+            return "extra_user_content_parts 不是可变列表"
+        try:
+            parts.append(part_cls(text=body).mark_as_temp())
+        except Exception as exc:
+            return f"构造或追加临时内容块失败：{safe_detail(exc)}"
+        # 回读确认：append 未抛异常也可能是「写进了副本 / 宿主压根不读这个列表」。
+        if not any(self._start in str(getattr(part, "text", "")) for part in parts):
+            return "写入后回读不到本块（宿主忽略了该列表）"
+        return ""
+
+    def _inject_into_system_prompt(self, target: Any, body: str) -> str:
+        """把正文追加到 ``system_prompt`` 末尾；成功返回空串，失败返回原因。"""
+        if not hasattr(target, "system_prompt"):
+            return "请求对象既无临时内容块也无系统提示词字段"
+        try:
+            current = target.system_prompt
+        except Exception as exc:
+            return f"读取系统提示词失败：{safe_detail(exc)}"
+        if current is None:
+            # 未配置人格时系统提示词就是空的：应当从空串起追加，
+            # 而不是把「空」当成「不支持注入」。
+            current = ""
+        elif not isinstance(current, str):
+            return f"系统提示词类型不支持拼接（{type(current).__name__}）"
+        try:
+            target.system_prompt = f"{current}\n\n{body}" if current else body
+        except Exception as exc:
+            return f"系统提示词写入失败：{safe_detail(exc)}"
+        return ""
+
+    def _note_method(self, method: str, detail: str) -> None:
+        """注入方式变化时输出一条可见日志；同一种方式不再重复。
+
+        为什么不逐次打印：``inject`` 在每个 LLM 请求上都会执行，逐次输出会把日志刷满。
+        又为什么不干脆只写 debug：``basic.debug_log`` 默认关闭，那样「注入走了哪条路、
+        有没有静默回退」就成了黑盒——这正是线上排查时的盲点。折中是「首次/变更时报一次」，
+        持续计数交给 ``inject.blocks`` / ``inject.fallbacks`` 指标。
+        """
+        if method == self._last_method:
+            return
+        self._last_method = method
+        logger = self._host.log()
+        if method == _NOTE_FALLBACK:
+            logger.warning(
+                "宿主不支持临时内容块注入，%s已回退 system_prompt（%s）；"
+                "内容仍会注入，但会占用系统提示词位。",
+                self._label,
+                detail,
+            )
+            return
+        if method == _NOTE_UNSUPPORTED:
+            logger.warning(
+                "宿主不支持临时内容块注入，且配置要求只走该路径：%s本次未注入（%s）。",
+                self._label,
+                detail,
+            )
+            return
+        logger.info("%s注入方式：%s（%s）。", self._label, method, detail)
 
     # ------------------------------------------------------------------ #
     # 清理

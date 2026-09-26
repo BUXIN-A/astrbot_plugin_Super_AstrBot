@@ -265,6 +265,11 @@ class InjectResult:
     parts: int = 0
     chars: int = 0
     reason: str = ""
+    fallback: bool = False
+    """是否走了降级路径（期望临时内容块、实际用了系统提示词或直接未注入）。
+
+    调用方可据此埋点：注入「成功」不一定意味着走的是配置期望的那条路。
+    """
 
 
 @runtime_checkable

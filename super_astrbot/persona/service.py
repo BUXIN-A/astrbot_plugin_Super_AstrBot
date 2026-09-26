@@ -250,12 +250,6 @@ class PersonaService:
     async def affinity_rows(self, scope: MemoryScope, *, limit: int = 20) -> list[dict[str, Any]]:
         return await self._affinity.list_by_scope(scope, limit=limit)
 
-    async def delete_style(self, pattern_id: int) -> bool:
-        return await self._style.delete(pattern_id)
-
-    async def delete_jargon(self, jargon_id: int) -> bool:
-        return await self._jargon.delete(jargon_id)
-
     async def stats(self) -> PersonaStats:
         return PersonaStats(
             style=await self._style.count_all(),

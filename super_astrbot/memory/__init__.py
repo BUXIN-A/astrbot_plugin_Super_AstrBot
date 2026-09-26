@@ -15,6 +15,18 @@ from .config import (
     MemoryConfig,
 )
 from .formatter import build_memory_body, format_search_results
+from .identity import (
+    DEFAULT_IDENTITY_STRATEGY,
+    IDENTITY_AUTO,
+    IDENTITY_SENDER_ID,
+    IDENTITY_SENDER_NAME,
+    IDENTITY_STRATEGIES,
+    MemoryIdentity,
+    ResolvedIdentity,
+    describe_observation,
+    normalize_strategy,
+    resolve_identity,
+)
 from .lifecycle import MemoryLifecycle
 from .models import (
     ALL_KINDS,
@@ -54,6 +66,16 @@ from .service import MemoryService
 
 __all__ = [
     "MemoryService",
+    "MemoryIdentity",
+    "ResolvedIdentity",
+    "resolve_identity",
+    "describe_observation",
+    "normalize_strategy",
+    "DEFAULT_IDENTITY_STRATEGY",
+    "IDENTITY_STRATEGIES",
+    "IDENTITY_AUTO",
+    "IDENTITY_SENDER_ID",
+    "IDENTITY_SENDER_NAME",
     "AgentMemoryBackend",
     "MemoryConfig",
     "MemoryLifecycle",

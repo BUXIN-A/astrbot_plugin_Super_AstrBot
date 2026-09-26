@@ -7,7 +7,8 @@
 可靠性约定：
 
 - 反思**永远不影响正常对话**：任何异常都被吞掉并记录，只返回结构化结果；
-- 触发条件可预测：缓冲条数 / 时间间隔 / 冷却三重约束；
+- 触发条件可预测：缓冲条数（单作用域 ≥ ``min_messages``，或全库聚合 ≥ ``trigger_rounds``）
+  / 时间间隔 / 冷却三重约束；
 - 产出可追溯：每条写入的记忆都能通过 ``reflection_logs.id`` 对应到本次运行。
 """
 
@@ -97,7 +98,18 @@ class ReflectionService:
     # ------------------------------------------------------------------ #
 
     async def should_run(self, scope: MemoryScope, *, now: float | None = None) -> tuple[bool, str]:
-        """判断当前作用域是否满足反思条件。"""
+        """判断当前作用域是否满足反思条件。
+
+        「内容量」有两条**互不取 max** 的判据，任一成立即算达标：
+
+        - **单作用域**：本作用域（含全局兜底）的待反思缓冲 ≥ ``min_messages``；
+        - **聚合**：全库待反思缓冲总数 ≥ ``trigger_rounds``。
+
+        这两条必须解耦。``basic.default_scope`` 默认是 ``session``，缓冲按会话分域存储，
+        单个会话的峰值往往只有十几条：若把阈值写成 ``buffered >= max(min_messages,
+        trigger_rounds)``（历史上正是如此，默认 30），则每个会话都永远不达标，反思静默停摆、
+        长期记忆被冻结。聚合判据就是为「内容被切碎在很多小作用域里」准备的兜底。
+        """
         if not self._config.enabled:
             return False, "反思未启用"
 
@@ -105,8 +117,15 @@ class ReflectionService:
         scopes = retrieval_scopes(scope)
         buffered = await self._memory.count_buffer(scope)
         needed = max(2, self._config.min_messages)
-        if buffered < needed:
-            return False, f"待反思内容不足（{buffered}/{needed}）"
+        per_scope_ok = buffered >= needed
+        total = await self._memory.count_buffer_total()
+        aggregate_ok = total >= self._config.trigger_rounds
+
+        if not (per_scope_ok or aggregate_ok):
+            return False, (
+                f"待反思内容不足（本作用域 {buffered}/{needed}，"
+                f"全库 {total}/{self._config.trigger_rounds}）"
+            )
 
         last_finished = await self._reflections.last_finished_at(scopes)
         cooldown = max(0, self._config.cooldown_minutes) * 60.0
@@ -115,21 +134,32 @@ class ReflectionService:
             return False, f"冷却中（剩余 {remain}s）"
 
         mode = self._config.mode
-        rounds_reached = buffered >= max(needed, self._config.trigger_rounds)
+        rounds_ok = per_scope_ok or aggregate_ok
         interval_ready = (
             last_finished <= 0
             or (moment - last_finished) >= max(1, self._config.interval_minutes) * 60.0
         )
 
         if mode == MODE_ROUNDS:
-            return (True, "累计内容达标") if rounds_reached else (False, "累计内容未达标")
+            if rounds_ok:
+                return True, self._rounds_reason(buffered, needed, total)
+            return False, (
+                f"轮数/聚合未达标（本作用域 {buffered}/{needed}，"
+                f"全库 {total}/{self._config.trigger_rounds}）"
+            )
         if mode == MODE_INTERVAL:
             return (True, "时间间隔达标") if interval_ready else (False, "时间间隔未达标")
         if mode == MODE_BOTH:
-            if rounds_reached or interval_ready:
-                return True, "轮数或间隔达标"
+            if rounds_ok or interval_ready:
+                return True, "轮数/聚合/间隔任一达标"
             return False, "轮数与间隔均未达标"
         return False, "触发模式非法"
+
+    def _rounds_reason(self, buffered: int, needed: int, total: int) -> str:
+        """写清是哪条判据触发的（落进 ``reflection_logs.detail``，便于事后复盘）。"""
+        if buffered >= needed:
+            return f"累计内容达标（本作用域 {buffered}/{needed}）"
+        return f"聚合达标（全库 {total}/{self._config.trigger_rounds}）"
 
     # ------------------------------------------------------------------ #
     # 反思执行

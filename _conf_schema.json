@@ -26,9 +26,39 @@
         "description": "默认记忆作用域",
         "type": "string",
         "default": "session",
-        "options": ["session", "user", "global"],
-        "labels": ["按会话隔离", "按用户跨会话", "全局共享"],
-        "hint": "决定记忆在多大范围内共享。改动只影响之后新写入的记忆"
+        "options": [
+          "session",
+          "user",
+          "global"
+        ],
+        "labels": [
+          "按会话隔离",
+          "按用户跨会话",
+          "全局共享"
+        ],
+        "hint": "决定记忆在多大范围内共享。按用户跨会话可跨会话识别同一人（推荐稳定平台）；改动只影响之后新写入的记忆，历史数据可用「系统 → 作用域迁移」处理"
+      },
+      "identity_strategy": {
+        "description": "用户身份策略",
+        "type": "string",
+        "default": "sender_id",
+        "options": [
+          "sender_id",
+          "sender_name",
+          "auto"
+        ],
+        "labels": [
+          "平台用户 ID（推荐）",
+          "昵称",
+          "自动：ID 优先，缺失回退昵称"
+        ],
+        "hint": "决定「按用户隔离」时用什么键识别用户。若面板「身份诊断」提示同一昵称对应多个 ID，说明本平台 ID 不稳定，应改用昵称或自动"
+      },
+      "identity_tracking": {
+        "description": "身份观测",
+        "type": "bool",
+        "default": true,
+        "hint": "旁路记录每条会话上出现过的发送者标识，用于在面板判定「平台用户 ID 是否跨会话稳定」；关闭后身份诊断没有数据"
       }
     }
   },
@@ -62,21 +92,37 @@
         "description": "单次召回条数上限",
         "type": "int",
         "default": 5,
-        "slider": {"min": 1, "max": 20, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
       },
       "max_injected_chars": {
         "description": "注入记忆的字符预算上限",
         "type": "int",
         "default": 1800,
-        "slider": {"min": 200, "max": 8000, "step": 100},
+        "slider": {
+          "min": 200,
+          "max": 8000,
+          "step": 100
+        },
         "hint": "超出预算的记忆会被截断，避免挤占上下文"
       },
       "injection_method": {
         "description": "记忆注入方式",
         "type": "string",
         "default": "extra_user_content",
-        "options": ["extra_user_content", "system_prompt", "disabled"],
-        "labels": ["临时内容块（推荐，不写入历史）", "系统提示词", "仅检索不注入"],
+        "options": [
+          "extra_user_content",
+          "system_prompt",
+          "disabled"
+        ],
+        "labels": [
+          "临时内容块（推荐，不写入历史）",
+          "系统提示词",
+          "仅检索不注入"
+        ],
         "hint": "推荐临时内容块：不污染对话历史、不破坏模型前缀缓存"
       },
       "fts_enabled": {
@@ -100,43 +146,71 @@
         "description": "RRF 融合常数 k",
         "type": "int",
         "default": 60,
-        "slider": {"min": 10, "max": 200, "step": 10}
+        "slider": {
+          "min": 10,
+          "max": 200,
+          "step": 10
+        }
       },
       "time_decay_half_life_days": {
         "description": "时间衰减半衰期（天）",
         "type": "float",
         "default": 14.0,
-        "slider": {"min": 1.0, "max": 180.0, "step": 1.0}
+        "slider": {
+          "min": 1.0,
+          "max": 180.0,
+          "step": 1.0
+        }
       },
       "weight_relevance": {
         "description": "相关性权重",
         "type": "float",
         "default": 0.55,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05}
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
       },
       "weight_importance": {
         "description": "重要性权重",
         "type": "float",
         "default": 0.2,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05}
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
       },
       "weight_recency": {
         "description": "新近度权重",
         "type": "float",
         "default": 0.25,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05}
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
       },
       "min_score": {
         "description": "注入最低分阈值",
         "type": "float",
         "default": 0.05,
-        "slider": {"min": 0.0, "max": 0.5, "step": 0.01}
+        "slider": {
+          "min": 0.0,
+          "max": 0.5,
+          "step": 0.01
+        }
       },
       "dedup_similarity": {
         "description": "去重相似度阈值",
         "type": "float",
         "default": 0.92,
-        "slider": {"min": 0.5, "max": 1.0, "step": 0.01}
+        "slider": {
+          "min": 0.5,
+          "max": 1.0,
+          "step": 0.01
+        }
       },
       "rerank_enabled": {
         "description": "启用重排序（Rerank）",
@@ -154,29 +228,47 @@
         "description": "送入重排序的候选条数",
         "type": "int",
         "default": 20,
-        "slider": {"min": 2, "max": 100, "step": 1},
+        "slider": {
+          "min": 2,
+          "max": 100,
+          "step": 1
+        },
         "hint": "先多召回、再由模型精选；越大越准也越慢，建议取「单次召回条数上限」的 2~4 倍"
       },
       "rerank_min_candidates": {
         "description": "触发重排序的最少候选数",
         "type": "int",
         "default": 3,
-        "slider": {"min": 2, "max": 20, "step": 1},
+        "slider": {
+          "min": 2,
+          "max": 20,
+          "step": 1
+        },
         "hint": "候选不足时跳过模型调用以省延迟（仍按回退策略处理）"
       },
       "rerank_weight": {
         "description": "重排序分权重",
         "type": "float",
         "default": 0.7,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
         "hint": "最终相关性 = 权重 × 重排序分 + (1-权重) × 融合分；留出余量可避免模型分完全压过重要性与新近度"
       },
       "rerank_fallback": {
         "description": "重排序不可用时的回退策略",
         "type": "string",
         "default": "lexical",
-        "options": ["lexical", "none"],
-        "labels": ["本地词法重排（零成本，推荐）", "不重排（仅按融合分排序）"],
+        "options": [
+          "lexical",
+          "none"
+        ],
+        "labels": [
+          "本地词法重排（零成本，推荐）",
+          "不重排（仅按融合分排序）"
+        ],
         "hint": "模型未配置、调用失败或熔断时采用；词法重排只用分词结果，不消耗任何模型调用"
       }
     }
@@ -194,21 +286,39 @@
       "mode": {
         "description": "触发方式",
         "type": "string",
-        "default": "rounds",
-        "options": ["rounds", "interval", "both"],
-        "labels": ["按对话轮数", "按时间间隔", "两者任一满足"]
+        "default": "both",
+        "options": [
+          "rounds",
+          "interval",
+          "both"
+        ],
+        "labels": [
+          "按对话轮数",
+          "按时间间隔",
+          "两者任一满足"
+        ],
+        "hint": "推荐「两者任一满足」：轮数判据看内容量，时间间隔作为兜底，避免会话稀疏时长期不反思"
       },
       "trigger_rounds": {
-        "description": "累计多少轮对话后触发",
+        "description": "累计多少轮对话后触发（全库聚合）",
         "type": "int",
-        "default": 30,
-        "slider": {"min": 5, "max": 200, "step": 5}
+        "default": 12,
+        "slider": {
+          "min": 5,
+          "max": 200,
+          "step": 1
+        },
+        "hint": "两条判据任一成立即触发：单个会话（含全局兜底）达到「最少消息数」，或全库待反思缓冲总数达到本值。默认作用域是「按会话隔离」，单会话往往攒不够，全库聚合即为此兜底"
       },
       "interval_minutes": {
         "description": "时间间隔（分钟）",
         "type": "int",
         "default": 720,
-        "slider": {"min": 10, "max": 4320, "step": 10}
+        "slider": {
+          "min": 10,
+          "max": 4320,
+          "step": 10
+        }
       },
       "provider_id": {
         "description": "反思所用模型（建议用较强的模型）",
@@ -218,10 +328,15 @@
         "hint": "留空则使用当前会话默认模型"
       },
       "min_messages": {
-        "description": "触发反思所需的最少新消息数",
+        "description": "单作用域触发所需的最少消息数",
         "type": "int",
         "default": 8,
-        "slider": {"min": 2, "max": 100, "step": 1}
+        "slider": {
+          "min": 2,
+          "max": 100,
+          "step": 1
+        },
+        "hint": "单个会话（含全局兜底）攒够这么多待反思内容即可触发，与「累计多少轮」互不抬高"
       },
       "approval_required": {
         "description": "反思结果需人工审批后才写入",
@@ -233,66 +348,99 @@
         "description": "单次反思最多产出记忆条数",
         "type": "int",
         "default": 5,
-        "slider": {"min": 1, "max": 20, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
       },
       "cooldown_minutes": {
         "description": "反思冷却时间（分钟）",
         "type": "int",
         "default": 60,
-        "slider": {"min": 5, "max": 1440, "step": 5}
+        "slider": {
+          "min": 5,
+          "max": 1440,
+          "step": 5
+        }
       }
     }
   },
   "journal": {
-    "description": "周记（现实记忆）",
+    "description": "现实桥（周记 / 日记 / 随笔）",
     "type": "object",
-    "hint": "把用户现实生活中的记录作为高优先级记忆来源，用于构建现实与对话的桥梁",
+    "hint": "把用户现实生活中的书写（周记、日记、随笔）作为高优先级记忆来源，用于构建现实与对话的桥梁；三类文本共用同一条写入与检索链路，命令分别为 /sab 周记、/sab 日记、/sab 随笔",
     "items": {
       "enabled": {
-        "description": "启用周记",
+        "description": "启用现实桥",
         "type": "bool",
         "default": true
       },
       "allow_user_write": {
-        "description": "允许普通用户写周记",
+        "description": "允许普通用户写周记 / 日记 / 随笔",
         "type": "bool",
         "default": true
       },
       "admin_only_write": {
-        "description": "周记仅管理员可写",
+        "description": "现实桥仅管理员可写",
         "type": "bool",
         "default": false
       },
       "retrieval_boost": {
-        "description": "周记召回加权",
+        "description": "现实桥召回加权",
         "type": "float",
         "default": 0.15,
-        "slider": {"min": 0.0, "max": 0.5, "step": 0.05},
-        "hint": "周记命中的记忆条目在最终排序中额外加分"
+        "slider": {
+          "min": 0.0,
+          "max": 0.5,
+          "step": 0.05
+        },
+        "hint": "现实桥命中的记忆条目在最终排序中额外加分"
       },
       "weekly_reflection": {
         "description": "每周自动生成洞察",
         "type": "bool",
         "default": true,
-        "hint": "固定时间让模型阅读本周周记，产出对用户的洞察并沉淀为长期记忆"
+        "hint": "固定时间让模型阅读本周现实桥记录，产出对用户的洞察并沉淀为长期记忆"
       },
       "weekly_reflection_weekday": {
         "description": "每周反思日（0=周一，6=周日）",
         "type": "int",
         "default": 6,
-        "slider": {"min": 0, "max": 6, "step": 1}
+        "slider": {
+          "min": 0,
+          "max": 6,
+          "step": 1
+        }
       },
       "weekly_reflection_hour": {
         "description": "每周反思时刻（小时）",
         "type": "int",
         "default": 22,
-        "slider": {"min": 0, "max": 23, "step": 1}
+        "slider": {
+          "min": 0,
+          "max": 23,
+          "step": 1
+        }
       },
       "default_tags": {
-        "description": "周记默认标签",
+        "description": "现实桥默认标签",
         "type": "list",
-        "default": ["生活"],
-        "hint": "用户写周记未指定标签时使用"
+        "default": [
+          "生活"
+        ],
+        "hint": "用户写记录未指定标签时使用"
+      },
+      "default_entry_type": {
+        "description": "面板新增时的默认类型",
+        "type": "string",
+        "default": "weekly",
+        "options": [
+          "weekly",
+          "diary",
+          "essay"
+        ],
+        "hint": "weekly=周记，diary=日记，essay=随笔；聊天指令不受此项影响（由 /sab 周记 / 日记 / 随笔 决定）"
       }
     }
   },
@@ -324,21 +472,33 @@
         "description": "触发阈值与目标上限（token）",
         "type": "int",
         "default": 6000,
-        "slider": {"min": 1000, "max": 60000, "step": 500},
+        "slider": {
+          "min": 1000,
+          "max": 60000,
+          "step": 500
+        },
         "hint": "估算未超过该值时不干预；超过后先折叠早期工具/图片，仍超才调用模型做摘要"
       },
       "keep_recent": {
         "description": "保留最近多少条消息原文",
         "type": "int",
         "default": 12,
-        "slider": {"min": 2, "max": 100, "step": 1},
+        "slider": {
+          "min": 2,
+          "max": 100,
+          "step": 1
+        },
         "hint": "这些消息永不参与压缩，保证模型能看到最近几轮完整对话"
       },
       "min_messages": {
         "description": "少于多少条消息时不治理",
         "type": "int",
         "default": 8,
-        "slider": {"min": 4, "max": 100, "step": 1}
+        "slider": {
+          "min": 4,
+          "max": 100,
+          "step": 1
+        }
       },
       "summary_provider_id": {
         "description": "摘要所用模型（建议用便宜且支持长输入的模型）",
@@ -364,33 +524,53 @@
         "description": "插话注意力阈值",
         "type": "float",
         "default": 0.55,
-        "slider": {"min": 0.05, "max": 1.0, "step": 0.05},
+        "slider": {
+          "min": 0.05,
+          "max": 1.0,
+          "step": 0.05
+        },
         "hint": "得分低于该值就不插话；调高更沉默，调低更容易接话。被 @/引用时无视该阈值"
       },
       "cooldown_seconds": {
         "description": "两次插话的最短间隔（秒）",
         "type": "int",
         "default": 90,
-        "slider": {"min": 0, "max": 1800, "step": 10}
+        "slider": {
+          "min": 0,
+          "max": 1800,
+          "step": 10
+        }
       },
       "max_per_hour": {
         "description": "每会话每小时最多插话次数",
         "type": "int",
         "default": 6,
-        "slider": {"min": 1, "max": 60, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 60,
+          "step": 1
+        }
       },
       "merge_window_seconds": {
         "description": "并发合并窗口（秒）",
         "type": "float",
         "default": 1.2,
-        "slider": {"min": 0.0, "max": 5.0, "step": 0.2},
+        "slider": {
+          "min": 0.0,
+          "max": 5.0,
+          "step": 0.2
+        },
         "hint": "窗口内到达的同一会话消息会合并为一次请求；设为 0 关闭合并"
       },
       "merge_max_messages": {
         "description": "单次最多合并消息条数",
         "type": "int",
         "default": 4,
-        "slider": {"min": 1, "max": 20, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
       },
       "bot_aliases": {
         "description": "Bot 的称呼词",
@@ -449,57 +629,93 @@
         "description": "空闲轨触发所需静默时长（分钟）",
         "type": "int",
         "default": 180,
-        "slider": {"min": 5, "max": 1440, "step": 5}
+        "slider": {
+          "min": 5,
+          "max": 1440,
+          "step": 5
+        }
       },
       "idle_check_minutes": {
         "description": "空闲轨检查周期（分钟）",
         "type": "int",
         "default": 15,
-        "slider": {"min": 1, "max": 180, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 180,
+          "step": 1
+        }
       },
       "busy_guard_minutes": {
         "description": "视为「正在聊天」的静默门槛（分钟）",
         "type": "int",
         "default": 10,
-        "slider": {"min": 0, "max": 120, "step": 1},
+        "slider": {
+          "min": 0,
+          "max": 120,
+          "step": 1
+        },
         "hint": "静默不足该时长就放弃本次发送，避免打断正在进行的对话"
       },
       "daily_max": {
         "description": "每会话每日主动消息上限",
         "type": "int",
         "default": 1,
-        "slider": {"min": 1, "max": 24, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 24,
+          "step": 1
+        }
       },
       "quiet_start": {
         "description": "免打扰开始时间（0-23 点）",
         "type": "int",
         "default": 23,
-        "slider": {"min": 0, "max": 23, "step": 1},
+        "slider": {
+          "min": 0,
+          "max": 23,
+          "step": 1
+        },
         "hint": "与结束时间相同表示不启用免打扰；支持跨午夜（如 23 点到 8 点）"
       },
       "quiet_end": {
         "description": "免打扰结束时间（0-23 点）",
         "type": "int",
         "default": 8,
-        "slider": {"min": 0, "max": 23, "step": 1}
+        "slider": {
+          "min": 0,
+          "max": 23,
+          "step": 1
+        }
       },
       "max_chars": {
         "description": "主动消息长度上限",
         "type": "int",
         "default": 80,
-        "slider": {"min": 10, "max": 500, "step": 10}
+        "slider": {
+          "min": 10,
+          "max": 500,
+          "step": 10
+        }
       },
       "material_memories": {
         "description": "取材的长期记忆条数",
         "type": "int",
         "default": 8,
-        "slider": {"min": 0, "max": 30, "step": 1}
+        "slider": {
+          "min": 0,
+          "max": 30,
+          "step": 1
+        }
       },
       "material_journals": {
         "description": "取材的周记条数",
         "type": "int",
         "default": 3,
-        "slider": {"min": 0, "max": 20, "step": 1}
+        "slider": {
+          "min": 0,
+          "max": 20,
+          "step": 1
+        }
       },
       "provider_id": {
         "description": "生成主动消息所用模型",
@@ -531,32 +747,52 @@
         "description": "每会话最多保留样本数",
         "type": "int",
         "default": 200,
-        "slider": {"min": 10, "max": 2000, "step": 10}
+        "slider": {
+          "min": 10,
+          "max": 2000,
+          "step": 10
+        }
       },
       "style_top_k": {
         "description": "单次注入的样本条数",
         "type": "int",
         "default": 3,
-        "slider": {"min": 1, "max": 10, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 10,
+          "step": 1
+        }
       },
       "style_min_similarity": {
         "description": "样本相似度门槛",
         "type": "float",
         "default": 0.12,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.02},
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.02
+        },
         "hint": "当前消息与样本场景的词袋相似度低于该值就不注入"
       },
       "style_max_injected_chars": {
         "description": "风格注入字符上限",
         "type": "int",
         "default": 600,
-        "slider": {"min": 100, "max": 4000, "step": 100}
+        "slider": {
+          "min": 100,
+          "max": 4000,
+          "step": 100
+        }
       },
       "style_half_life_days": {
         "description": "样本权重衰减半衰期（天）",
         "type": "float",
         "default": 30.0,
-        "slider": {"min": 1.0, "max": 365.0, "step": 1.0}
+        "slider": {
+          "min": 1.0,
+          "max": 365.0,
+          "step": 1.0
+        }
       },
       "jargon": {
         "description": "启用群内用语理解",
@@ -574,32 +810,52 @@
         "description": "成为候选词所需的最少出现次数",
         "type": "int",
         "default": 3,
-        "slider": {"min": 2, "max": 50, "step": 1}
+        "slider": {
+          "min": 2,
+          "max": 50,
+          "step": 1
+        }
       },
       "jargon_candidate_limit": {
         "description": "单次推断的候选词数量上限",
         "type": "int",
         "default": 8,
-        "slider": {"min": 1, "max": 30, "step": 1},
+        "slider": {
+          "min": 1,
+          "max": 30,
+          "step": 1
+        },
         "hint": "一次模型调用批量处理，数量越大成本越高"
       },
       "jargon_scan_interval_minutes": {
         "description": "候选词扫描间隔（分钟）",
         "type": "int",
         "default": 360,
-        "slider": {"min": 10, "max": 10080, "step": 10}
+        "slider": {
+          "min": 10,
+          "max": 10080,
+          "step": 10
+        }
       },
       "jargon_max_jargons": {
         "description": "每会话最多收录词条数",
         "type": "int",
         "default": 200,
-        "slider": {"min": 10, "max": 2000, "step": 10}
+        "slider": {
+          "min": 10,
+          "max": 2000,
+          "step": 10
+        }
       },
       "jargon_max_injected_chars": {
         "description": "群内用语注入字符上限",
         "type": "int",
         "default": 300,
-        "slider": {"min": 50, "max": 2000, "step": 50}
+        "slider": {
+          "min": 50,
+          "max": 2000,
+          "step": 50
+        }
       },
       "jargon_provider_id": {
         "description": "词义推断所用模型（建议用便宜的小模型）",
@@ -618,20 +874,32 @@
         "description": "初始好感度",
         "type": "float",
         "default": 0.5,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
         "hint": "也是长期不交流时回归的基线值"
       },
       "affinity_half_life_days": {
         "description": "好感度衰减半衰期（天）",
         "type": "float",
         "default": 14.0,
-        "slider": {"min": 1.0, "max": 365.0, "step": 1.0}
+        "slider": {
+          "min": 1.0,
+          "max": 365.0,
+          "step": 1.0
+        }
       },
       "affinity_daily_delta_cap": {
         "description": "单次交互最大变化幅度",
         "type": "float",
         "default": 0.3,
-        "slider": {"min": 0.05, "max": 1.0, "step": 0.05}
+        "slider": {
+          "min": 0.05,
+          "max": 1.0,
+          "step": 0.05
+        }
       },
       "affinity_use_llm": {
         "description": "规则冲突时用模型兜底判定",
@@ -669,78 +937,130 @@
         "description": "抽取方式",
         "type": "string",
         "default": "deterministic",
-        "options": ["deterministic", "llm", "both"],
-        "labels": ["仅零成本（分词共现，不调模型）", "仅模型抽取（质量高但每条记忆一次调用）", "零成本 + 模型（模型为主，零成本补充）"]
+        "options": [
+          "deterministic",
+          "llm",
+          "both"
+        ],
+        "labels": [
+          "仅零成本（分词共现，不调模型）",
+          "仅模型抽取（质量高但每条记忆一次调用）",
+          "零成本 + 模型（模型为主，零成本补充）"
+        ]
       },
       "max_entities": {
         "description": "单条记忆最多抽取的实体数",
         "type": "int",
         "default": 8,
-        "slider": {"min": 1, "max": 30, "step": 1},
+        "slider": {
+          "min": 1,
+          "max": 30,
+          "step": 1
+        },
         "hint": "单条记忆最多抽取的实体数"
       },
       "max_relations": {
         "description": "单条记忆最多抽取的关系数",
         "type": "int",
         "default": 8,
-        "slider": {"min": 1, "max": 30, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 30,
+          "step": 1
+        }
       },
       "min_term_chars": {
         "description": "实体词最短字符数",
         "type": "int",
         "default": 2,
-        "slider": {"min": 2, "max": 8, "step": 1}
+        "slider": {
+          "min": 2,
+          "max": 8,
+          "step": 1
+        }
       },
       "max_term_chars": {
         "description": "实体词最长字符数",
         "type": "int",
         "default": 12,
-        "slider": {"min": 4, "max": 32, "step": 1}
+        "slider": {
+          "min": 4,
+          "max": 32,
+          "step": 1
+        }
       },
       "max_entities_per_scope": {
         "description": "每个作用域最多保留的实体数",
         "type": "int",
         "default": 2000,
-        "slider": {"min": 100, "max": 50000, "step": 100}
+        "slider": {
+          "min": 100,
+          "max": 50000,
+          "step": 100
+        }
       },
       "expansion_hops": {
         "description": "检索扩展跳数",
         "type": "int",
         "default": 1,
-        "slider": {"min": 1, "max": 2, "step": 1},
+        "slider": {
+          "min": 1,
+          "max": 2,
+          "step": 1
+        },
         "hint": "检索扩展跳数：2 会把「相邻实体的记忆」也纳入召回，召回更全但噪声略增"
       },
       "expansion_limit": {
         "description": "扩展召回条数上限",
         "type": "int",
         "default": 24,
-        "slider": {"min": 1, "max": 200, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 200,
+          "step": 1
+        }
       },
       "second_hop_weight": {
         "description": "二跳命中权重折扣",
         "type": "float",
         "default": 0.4,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
         "hint": "二跳命中的权重折扣"
       },
       "half_life_days": {
         "description": "权重衰减半衰期（天）",
         "type": "float",
         "default": 30.0,
-        "slider": {"min": 1.0, "max": 365.0, "step": 1.0},
+        "slider": {
+          "min": 1.0,
+          "max": 365.0,
+          "step": 1.0
+        },
         "hint": "实体与关系权重的衰减半衰期"
       },
       "weight_floor": {
         "description": "权重下限",
         "type": "float",
         "default": 0.05,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.01}
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
       },
       "prune_min_weight": {
         "description": "弱关系清理阈值",
         "type": "float",
         "default": 0.1,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.01},
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        },
         "hint": "低于该权重的弱关系会在每日维护时清理"
       },
       "provider_id": {
@@ -780,35 +1100,55 @@
         "description": "扫描周期（分钟）",
         "type": "int",
         "default": 30,
-        "slider": {"min": 5, "max": 1440, "step": 5},
+        "slider": {
+          "min": 5,
+          "max": 1440,
+          "step": 5
+        },
         "hint": "扫描周期"
       },
       "auto_batch_limit": {
         "description": "单次最多处理条数",
         "type": "int",
         "default": 20,
-        "slider": {"min": 1, "max": 200, "step": 1},
+        "slider": {
+          "min": 1,
+          "max": 200,
+          "step": 1
+        },
         "hint": "单次最多处理多少条"
       },
       "auto_min_chars": {
         "description": "记录最短字符数",
         "type": "int",
         "default": 6,
-        "slider": {"min": 2, "max": 100, "step": 1},
+        "slider": {
+          "min": 2,
+          "max": 100,
+          "step": 1
+        },
         "hint": "短于该长度的记录直接驳回"
       },
       "auto_max_chars": {
         "description": "记录最长字符数",
         "type": "int",
         "default": 400,
-        "slider": {"min": 50, "max": 2000, "step": 10},
+        "slider": {
+          "min": 50,
+          "max": 2000,
+          "step": 10
+        },
         "hint": "长于该长度的记录直接驳回"
       },
       "auto_min_confidence": {
         "description": "自动通过的最低置信度",
         "type": "float",
         "default": 0.6,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.05},
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
         "hint": "带置信度字段的来源低于该值时不自动通过"
       },
       "auto_reject_sensitive": {
@@ -852,33 +1192,53 @@
         "description": "时间衰减半衰期（天）",
         "type": "float",
         "default": 30.0,
-        "slider": {"min": 1.0, "max": 365.0, "step": 1.0}
+        "slider": {
+          "min": 1.0,
+          "max": 365.0,
+          "step": 1.0
+        }
       },
       "time_decay_weight_floor": {
         "description": "时间衰减权重下限",
         "type": "float",
         "default": 0.05,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.01}
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
       },
       "style_keep": {
         "description": "每作用域保留的表达样本上限",
         "type": "int",
         "default": 200,
-        "slider": {"min": 10, "max": 2000, "step": 10},
+        "slider": {
+          "min": 10,
+          "max": 2000,
+          "step": 10
+        },
         "hint": "每作用域保留的表达样本上限"
       },
       "graph_keep": {
         "description": "每作用域保留的图谱实体上限",
         "type": "int",
         "default": 2000,
-        "slider": {"min": 100, "max": 50000, "step": 100},
+        "slider": {
+          "min": 100,
+          "max": 50000,
+          "step": 100
+        },
         "hint": "每作用域保留的图谱实体上限"
       },
       "prune_min_weight": {
         "description": "弱项清理阈值",
         "type": "float",
         "default": 0.1,
-        "slider": {"min": 0.0, "max": 1.0, "step": 0.01}
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
       }
     }
   },
@@ -891,40 +1251,64 @@
         "description": "单次 LLM 调用超时（秒）",
         "type": "int",
         "default": 45,
-        "slider": {"min": 5, "max": 300, "step": 5}
+        "slider": {
+          "min": 5,
+          "max": 300,
+          "step": 5
+        }
       },
       "rerank_timeout_seconds": {
         "description": "单次重排序调用超时（秒）",
         "type": "float",
         "default": 8.0,
-        "slider": {"min": 1.0, "max": 60.0, "step": 1.0},
+        "slider": {
+          "min": 1.0,
+          "max": 60.0,
+          "step": 1.0
+        },
         "hint": "超时即按回退策略处理；连续失败 3 次会熔断 5 分钟，期间不再尝试调用模型"
       },
       "max_concurrent_llm": {
         "description": "辅助 LLM 最大并发",
         "type": "int",
         "default": 2,
-        "slider": {"min": 1, "max": 8, "step": 1}
+        "slider": {
+          "min": 1,
+          "max": 8,
+          "step": 1
+        }
       },
       "daily_llm_budget": {
         "description": "每日辅助 LLM 调用上限",
         "type": "int",
         "default": 0,
-        "slider": {"min": 0, "max": 2000, "step": 10},
+        "slider": {
+          "min": 0,
+          "max": 2000,
+          "step": 10
+        },
         "hint": "0 表示不限制；达到上限后辅助调用暂停到次日"
       },
       "task_stop_poll_ms": {
         "description": "停止感知轮询间隔（毫秒）",
         "type": "int",
         "default": 50,
-        "slider": {"min": 10, "max": 500, "step": 10},
+        "slider": {
+          "min": 10,
+          "max": 500,
+          "step": 10
+        },
         "hint": "越小越快响应 /stop，但 CPU 开销略高"
       },
       "vector_index_max_scan": {
         "description": "向量检索最大扫描条数",
         "type": "int",
         "default": 5000,
-        "slider": {"min": 100, "max": 50000, "step": 100},
+        "slider": {
+          "min": 100,
+          "max": 50000,
+          "step": 100
+        },
         "hint": "内置向量检索为暴力余弦，上限用于防止超大记忆库拖慢主流程"
       }
     }

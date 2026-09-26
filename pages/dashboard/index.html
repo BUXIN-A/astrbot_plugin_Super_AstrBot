@@ -10,22 +10,25 @@
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <img class="brand-logo logo-light" src="./logo-light.svg" alt="" width="26" height="26" />
-        <img class="brand-logo logo-dark" src="./logo-dark.svg" alt="" width="26" height="26" />
+        <span class="brand-mark" aria-hidden="true">SA</span>
         <span class="brand-text">
-          <span class="brand-name">Super_AstrBot</span>
-          <span class="brand-sub" data-i18n="shell.subtitle">长期记忆 · 自我学习</span>
+          <span class="brand-name">SUPER</span>
+          <span class="brand-name dim">ASTRBOT</span>
         </span>
       </div>
+
+      <div class="side-label" data-i18n="shell.subtitle">长期记忆 · 自我学习</div>
 
       <nav class="nav" id="nav">
         <button class="nav-item" data-page="overview" data-i18n="nav.overview">总览</button>
         <button class="nav-item" data-page="features" data-i18n="nav.features">功能</button>
         <button class="nav-item" data-page="memories" data-i18n="nav.memories">记忆</button>
         <button class="nav-item" data-page="recall" data-i18n="nav.recall">检索</button>
-        <button class="nav-item" data-page="journals" data-i18n="nav.journals">周记</button>
+        <button class="nav-item" data-page="journals" data-i18n="nav.journals">现实桥</button>
+        <button class="nav-item" data-page="weeklies" data-i18n="nav.weeklies">每周总结</button>
         <button class="nav-item" data-page="reviews" data-i18n="nav.reviews">待审</button>
         <button class="nav-item" data-page="persona" data-i18n="nav.persona">学习</button>
+        <button class="nav-item" data-page="identity" data-i18n="nav.identity">身份</button>
         <button class="nav-item" data-page="graph" data-i18n="nav.graph">图谱</button>
         <button class="nav-item" data-page="monitor" data-i18n="nav.monitor">监控</button>
         <button class="nav-item" data-page="models" data-i18n="nav.models">模型</button>
@@ -41,7 +44,7 @@
 
     <main class="main">
       <header class="topbar">
-        <h1 id="page-title" data-i18n="nav.overview">总览</h1>
+        <h1 id="page-title" data-i18n="nav.overview"><span class="title-index" id="page-index">01</span>总览</h1>
         <div class="topbar-actions">
           <button class="btn ghost" id="btn-theme" data-i18n="action.theme">主题</button>
           <button class="btn" id="btn-refresh" data-i18n="action.refresh">刷新</button>
@@ -69,7 +72,11 @@
           <div class="card">
             <h2 data-i18n="features.title">功能开关</h2>
             <p class="muted" data-i18n="features.hint">
-              开关会立即写入插件配置并热应用；标注「需重载」的项目将在重载插件后生效。
+              开关与「具体设置」都会立即写入插件配置并落盘，与插件配置页双向同步；标注「需重载」的项目将在重载插件后生效。
+            </p>
+            <p class="muted mono" id="feat-sync-line">
+              <span id="feat-sync">—</span>
+              <button type="button" class="btn ghost small" id="feat-sync-now" data-i18n="features.syncNow">立即同步</button>
             </p>
             <div class="feature-list" id="feat-list"></div>
           </div>
@@ -78,6 +85,11 @@
         <!-- 记忆 -->
         <section class="page" id="page-memories">
           <div class="card">
+            <div class="row" style="justify-content: flex-end; margin-bottom: 10px">
+              <button class="btn ghost" id="mem-export" data-i18n="action.exportMemories">导出 JSON</button>
+              <button class="btn ghost" id="mem-import-label" data-i18n="action.importMemories">导入 JSON</button>
+              <input type="file" id="mem-import" accept="application/json" hidden />
+            </div>
             <div class="filter-bar">
               <label class="field">
                 <span data-i18n="filter.status">状态</span>
@@ -150,14 +162,31 @@
           </div>
         </section>
 
-        <!-- 周记 -->
+        <!-- 现实桥（周记 / 日记 / 随笔） -->
         <section class="page" id="page-journals">
           <div class="card">
-            <h2 data-i18n="journals.title">周记（现实记忆）</h2>
+            <div class="panel-head">
+              <h2 data-i18n="journals.title">现实桥</h2>
+              <div class="row">
+                <button class="btn" id="jr-add" data-i18n="journals.add">+ 新增记录</button>
+                <button class="btn ghost" id="jr-export" data-i18n="action.exportJournals">导出全部 JSON</button>
+                <button class="btn ghost" id="jr-import-label" data-i18n="action.importJournals">导入 JSON</button>
+                <input type="file" id="jr-import" accept="application/json" hidden />
+              </div>
+            </div>
             <div class="filter-bar">
+              <label class="field">
+                <span data-i18n="journals.type">类型</span>
+                <select id="jr-type">
+                  <option value="" data-i18n="jtype.all">全部</option>
+                  <option value="weekly" data-i18n="jtype.weekly">周记</option>
+                  <option value="diary" data-i18n="jtype.diary">日记</option>
+                  <option value="essay" data-i18n="jtype.essay">随笔</option>
+                </select>
+              </label>
               <label class="field grow">
                 <span data-i18n="filter.keyword">关键词</span>
-                <input type="text" id="jr-keyword" placeholder="内容或标签包含…" />
+                <input type="text" id="jr-keyword" placeholder="标题、内容或标签包含…" />
               </label>
               <label class="field">
                 <span data-i18n="filter.sort">排序</span>
@@ -169,11 +198,58 @@
               </label>
               <button class="btn" id="jr-search" data-i18n="action.query">查询</button>
             </div>
+            <div class="bulk-bar">
+              <label class="check-inline">
+                <input type="checkbox" id="jr-check-all" />
+                <span data-i18n="journals.selectPage">本页全选</span>
+              </label>
+              <button type="button" class="link-btn" id="jr-select-match" data-i18n="journals.selectFilter">
+                全选当前筛选
+              </button>
+              <button type="button" class="link-btn" id="jr-select-none" data-i18n="journals.selectNone">
+                清空选择
+              </button>
+              <span class="muted" id="jr-select-info">—</span>
+              <span class="bulk-spacer"></span>
+              <button class="btn small" id="jr-export-selected" disabled data-i18n="journals.exportSelected">
+                导出所选 JSON
+              </button>
+            </div>
             <div class="table-wrap" id="jr-table"></div>
             <div class="pager">
               <button class="btn ghost" id="jr-prev" data-i18n="action.prev">上一页</button>
               <span class="muted" id="jr-page-info">—</span>
               <button class="btn ghost" id="jr-next" data-i18n="action.next">下一页</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 每周总结 -->
+        <section class="page" id="page-weeklies">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="weeklies.title">每周总结</h2>
+              <div class="row">
+                <button class="btn ghost" id="wk-export" data-i18n="action.exportWeeklies">导出 JSON</button>
+                <button class="btn ghost" id="wk-import-label" data-i18n="action.importWeeklies">导入 JSON</button>
+                <input type="file" id="wk-import" accept="application/json" hidden />
+              </div>
+            </div>
+            <p class="muted" data-i18n="weeklies.hint">
+              每周总结由「周度洞察」基于本周现实桥记录自动生成，独立于现实桥管理；可删除或导入导出。
+            </p>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="filter.keyword">关键词</span>
+                <input type="text" id="wk-keyword" placeholder="内容包含…" />
+              </label>
+              <button class="btn" id="wk-search" data-i18n="action.query">查询</button>
+            </div>
+            <div class="table-wrap" id="wk-table"></div>
+            <div class="pager">
+              <button class="btn ghost" id="wk-prev" data-i18n="action.prev">上一页</button>
+              <span class="muted" id="wk-page-info">—</span>
+              <button class="btn ghost" id="wk-next" data-i18n="action.next">下一页</button>
             </div>
           </div>
         </section>
@@ -194,6 +270,11 @@
                 <input type="text" id="rv-umo" placeholder="aiocqhttp:GroupMessage:10086" />
               </label>
               <button class="btn" id="rv-search" data-i18n="action.query">查询</button>
+            </div>
+            <div class="bulk-bar">
+              <button type="button" class="link-btn" id="rv-approve-all" data-i18n="reviews.approveAll">批准当前筛选全部</button>
+              <button type="button" class="link-btn danger-soft" id="rv-reject-all" data-i18n="reviews.rejectAll">驳回当前筛选全部</button>
+              <span class="muted" id="rv-batch-result"></span>
             </div>
             <p class="muted" id="rv-hint"></p>
             <div class="table-wrap" id="rv-table"></div>
@@ -380,11 +461,98 @@
             <div class="table-wrap" id="sys-budget"></div>
           </div>
           <div class="card">
+            <h2 data-i18n="system.configMaintenance">配置维护</h2>
+            <p class="muted" data-i18n="system.configHint">导出当前插件配置为 JSON 备份；导入会按配置 Schema 校验并合并，导入后自动热应用（能力开关与各模块配置即时生效，无需重载）。</p>
+            <div class="row">
+              <button class="btn" id="cfg-export" data-i18n="action.exportConfig">导出配置 JSON</button>
+              <button class="btn ghost" id="cfg-import-label" data-i18n="action.importConfig">导入配置 JSON</button>
+              <input type="file" id="cfg-import" accept="application/json" hidden />
+            </div>
+          </div>
+          <div class="card">
             <h2 data-i18n="system.maintenance">维护</h2>
             <div class="row">
               <button class="btn" id="btn-reindex" data-i18n="action.reindex">重建检索索引</button>
               <span class="muted" data-i18n="system.reindexHint">根据当前配置重建关键词索引与向量索引，不会删除记忆。</span>
             </div>
+            <div class="muted" id="sys-reindex-note"></div>
+          </div>
+           <div class="card">
+            <h2 data-i18n="backup.title">备份与导出</h2>
+            <p class="muted" data-i18n="backup.hint">
+              把插件配置、数据库快照与各类数据打包成一个 zip 备份包。包内 manifest.json 记录每个文件的大小与
+              sha256，可用于校验完整性；同时会在服务器 backups/ 目录留一份。
+            </p>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="backup.notes">备注（可选）</span>
+                <input type="text" id="bk-notes" placeholder="例如：迁移前快照" />
+              </label>
+              <label class="field">
+                <span data-i18n="backup.mode">导入模式</span>
+                <select id="bk-mode">
+                  <option value="merge" data-i18n="backup.modeMerge">合并导入（推荐，保留备份之后的新数据）</option>
+                  <option value="replace" data-i18n="backup.modeReplace">完全覆盖（恢复到备份时刻）</option>
+                </select>
+              </label>
+              <button class="btn" id="bk-export" data-i18n="backup.export">导出备份 ZIP</button>
+              <button class="btn ghost" id="bk-import-label" data-i18n="backup.import">导入备份 ZIP</button>
+              <input type="file" id="bk-import" accept=".zip,application/zip" hidden />
+            </div>
+            <p class="muted" data-i18n="backup.importHint">
+              整包恢复：配置与数据增量合并（不会清空现有数据）；数据库快照另存到 backups/，整库恢复需停用插件后手动替换。
+            </p>
+            <div class="row" id="bk-db-actions" hidden></div>
+            <div class="muted" id="bk-meta"></div>
+            <div class="muted" id="bk-result"></div>
+            <div class="table-wrap" id="bk-table"></div>
+          </div>
+        </section>
+
+        <!-- 身份诊断：判定平台用户标识是否跨会话稳定 -->
+        <section class="page" id="page-identity">
+          <div class="card">
+            <h2 data-i18n="identity.title">身份诊断</h2>
+            <p class="muted" data-i18n="identity.hint">
+              记忆按「谁说的」归属，而部分平台的用户标识会随会话变化。这里观测每条会话上出现过的发送者标识：
+              若同一昵称对应多个 ID，说明平台 ID 不稳定，应改用昵称策略，否则记忆仍会被会话切碎。
+            </p>
+            <div class="filter-bar">
+              <button class="btn" id="id-refresh" data-i18n="action.query">查询</button>
+              <button class="btn ghost" id="id-clear" data-i18n="identity.clear">清空观测</button>
+            </div>
+            <div class="kv-grid" id="id-summary"></div>
+            <div class="muted" id="id-hint"></div>
+            <div class="table-wrap" id="id-table"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="identity.scopeTitle">作用域分布与迁移</h2>
+            <p class="muted" data-i18n="identity.scopeHint">
+              只有带发送者标识的记忆才能按用户归属；迁移前请先预览，落库前插件会自动备份数据库。
+            </p>
+            <div class="filter-bar">
+              <label class="field">
+                <span data-i18n="identity.fromScope">来源作用域</span>
+                <select id="sc-from">
+                  <option value="session">session</option>
+                  <option value="user">user</option>
+                  <option value="global">global</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="identity.toScope">迁移目标</span>
+                <select id="sc-to">
+                  <option value="user_else_archive" data-i18n="identity.toUserElseArchive">能归属的归用户，其余归档</option>
+                  <option value="user" data-i18n="identity.toUser">按发送者归属到用户</option>
+                  <option value="global" data-i18n="identity.toGlobal">整体提升为全局</option>
+                  <option value="archive" data-i18n="identity.toArchive">仅归档</option>
+                </select>
+              </label>
+              <button class="btn ghost" id="sc-preview" data-i18n="identity.preview">预览</button>
+              <button class="btn" id="sc-apply" data-i18n="identity.apply">执行迁移</button>
+            </div>
+            <div class="muted" id="sc-result"></div>
+            <div class="table-wrap" id="sc-table"></div>
           </div>
         </section>
       </div>
@@ -402,6 +570,30 @@
       <div class="modal-body" id="modal-body"></div>
     </div>
   </div>
+
+  <!-- 侧滑详情面板：记忆 / 现实桥 / 每周总结共用同一只抽屉。
+       层级低于 modal（z-index 68/69 < 70），因此「编辑」弹出的表单、删除确认框
+       都盖在抽屉之上；对调后会出现「弹窗被抽屉挡住」的死角。 -->
+  <div class="peek-overlay" id="peek-overlay" hidden></div>
+  <aside
+    class="peek-panel"
+    id="peek-panel"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="peek-title"
+    aria-hidden="true"
+    hidden
+  >
+    <header class="peek-header">
+      <div class="peek-heading">
+        <div class="peek-badges" id="peek-badges"></div>
+        <h3 class="peek-title" id="peek-title">—</h3>
+      </div>
+      <button class="peek-close" id="peek-close" data-i18n-aria="peek.close" aria-label="关闭详情面板">✕</button>
+    </header>
+    <div class="peek-actions" id="peek-actions"></div>
+    <div class="peek-body" id="peek-body"></div>
+  </aside>
 
   <script type="module" src="./app.js"></script>
 </body>

@@ -1,12 +1,12 @@
 {
   "metadata": {
     "display_name": "Super_AstrBot",
-    "desc": "Long-term memory and self-learning enhancement for AstrBot: layered adaptive retrieval, memory lifecycle, journal memories, reflective self-learning, plus optional persona learning (style / group jargon / affinity), knowledge graph, auto review and MaiBot-style boost; every prompt is customizable and a runtime monitor is built in."
+    "desc": "Long-term memory and self-learning enhancement for AstrBot: layered adaptive retrieval, memory lifecycle, the reality bridge (weekly / diary / essay entries), reflective self-learning, plus optional persona learning (style / group jargon / affinity), knowledge graph, auto review and MaiBot-style boost; every prompt is customizable and a runtime monitor is built in."
   },
   "pages": {
     "dashboard": {
       "title": "Super_AstrBot Console",
-      "description": "Manage long-term memory, journal entries and self-learning: browse and recall memories, review reflection and learning results, inspect the knowledge graph and runtime metrics."
+      "description": "Manage long-term memory, reality-bridge entries and self-learning: browse and recall memories, read weekly / diary / essay entries, review reflection and learning results, inspect the knowledge graph and runtime metrics."
     }
   }
 }
