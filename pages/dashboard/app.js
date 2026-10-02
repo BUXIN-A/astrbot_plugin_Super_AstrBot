@@ -3950,6 +3950,11 @@ function applyStaticI18n() {
       if (textNode) textNode.textContent = text;
     }
   });
+  // 侧栏收起成图标栏后只剩图标：把标签同步为 title，悬停即可读
+  document.querySelectorAll(".nav-item").forEach((node) => {
+    const label = node.querySelector(".nav-label");
+    if (label) node.setAttribute("title", label.textContent);
+  });
   // 属性型文案（读屏与提示气泡）：纯图标按钮的可见文本是符号，兜底文案留在属性里
   document.querySelectorAll("[data-i18n-aria]").forEach((node) => {
     const key = node.getAttribute("data-i18n-aria");
@@ -3978,9 +3983,12 @@ function toggleTheme() {
 }
 
 function bindEvents() {
-  $("nav").addEventListener("click", (event) => {
-    const button = event.target.closest(".nav-item");
-    if (button) navigate(button.dataset.page);
+  // 导航采用 document 级事件委托：侧栏节点若被宿主重绘也不会丢监听；
+  // closest 兼容点击落在图标（SVG）或标签 span 上。
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    const button = target && typeof target.closest === "function" ? target.closest(".nav-item") : null;
+    if (button && button.dataset.page) navigate(button.dataset.page);
   });
 
   // 待审徽标：直达「风格样本 → 待审」标签页并加载队列
@@ -4768,6 +4776,7 @@ function revealNavGroup(page) {
 /* ---------------------------------------------------------------------- */
 
 const NAV_MEDIA = "(max-width: 980px)";
+const NAV_COLLAPSE_KEY = "super-astrbot-nav-collapsed";
 
 /** 打开 / 收起窄屏侧栏抽屉；桌面端调用是安全的空操作。 */
 function setNavOpen(open) {
@@ -4781,13 +4790,31 @@ function setNavOpen(open) {
   document.body.classList.toggle("nav-locked", shouldOpen);
 }
 
+/** 桌面端：把整条侧栏收起 / 展开（窄屏由抽屉接管）。 */
+function setNavCollapsed(collapsed) {
+  const app = document.querySelector(".app");
+  if (app) app.classList.toggle("nav-collapsed", Boolean(collapsed));
+  const toggle = $("nav-toggle");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  try {
+    window.localStorage.setItem(NAV_COLLAPSE_KEY, collapsed ? "1" : "0");
+  } catch (error) {
+    /* 隐私模式 / sandbox iframe 下忽略 */
+  }
+}
+
 function bindSidebar() {
   const toggle = $("nav-toggle");
   const backdrop = $("sidebar-backdrop");
   if (toggle) {
     toggle.addEventListener("click", () => {
       const app = document.querySelector(".app");
-      setNavOpen(!(app && app.classList.contains("nav-open")));
+      // 窄屏切抽屉、桌面切整体收起——同一个汉堡按钮承担两种形态
+      if (window.matchMedia(NAV_MEDIA).matches) {
+        setNavOpen(!(app && app.classList.contains("nav-open")));
+      } else {
+        setNavCollapsed(!(app && app.classList.contains("nav-collapsed")));
+      }
     });
   }
   if (backdrop) backdrop.addEventListener("click", () => setNavOpen(false));
@@ -4795,6 +4822,14 @@ function bindSidebar() {
   window.addEventListener("resize", () => {
     if (!window.matchMedia(NAV_MEDIA).matches) setNavOpen(false);
   });
+  // 恢复上次的桌面收起状态（窄屏由抽屉逻辑接管，不套用）
+  try {
+    if (!window.matchMedia(NAV_MEDIA).matches) {
+      setNavCollapsed(window.localStorage.getItem(NAV_COLLAPSE_KEY) === "1");
+    }
+  } catch (error) {
+    /* 忽略 */
+  }
 }
 
 /** 激活指定页内的某个标签页（供标签点击与徽标直达复用）。 */

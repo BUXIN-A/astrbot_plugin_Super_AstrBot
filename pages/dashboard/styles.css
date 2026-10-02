@@ -67,6 +67,9 @@
   --focus-ring: 0 0 0 2px rgba(35, 131, 226, 0.30);
 
   --chart-grid: rgba(55, 53, 47, 0.12);
+
+  /* 下拉框自绘箭头（原生箭头过小）：主题各自取色 */
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6.2l4 4 4-4' fill='none' stroke='%23787774' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 html[data-theme="dark"] {
@@ -109,6 +112,8 @@ html[data-theme="dark"] {
   --focus-ring: 0 0 0 2px rgba(82, 156, 202, 0.35);
 
   --chart-grid: rgba(233, 233, 231, 0.14);
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6.2l4 4 4-4' fill='none' stroke='%239b9b9b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -131,7 +136,8 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  /* 首列宽度跟随侧栏自身 width：收起为图标栏时该列自动收窄 */
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -139,13 +145,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 14px 10px 12px;
+  width: 272px;
+  padding: 16px 12px 14px;
   background: var(--bg-soft);
   border-right: 1px solid var(--border);
   position: sticky;
   top: 0;
   height: 100vh;
   overflow: auto;
+  /* 收起为图标栏时宽度平滑过渡（仅桌面；窄屏由抽屉的 transform 动画接管） */
+  transition: width var(--dur-enter) var(--ease-out);
 }
 
 .brand {
@@ -182,10 +191,11 @@ body {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 30px;
   text-align: left;
   border: 0;
   border-radius: var(--radius);
-  padding: 6px 8px;
+  padding: 6px 10px;
   font: inherit;
   font-size: 14px;
   color: var(--text-dim);
@@ -202,24 +212,39 @@ body {
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+/* 导航图标：线性 SVG，未选中为弱色，悬停/选中随文本一起加深 */
+.nav-ico { width: 18px; height: 18px; flex: none; color: var(--text-faint); }
+.nav-item:hover .nav-ico,
+.nav-item.active .nav-ico,
+.nav-group-head:hover .nav-ico { color: var(--text); }
+.nav-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--border); }
 .dot.ok { background: var(--green); }
 .dot.warn { background: var(--yellow); }
 .dot.err { background: var(--red); }
 .dot.off { background: var(--border); }
 
-.nav-group { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+/* 分组之间用细分隔线 + 间距拉开，避免各项糊成一片 */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
 .nav-group-head {
   appearance: none;
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 5px 8px;
+  padding: 6px 10px;
   font: inherit;
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-dim);
+  text-align: left;
+  color: var(--text-faint);
   background: transparent;
   border: 0;
   border-radius: var(--radius);
@@ -229,8 +254,8 @@ body {
 .nav-group-head:hover { background: var(--panel-2); color: var(--text); }
 .nav-group-head .chev {
   display: inline-block;
-  width: 10px;
-  font-size: 11px;
+  width: 12px;
+  font-size: 13px;
   line-height: 1;
   color: var(--text-faint);
   transition: transform var(--dur-press) var(--ease-out);
@@ -238,11 +263,35 @@ body {
 .nav-group.collapsed .chev { transform: rotate(-90deg); }
 .nav-group.collapsed .nav-items { display: none; }
 .nav-items { display: flex; flex-direction: column; gap: 1px; }
-/* 展开栏子项：字号略小于系统平铺项，层级清晰（对齐实施总纲 §1.5） */
-.nav-group:not(.flat) .nav-items .nav-item { font-size: 13px; padding-left: 14px; }
+/* 展开栏子项：字号略小于系统平铺项，缩进与分组图标对齐，层级清晰（对齐实施总纲 §1.5） */
+.nav-group:not(.flat) .nav-items .nav-item { font-size: 13px; padding-left: 26px; }
 .nav-group.flat .nav-items { display: flex; }
 .nav-group.flat .nav-items .nav-item { font-size: 14px; }
-.nav-group-label { font-size: 12px; font-weight: 500; color: var(--text-dim); padding: 5px 8px; }
+.nav-group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+  padding: 6px 10px;
+}
+
+/* 桌面端收起为「图标栏」：只保留图标，文字 / 箭头 / 角标隐藏，靠 title 悬停提示。
+   宽度过渡由 .sidebar 的 transition 提供；窄屏走抽屉，不套用这些规则。 */
+@media (min-width: 981px) {
+  .app.nav-collapsed .sidebar { width: 58px; padding-left: 6px; padding-right: 6px; }
+  .app.nav-collapsed .nav-label,
+  .app.nav-collapsed .chev,
+  .app.nav-collapsed .tag-right,
+  .app.nav-collapsed .side-label,
+  .app.nav-collapsed .brand-text,
+  .app.nav-collapsed .nav-group-head,
+  .app.nav-collapsed .nav-group-label { display: none; }
+  .app.nav-collapsed .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  .app.nav-collapsed .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
+  .app.nav-collapsed .nav-group:not(.flat) .nav-items .nav-item { padding-left: 0; }
+}
 
 .sidebar-footer {
   border-top: 1px solid var(--border);
@@ -288,13 +337,13 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   color: var(--text-dim);
 }
 .icon-btn:hover { color: var(--text); }
-.nav-toggle { display: none; }
+.nav-toggle { display: inline-flex; }
 
 /* 页面标题 + 一行用途说明：不必逐个点开就知道每页在做什么 */
 .topbar-titles { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -507,13 +556,23 @@ textarea {
   min-width: 0;
   transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
+/* 下拉框：改自绘 SVG 箭头并适当放大（原生箭头偏小、且各处大小不一） */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 16px 16px;
+}
 input::placeholder, textarea::placeholder { color: var(--text-faint); }
-input:hover, select:hover, textarea:hover { background: var(--panel-2); }
+input:hover, select:hover, textarea:hover { background-color: var(--panel-2); }
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--focus-ring);
-  background: var(--panel);
+  background-color: var(--panel);
 }
 textarea { width: 100%; resize: vertical; line-height: 1.6; }
 input[type="range"] { accent-color: var(--accent); height: 20px; }
@@ -1012,7 +1071,7 @@ tr.selected { background: var(--accent-weak); }
     left: 0;
     bottom: 0;
     z-index: 51;
-    width: min(78vw, 300px);
+    width: min(82vw, 320px);
     height: 100vh;
     border-right: 1px solid var(--border);
     border-bottom: 0;
