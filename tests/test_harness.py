@@ -252,3 +252,60 @@ def test_to_event_view_ignores_callable_sender_fields() -> None:
     assert view.sender_id == "u-5"
     assert view.sender_name == ""
     assert view.display_user == "u-5"
+
+
+class _FakeProviderType:
+    """最小 ProviderType 替身：只需 CHAT_COMPLETION / EMBEDDING 两个成员。"""
+
+    CHAT_COMPLETION = SimpleNamespace(value="chat_completion")
+    EMBEDDING = SimpleNamespace(value="embedding")
+
+
+def test_provider_meta_exposes_capability_type() -> None:
+    """``type`` 是适配器名，能力类型必须单独暴露 ``provider_type``。"""
+    provider = SimpleNamespace(
+        id="DeepSeek/deepseek-flash",
+        model="deepseek-flash",
+        type="openai_chat_completion",
+        provider_type="chat_completion",
+    )
+
+    meta = compat.provider_meta(provider)
+
+    assert meta["type"] == "openai_chat_completion"
+    assert meta["provider_type"] == "chat_completion"
+
+
+def test_chat_provider_detection_prefers_capability_type(monkeypatch) -> None:
+    """回归：按适配器名判定会把 ``openai_chat_completion`` 误判为非对话模型。"""
+    from dataclasses import replace
+
+    from super_astrbot.harness.astrbot_llm import AstrBotLlmGateway
+
+    monkeypatch.setattr(compat, "SYMBOLS", replace(compat.SYMBOLS, ProviderType=_FakeProviderType))
+    gateway = AstrBotLlmGateway(context=None, host=None)
+    chat = SimpleNamespace(
+        id="DeepSeek/deepseek-flash",
+        model="deepseek-flash",
+        type="openai_chat_completion",
+        provider_type="chat_completion",
+    )
+    embedding = SimpleNamespace(
+        id="emb", model="bge-m3", type="openai_embedding", provider_type="embedding"
+    )
+
+    assert gateway._is_chat_provider(chat) is True
+    assert gateway._is_chat_provider(embedding) is False
+
+
+def test_provider_detection_falls_back_to_adapter_name(monkeypatch) -> None:
+    """旧版框架缺 ``provider_type`` 时，仍按适配器名兜底。"""
+    from dataclasses import replace
+
+    from super_astrbot.harness.astrbot_llm import AstrBotLlmGateway
+
+    monkeypatch.setattr(compat, "SYMBOLS", replace(compat.SYMBOLS, ProviderType=_FakeProviderType))
+    gateway = AstrBotLlmGateway(context=None, host=None)
+
+    assert gateway._is_chat_provider(SimpleNamespace(id="x", type="chat_completion")) is True
+    assert gateway._is_chat_provider(SimpleNamespace(id="y", type="openai_embedding")) is False

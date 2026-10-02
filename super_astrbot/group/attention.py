@@ -17,15 +17,21 @@ from typing import Iterable, Sequence
 
 from ..support import jaccard, tokenize
 
-BASE_SCORE = 0.15
+DEFAULT_BASE_SCORE = 0.2
 """群里有对话发生的基础分。"""
 
-QUESTION_BONUS = 0.35
-"""含疑问标记：基础分 + 该值 + 长度分即越过默认阈值 0.55。"""
+DEFAULT_QUESTION_BONUS = 0.35
+"""含疑问标记时的加分。"""
 
-ALIAS_BONUS = 0.4
-TOPIC_WEIGHT = 0.3
-LENGTH_BONUS = 0.1
+DEFAULT_ALIAS_BONUS = 0.4
+"""称呼了 Bot 时的加分。"""
+
+DEFAULT_TOPIC_WEIGHT = 0.3
+"""话题延续度的权重（乘以与 Bot 近期发言的重合度 0~1）。"""
+
+DEFAULT_LENGTH_BONUS = 0.15
+"""长度适中（不过短也不过长）时的加分。"""
+
 LONG_PENALTY = -0.15
 SHORT_PENALTY = -0.2
 BURST_PENALTY = -0.2
@@ -33,6 +39,20 @@ BURST_PENALTY = -0.2
 MIN_REASONABLE_CHARS = 4
 MAX_REASONABLE_CHARS = 200
 LONG_MESSAGE_CHARS = 400
+
+
+@dataclass(frozen=True)
+class AttentionWeights:
+    """正向加分权重（可配置：整体调高即更主动插话）。"""
+
+    base: float = DEFAULT_BASE_SCORE
+    question: float = DEFAULT_QUESTION_BONUS
+    alias: float = DEFAULT_ALIAS_BONUS
+    topic: float = DEFAULT_TOPIC_WEIGHT
+    length: float = DEFAULT_LENGTH_BONUS
+
+
+DEFAULT_WEIGHTS = AttentionWeights()
 
 _TOPIC_HISTORY = 3
 """与最近几条 Bot 发言比较话题延续度。"""
@@ -96,6 +116,7 @@ def score_message(
     aliases: Sequence[str] = (),
     recent_texts: Iterable[str] = (),
     burst: bool = False,
+    weights: AttentionWeights | None = None,
 ) -> AttentionScore:
     """对一条群消息评分，返回 ``[0, 1]`` 区间内的得分与命中信号。"""
     stripped = text.strip()
@@ -103,23 +124,24 @@ def score_message(
     if not tokens:
         return AttentionScore(0.0, ("无实义内容",))
 
-    score = BASE_SCORE
+    w = weights or DEFAULT_WEIGHTS
+    score = w.base
     reasons: list[str] = []
 
     if has_question(stripped):
-        score += QUESTION_BONUS
+        score += w.question
         reasons.append("含疑问")
     if aliases and alias_hit(stripped, aliases):
-        score += ALIAS_BONUS
+        score += w.alias
         reasons.append("称呼了 Bot")
     overlap = topic_overlap(tokens, recent_texts)
     if overlap > 0:
-        score += TOPIC_WEIGHT * overlap
+        score += w.topic * overlap
         reasons.append(f"话题延续 {overlap:.2f}")
 
     char_count = len(stripped)
     if MIN_REASONABLE_CHARS <= char_count <= MAX_REASONABLE_CHARS:
-        score += LENGTH_BONUS
+        score += w.length
     elif char_count > LONG_MESSAGE_CHARS:
         score += LONG_PENALTY
         reasons.append("消息过长")

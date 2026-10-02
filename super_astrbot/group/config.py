@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..spec.capabilities import as_bool, as_float, as_int, as_str_tuple, get_path
+from .attention import (
+    DEFAULT_ALIAS_BONUS,
+    DEFAULT_BASE_SCORE,
+    DEFAULT_LENGTH_BONUS,
+    DEFAULT_QUESTION_BONUS,
+    DEFAULT_TOPIC_WEIGHT,
+    AttentionWeights,
+)
 
-DEFAULT_ATTENTION_THRESHOLD = 0.55
+DEFAULT_ATTENTION_THRESHOLD = 0.35
 DEFAULT_COOLDOWN_SECONDS = 90
 DEFAULT_MAX_PER_HOUR = 6
 DEFAULT_MERGE_WINDOW_SECONDS = 1.2
@@ -22,6 +30,9 @@ class GroupConfig:
     enabled: bool = False
     attention_threshold: float = DEFAULT_ATTENTION_THRESHOLD
     """插话所需的注意力得分下限（0~1）。越高越「沉默」。"""
+
+    attention_weights: AttentionWeights = field(default_factory=AttentionWeights)
+    """正向加分权重；与阈值共同决定积极性（调高更主动，调低更克制）。"""
 
     cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS
     """两次主动插话之间的最短间隔（秒）。"""
@@ -63,6 +74,38 @@ class GroupConfig:
                 DEFAULT_ATTENTION_THRESHOLD,
                 low=0.05,
                 high=1.0,
+            ),
+            attention_weights=AttentionWeights(
+                base=as_float(
+                    get_path(config, "group.base_score", DEFAULT_BASE_SCORE),
+                    DEFAULT_BASE_SCORE,
+                    low=0.0,
+                    high=1.0,
+                ),
+                question=as_float(
+                    get_path(config, "group.question_bonus", DEFAULT_QUESTION_BONUS),
+                    DEFAULT_QUESTION_BONUS,
+                    low=0.0,
+                    high=1.0,
+                ),
+                alias=as_float(
+                    get_path(config, "group.alias_bonus", DEFAULT_ALIAS_BONUS),
+                    DEFAULT_ALIAS_BONUS,
+                    low=0.0,
+                    high=1.0,
+                ),
+                topic=as_float(
+                    get_path(config, "group.topic_weight", DEFAULT_TOPIC_WEIGHT),
+                    DEFAULT_TOPIC_WEIGHT,
+                    low=0.0,
+                    high=1.0,
+                ),
+                length=as_float(
+                    get_path(config, "group.length_bonus", DEFAULT_LENGTH_BONUS),
+                    DEFAULT_LENGTH_BONUS,
+                    low=0.0,
+                    high=1.0,
+                ),
             ),
             cooldown_seconds=as_int(
                 get_path(config, "group.cooldown_seconds", DEFAULT_COOLDOWN_SECONDS),

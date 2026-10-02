@@ -120,6 +120,7 @@ class GroupChatService:
             aliases=self._config.bot_aliases,
             recent_texts=state.recent_bot_texts,
             burst=burst,
+            weights=self._config.attention_weights,
         )
         if score.value < self._config.attention_threshold:
             return self._silent(

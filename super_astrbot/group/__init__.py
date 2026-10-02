@@ -9,7 +9,7 @@
 不 import ``astrbot``，也不直接改写事件对象（落地由 harness 负责）。
 """
 
-from .attention import AttentionScore, score_message
+from .attention import AttentionScore, AttentionWeights, score_message
 from .config import GroupConfig
 from .service import GroupChatService
 
@@ -17,5 +17,6 @@ __all__ = [
     "GroupChatService",
     "GroupConfig",
     "AttentionScore",
+    "AttentionWeights",
     "score_message",
 ]

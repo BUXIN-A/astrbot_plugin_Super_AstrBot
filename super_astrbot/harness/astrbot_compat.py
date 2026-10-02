@@ -129,7 +129,12 @@ def provider_meta(provider: Any) -> dict[str, str]:
         value = getattr(value, "value", value)  # 处理 Enum
         return str(value)
 
-    return {"id": _pick("id"), "type": _pick("type"), "model": _pick("model")}
+    return {
+        "id": _pick("id"),
+        "type": _pick("type"),
+        "provider_type": _pick("provider_type"),
+        "model": _pick("model"),
+    }
 
 
 def configured_provider_entries(context: Any, *kinds: str) -> list[dict[str, Any]]:

@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import replace
 from typing import Any
 
-from super_astrbot.group import GroupChatService, GroupConfig, score_message
+from super_astrbot.group import AttentionWeights, GroupChatService, GroupConfig, score_message
 from super_astrbot.harness import astrbot_compat as compat
 from super_astrbot.harness.astrbot_group import (
     apply_group_decision,
@@ -111,8 +111,8 @@ def test_score_rewards_questions_and_aliases() -> None:
 
     assert question.value > plain.value, "疑问句应当加分"
     assert alias.value > plain.value, "称呼 Bot 应当加分"
-    assert plain.value < 0.55, "普通闲聊不应越过默认阈值"
-    assert question.value >= 0.55, "明确的求助应当越过默认阈值"
+    assert plain.value >= 0.35, "普通陈述也应达到默认阈值（默认更主动）"
+    assert question.value >= 0.55, "明确的求助应当明显越过默认阈值"
 
 
 def test_score_rewards_topic_continuation() -> None:
@@ -167,6 +167,33 @@ def test_group_config_clamps_and_parses_lists() -> None:
     assert config.merge_window_seconds == 10.0
     assert config.bot_aliases == ("小助手", "bot")
     assert config.whitelist == ("10086",)
+
+
+def test_group_config_parses_and_clamps_attention_weights() -> None:
+    config = GroupConfig.from_mapping(
+        {
+            "group": {
+                "attention_threshold": 0.5,
+                "base_score": 0.4,
+                "question_bonus": 2.0,
+                "alias_bonus": -1,
+                "topic_weight": 0.2,
+                "length_bonus": 0.3,
+            }
+        }
+    )
+    assert config.attention_threshold == 0.5
+    assert config.attention_weights.base == 0.4
+    assert config.attention_weights.question == 1.0, "越界权重应被钳制到 1.0"
+    assert config.attention_weights.alias == 0.0, "负权重应被钳制到 0.0"
+    assert config.attention_weights.topic == 0.2
+    assert config.attention_weights.length == 0.3
+
+
+def test_score_honors_custom_weights() -> None:
+    low = score_message("今天天气不错", weights=AttentionWeights(base=0.1, length=0.0))
+    high = score_message("今天天气不错", weights=AttentionWeights(base=0.5, length=0.0))
+    assert high.value > low.value
 
 
 def test_group_config_whitelist_and_blacklist() -> None:

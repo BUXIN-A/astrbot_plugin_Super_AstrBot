@@ -3809,9 +3809,12 @@ class SuperAstrBotApp:
                 sent = bool(await self._harness.host.send_message(umo, text))
             except Exception as exc:  # noqa: BLE001
                 sent = False
+                attempts = int(item.get("attempts") or 0) + 1
+                status = "skipped" if attempts >= 3 else "pending"
                 await service.mark(
-                    int(item["id"]), "pending", error=safe_detail(exc), bump_attempt=True
+                    int(item["id"]), status, error=safe_detail(exc), bump_attempt=True
                 )
+                record(METRIC_PROACTIVE_SKIPPED)
                 continue
             if sent:
                 record(METRIC_PROACTIVE_SENT)

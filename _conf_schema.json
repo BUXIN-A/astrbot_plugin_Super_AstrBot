@@ -631,13 +631,68 @@
       "attention_threshold": {
         "description": "插话注意力阈值",
         "type": "float",
-        "default": 0.55,
+        "default": 0.35,
         "slider": {
           "min": 0.05,
           "max": 1.0,
           "step": 0.05
         },
         "hint": "得分低于该值就不插话；调高更沉默，调低更容易接话。被 @/引用时无视该阈值"
+      },
+      "base_score": {
+        "description": "评分·基础分",
+        "type": "float",
+        "default": 0.2,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "每条有实义内容的群消息都先拿到的分数；调高整体更主动"
+      },
+      "question_bonus": {
+        "description": "评分·疑问加分",
+        "type": "float",
+        "default": 0.35,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "消息含「？/吗/怎么/为什么…」等疑问标记时的加分"
+      },
+      "alias_bonus": {
+        "description": "评分·称呼加分",
+        "type": "float",
+        "default": 0.4,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "消息里出现「Bot 的称呼词」时的加分"
+      },
+      "topic_weight": {
+        "description": "评分·话题延续权重",
+        "type": "float",
+        "default": 0.3,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "与 Bot 最近发言的话题重合度权重（重合度 0~1，乘以该值后加分）"
+      },
+      "length_bonus": {
+        "description": "评分·长度适中加分",
+        "type": "float",
+        "default": 0.15,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "消息长度适中（4~200 字）时的加分"
       },
       "cooldown_seconds": {
         "description": "两次插话的最短间隔（秒）",

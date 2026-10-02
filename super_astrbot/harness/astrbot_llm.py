@@ -115,15 +115,21 @@ class AstrBotLlmGateway:
     # ------------------------------------------------------------------ #
 
     def _is_chat_provider(self, candidate: Any) -> bool:
-        """判断候选是否为对话类提供商（``get_provider_by_id`` 会返回任意类型）。"""
+        """判断候选是否为对话类提供商（``get_provider_by_id`` 会返回任意类型）。
+
+        ``ProviderMeta.type`` 是**适配器名**（如 ``openai_chat_completion``），真正的
+        能力类型在 ``ProviderMeta.provider_type``（``ProviderType`` 枚举）。此处优先看
+        ``provider_type``，旧版框架缺该字段时再退回按适配器名判断，避免把对话模型误判。
+        """
         expected = compat.SYMBOLS.ProviderType
         if expected is None:
             return True  # 无法判断类型时信任调用来源
         meta = _provider_meta(candidate)
-        return meta["type"] in {
-            "chat_completion",
-            str(getattr(expected.CHAT_COMPLETION, "value", "chat_completion")),
-        }
+        chat_value = str(getattr(expected.CHAT_COMPLETION, "value", "chat_completion"))
+        provider_type = meta.get("provider_type") or ""
+        if provider_type:
+            return provider_type in {"chat_completion", chat_value}
+        return meta["type"] in {"chat_completion", chat_value}
 
     def valid_provider_id(self, provider_id: str | None) -> str | None:
         """校验配置的辅助模型 ID 确实指向对话模型，否则返回 ``None`` 要求回退。
@@ -147,10 +153,11 @@ class AstrBotLlmGateway:
             return provider_id
         if provider_id not in self._invalid_ids:
             self._invalid_ids.add(provider_id)
+            meta = _provider_meta(candidate)
             self._host.log().warning(
                 "配置的模型 %s 不是对话模型（type=%s），已回退到会话默认模型。",
                 provider_id,
-                _provider_meta(candidate)["type"] or "unknown",
+                meta.get("provider_type") or meta["type"] or "unknown",
             )
         return None
 
@@ -361,7 +368,11 @@ class AstrBotEmbeddingGateway:
         if expected is None:
             return True  # 无法判断类型时信任调用来源
         meta = _provider_meta(candidate)
-        return meta["type"] in {"embedding", str(getattr(expected.EMBEDDING, "value", "embedding"))}
+        embedding_value = str(getattr(expected.EMBEDDING, "value", "embedding"))
+        provider_type = meta.get("provider_type") or ""
+        if provider_type:
+            return provider_type in {"embedding", embedding_value}
+        return meta["type"] in {"embedding", embedding_value}
 
     # ------------------------------------------------------------------ #
     # 枚举（供配置页动态下拉使用）
