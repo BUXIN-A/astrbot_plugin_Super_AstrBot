@@ -517,7 +517,7 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 
 ## MaiBot 增强（可选）
 
-**默认关闭**，复刻了 [MaiBot]((https://github.com/Mai-with-u/MaiBot)) 中与本插件互补的两块思路：
+**默认关闭**，复刻了 [MaiBot](https://github.com/Mai-with-u/MaiBot) 中与本插件互补的两块思路：
 
 | 开关 | 作用 |
 |---|---|
