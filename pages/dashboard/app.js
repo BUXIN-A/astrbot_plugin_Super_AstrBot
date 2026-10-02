@@ -226,6 +226,28 @@ const LOCAL_I18N = {
     "desc.models": "三类模型的分工与当前提供商",
     "desc.prompts": "逐项覆盖各功能的系统提示词与模板",
     "desc.system": "框架诊断、后台任务与维护操作",
+    "filter.origin": "来源",
+    "filter.sort": "排序",
+    "sort.createdDesc": "最新创建",
+    "sort.createdAsc": "最早创建",
+    "sort.importanceDesc": "重要度从高到低",
+    "sort.accessDesc": "访问次数最多",
+    "sort.lastAccessDesc": "最近访问",
+    "sort.updatedDesc": "最近更新",
+    "sort.eventDesc": "时间从新到旧",
+    "sort.eventAsc": "时间从旧到新",
+    "graph.canvas": "图谱可视化",
+    "models.title": "模型与提供商",
+    "models.hint": "三类模型分工不同：对话模型负责生成与推理，嵌入模型负责向量化检索，重排序模型负责精选 top-k。这里只做核对，具体选择在 AstrBot 插件配置页的对应分组。",
+    "models.auxiliary": "辅助调用模型（对话模型）",
+    "models.auxiliaryHint": "留空表示跟随会话默认模型。若填了嵌入 / 重排序提供商的 ID，调用前会被识别并回退到默认模型。",
+    "models.providers": "可用提供商",
+    "features.saved": "已保存",
+    "status.ready": "就绪",
+    "status.notReady": "未就绪",
+    "status.running": "运行中",
+    "status.noDegraded": "运行中 · 无降级",
+    "status.degradedN": "降级 {n} 项",
     "action.query": "查询",
     "action.search": "检索",
     "action.prev": "上一页",
@@ -675,6 +697,28 @@ const LOCAL_I18N = {
     "desc.models": "The three model roles and the active providers",
     "desc.prompts": "Override each feature's system prompts and templates",
     "desc.system": "Framework diagnostics, scheduled jobs and maintenance",
+    "filter.origin": "Origin",
+    "filter.sort": "Sort",
+    "sort.createdDesc": "Newest created",
+    "sort.createdAsc": "Oldest created",
+    "sort.importanceDesc": "Importance: high to low",
+    "sort.accessDesc": "Most accessed",
+    "sort.lastAccessDesc": "Recently accessed",
+    "sort.updatedDesc": "Recently updated",
+    "sort.eventDesc": "Newest first",
+    "sort.eventAsc": "Oldest first",
+    "graph.canvas": "Graph visualization",
+    "models.title": "Models and providers",
+    "models.hint": "The three model roles differ: the chat model generates and reasons, the embedding model vectorizes for retrieval, and the rerank model picks the top-k. This page is for verification only; configure them in the matching groups of the AstrBot plugin config page.",
+    "models.auxiliary": "Auxiliary model (chat model)",
+    "models.auxiliaryHint": "Leave blank to follow the session's default model. If an embedding / rerank provider ID is set here, it is detected before the call and falls back to the default model.",
+    "models.providers": "Available providers",
+    "features.saved": "Saved",
+    "status.ready": "Ready",
+    "status.notReady": "Not ready",
+    "status.running": "Running",
+    "status.noDegraded": "Running · no degradation",
+    "status.degradedN": "{n} degraded",
     "action.query": "Query",
     "action.search": "Search",
     "action.prev": "Prev",
@@ -1259,6 +1303,24 @@ function showLoading(active) {
 /* 章节：总览                                                              */
 /* ---------------------------------------------------------------------- */
 
+/** 刷新顶栏与侧栏的待审条数徽标（批准/驳回后也需调用，避免过期计数）。 */
+async function refreshPendingBadge() {
+  try {
+    const pending = await apiGet("reviews", { limit: 1 });
+    const count = Number(pending.total || 0);
+    const badge = $("tb-pending");
+    if (badge) {
+      badge.hidden = count <= 0;
+      badge.textContent = `${t("badge.pending")} ${count}`;
+      badge.title = `${t("badge.pending")} ${count}`;
+    }
+    const nav = $("nav-pending");
+    if (nav) nav.textContent = count > 0 ? String(count) : "—";
+  } catch (error) {
+    /* 徽标失败不影响主流程 */
+  }
+}
+
 async function loadOverview(force = false) {
   const statsEl = $("ov-stats");
   try {
@@ -1279,21 +1341,12 @@ async function loadOverview(force = false) {
     ]);
 
     $("footer-version").textContent = `v${data.plugin_version || "?"} · AstrBot ${framework.version || "?"}`;
-    $("footer-ready").textContent = data.ready ? `就绪 · ${data.database || ""}` : "未就绪";
+    $("footer-ready").textContent = data.ready
+      ? `${t("status.ready")} · ${data.database || ""}`
+      : t("status.notReady");
 
-    // 顶栏徽标：待审条数（点击直达待审队列所在页）
-    try {
-      const pending = await apiGet("reviews", { limit: 1 });
-      const badge = $("tb-pending");
-      if (badge) {
-        const count = Number(pending.total || 0);
-        badge.hidden = count <= 0;
-        badge.textContent = `${t("badge.pending")} ${count}`;
-        badge.title = `${t("badge.pending")} ${count}`;
-      }
-    } catch (error) {
-      /* 徽标失败不影响总览 */
-    }
+    // 顶栏徽标：待审条数（点击直达待审队列）
+    await refreshPendingBadge();
 
     // 能力开关（点击任意一个跳到「功能」页）
     const caps = data.capabilities || {};
@@ -1326,8 +1379,8 @@ async function loadOverview(force = false) {
       const critical = !data.ready || notes.length > 0;
       line.classList.toggle("critical", critical);
       line.textContent = critical
-        ? `${data.ready ? "运行中" : "未就绪"} · 降级 ${notes.length} 项`
-        : "运行中 · 无降级";
+        ? `${data.ready ? t("status.running") : t("status.notReady")} · ${tpl(t("status.degradedN"), { n: notes.length })}`
+        : t("status.noDegraded");
     }
   } catch (error) {
     renderError(statsEl, error);
@@ -1629,7 +1682,7 @@ async function saveFeatureSetting(key, control) {
   control.disabled = true;
   try {
     const result = await apiPost("feature-setting", { key, value });
-    toast(result.message || t("features.saved") || "已保存", "ok");
+    toast(result.message || t("features.saved", "已保存"), "ok");
     // 同步内存快照，重载/轮询前界面与后端一致
     for (const item of state.featuresItems || []) {
       const spec = (item.settings || []).find((entry) => entry.key === key);
@@ -2204,6 +2257,7 @@ async function handleReviewAction(id, action, button) {
     await apiPost("review-action", { id: Number(id), action });
     toast(action === "approve" ? "已批准" : "已驳回", "ok");
     await loadReviews();
+    await refreshPendingBadge();
     state.overview = null;
   } catch (error) {
     toast(error.message || String(error), "err");
@@ -3812,6 +3866,14 @@ const PAGE_DESCS = {
   system: "desc.system",
 };
 
+/** 渲染页题：编号前缀（01/02…）随导航顺序生成，并同步一行用途说明。 */
+function renderPageHeader(target) {
+  const index = String(Object.keys(PAGE_TITLES).indexOf(target) + 1).padStart(2, "0");
+  $("page-title").innerHTML = `<span class="title-index" id="page-index">${index}</span>${esc(t(PAGE_TITLES[target]))}`;
+  const descNode = $("page-desc");
+  if (descNode) descNode.textContent = t(PAGE_DESCS[target] || "", "");
+}
+
 const LOADERS = {
   overview: () => loadOverview(true),
   features: () => loadFeatures(),
@@ -3858,15 +3920,8 @@ function navigate(page, options = {}) {
   document.querySelectorAll(".page").forEach((node) => {
     node.classList.toggle("active", node.id === `page-${target}`);
   });
-  // 编辑风页题：编号前缀（01/02…）随导航顺序生成
-  const order = Object.keys(PAGE_TITLES);
-  const index = String(order.indexOf(target) + 1).padStart(2, "0");
   revealNavGroup(target);
-  const indexNode = $("page-index");
-  if (indexNode) indexNode.textContent = index;
-  $("page-title").innerHTML = `<span class="title-index">${index}</span>${esc(t(PAGE_TITLES[target]))}`;
-  const descNode = $("page-desc");
-  if (descNode) descNode.textContent = t(PAGE_DESCS[target] || "", "");
+  renderPageHeader(target);
   setNavOpen(false);
   if (!options.skipLoad && target !== "recall") {
     runLoader(target);
@@ -3889,6 +3944,10 @@ function applyStaticI18n() {
       document.title = text;
     } else if (node.tagName === "OPTION" || node.children.length === 0) {
       node.textContent = text;
+    } else {
+      // 含子元素（如导航项里的徽标 span）：只替换首个文本节点，保留子元素
+      const textNode = Array.from(node.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+      if (textNode) textNode.textContent = text;
     }
   });
   // 属性型文案（读屏与提示气泡）：纯图标按钮的可见文本是符号，兜底文案留在属性里
@@ -3923,6 +3982,15 @@ function bindEvents() {
     const button = event.target.closest(".nav-item");
     if (button) navigate(button.dataset.page);
   });
+
+  // 待审徽标：直达「风格样本 → 待审」标签页并加载队列
+  if ($("tb-pending")) {
+    $("tb-pending").addEventListener("click", () => {
+      navigate("style-samples");
+      activateTab("style-samples", "ss-review");
+      loadReviews();
+    });
+  }
 
   $("btn-refresh").addEventListener("click", async () => {
     const button = $("btn-refresh");
@@ -4187,6 +4255,7 @@ function bindEvents() {
         $("rv-batch-result").textContent = result.message || "";
         toast(tpl(t("reviews.batchDone"), { 1: result.handled ?? 0 }), "ok");
         await loadReviews();
+        await refreshPendingBadge();
       }
     );
   };
@@ -4531,9 +4600,7 @@ async function init() {
           if (next && next.locale && next.locale !== state.locale) {
             state.locale = next.locale;
             applyStaticI18n();
-            const idxNode = $("page-index");
-            const idxText = idxNode ? idxNode.textContent : "";
-            $("page-title").innerHTML = `<span class="title-index">${idxText}</span>${esc(t(PAGE_TITLES[state.page]))}`;
+            renderPageHeader(state.page);
             runLoader(state.page);
           }
           if (next && typeof next.isDark === "boolean") {
@@ -4656,9 +4723,11 @@ function bindNavGroups() {
   document.querySelectorAll(".nav-group").forEach((group) => {
     const key = group.dataset.group;
     if (!key) return;
-    if (collapsed.includes(key)) group.classList.add("collapsed");
     const head = group.querySelector(".nav-group-head");
     if (!head) return;
+    const isCollapsed = collapsed.includes(key);
+    group.classList.toggle("collapsed", isCollapsed);
+    head.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
     head.addEventListener("click", () => {
       const next = !group.classList.contains("collapsed");
       group.classList.toggle("collapsed", next);
@@ -4728,18 +4797,24 @@ function bindSidebar() {
   });
 }
 
+/** 激活指定页内的某个标签页（供标签点击与徽标直达复用）。 */
+function activateTab(pageId, tabId) {
+  const container = document.getElementById(`page-${pageId}`);
+  if (!container) return;
+  container.querySelectorAll(".tabs .tab").forEach((node) => {
+    node.classList.toggle("active", node.dataset.tab === tabId);
+  });
+  container.querySelectorAll(".tab-pane").forEach((pane) => {
+    pane.classList.toggle("active", pane.id === tabId);
+  });
+}
+
 function bindTabs() {
   const tabs = document.querySelectorAll(".tabs .tab");
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
-      const container = tab.closest(".page") || document;
-      const name = tab.dataset.tab;
-      container.querySelectorAll(".tabs .tab").forEach((node) => {
-        node.classList.toggle("active", node === tab);
-      });
-      container.querySelectorAll(".tab-pane").forEach((pane) => {
-        pane.classList.toggle("active", pane.id === name);
-      });
+      const page = tab.closest(".page");
+      if (page) activateTab(page.id.replace(/^page-/, ""), tab.dataset.tab);
     });
   });
 }
@@ -5830,6 +5905,9 @@ async function loadEmpathy() {
     const logData = await apiGet("empathy/log", { limit: 50 }).catch(() => ({ items: [] }));
     const config = data.config || {};
     const stats = data.stats || {};
+    // 侧栏徽标：共情管线未装配或未开启时标注「未启用」
+    const nav = $("nav-empathy");
+    if (nav) nav.textContent = data.degraded || !config.enabled ? "未启用" : "就绪";
     renderStats($("ep-meta"), [
       ["开关", config.enabled ? "开启" : "关闭"],
       ["共情温度", config.temperature !== undefined ? num(config.temperature, 2) : "—"],
@@ -6163,23 +6241,9 @@ function bindFusionControls() {
     });
   }
 
-  // 记忆页：过滤与分页
+  // 记忆页：过滤（分页按钮统一在 bindEvents 绑定，此处不再重复绑定）
   if ($("mem-sender")) $("mem-sender").addEventListener("change", () => { memFilterState.offset = 0; loadMemories(); });
   if ($("mem-tier")) $("mem-tier").addEventListener("change", () => { memFilterState.offset = 0; loadMemories(); });
-  if ($("mem-prev")) {
-    $("mem-prev").addEventListener("click", () => {
-      if (!memFilterState.active) return;
-      memFilterState.offset = Math.max(0, memFilterState.offset - memFilterState.limit);
-      paintMemoryBatch($("mem-table"));
-    });
-  }
-  if ($("mem-next")) {
-    $("mem-next").addEventListener("click", () => {
-      if (!memFilterState.active) return;
-      memFilterState.offset += memFilterState.limit;
-      paintMemoryBatch($("mem-table"));
-    });
-  }
 
   // 记忆后端
   if ($("mb-reload")) $("mb-reload").addEventListener("click", loadMemoryBackend);
