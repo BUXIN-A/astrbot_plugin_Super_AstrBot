@@ -38,9 +38,7 @@ class MembersConfig:
     def from_mapping(cls, config: Mapping[str, Any]) -> "MembersConfig":
         return cls(
             enabled=as_bool(get_path(config, "members.enabled", True), True),
-            inject_strategy=as_bool(
-                get_path(config, "members.inject_strategy", True), True
-            ),
+            inject_strategy=as_bool(get_path(config, "members.inject_strategy", True), True),
             max_members=as_int(
                 get_path(config, "members.max_members", 200), 200, low=10, high=5000
             ),
@@ -57,7 +55,3 @@ class MembersConfig:
                 high=3650.0,
             ),
         )
-
-    @property
-    def active(self) -> bool:
-        return self.enabled

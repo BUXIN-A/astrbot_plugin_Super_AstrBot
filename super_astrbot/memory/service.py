@@ -417,7 +417,9 @@ class MemoryService:
         """导出全部有效记忆（排除已遗忘与对话缓冲，备份用）。"""
         return await self._memories.export_visible()
 
-    async def update_content(self, memory_id: int, content: str, *, at: float | None = None) -> bool:
+    async def update_content(
+        self, memory_id: int, content: str, *, at: float | None = None
+    ) -> bool:
         """更新记忆正文并重建索引（面板编辑记忆 / 每周总结，现实桥编辑时连带同步）。
 
         行不存在或内容为空时返回 ``False``：面板据此提示「记录不存在或内容为空」，

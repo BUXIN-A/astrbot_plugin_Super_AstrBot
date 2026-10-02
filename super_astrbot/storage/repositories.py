@@ -153,6 +153,7 @@ class MemoryRepository:
             ),
         )
         return int(cursor.lastrowid)
+
     async def get(self, memory_id: int) -> dict[str, Any] | None:
         row = await self._db.query_one("SELECT * FROM memories WHERE id=?", (memory_id,))
         return None if row is None else row_to_dict(row)
@@ -206,6 +207,7 @@ class MemoryRepository:
     async def delete(self, memory_id: int) -> bool:
         cursor = await self._db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return bool(getattr(cursor, "rowcount", 0))
+
     async def set_status(self, memory_id: int, status: str, *, at: float) -> None:
         await self._db.execute(
             "UPDATE memories SET status=?, updated_at=? WHERE id=?", (status, at, memory_id)
@@ -363,8 +365,7 @@ class MemoryRepository:
         历史记忆大多为空——这正是迁移必须先看分布、再动手的原因。
         """
         by_type = await self._db.query(
-            "SELECT scope_type, status, COUNT(*) AS total FROM memories"
-            " GROUP BY scope_type, status"
+            "SELECT scope_type, status, COUNT(*) AS total FROM memories GROUP BY scope_type, status"
         )
         types: dict[str, dict[str, int]] = {}
         for row in by_type:
@@ -434,7 +435,9 @@ class MemoryRepository:
             await self._db.scalar(f"SELECT COUNT(*) FROM memories{where}", params, default=0)
         )
         attributed = int(
-            await self._db.scalar(f"SELECT COUNT(*) FROM memories{attributed_sql}", params, default=0)
+            await self._db.scalar(
+                f"SELECT COUNT(*) FROM memories{attributed_sql}", params, default=0
+            )
         )
         plan = self._migration_plan(
             to=to, matched=matched, attributed=attributed, only_attributed=only_attributed
@@ -469,7 +472,9 @@ class MemoryRepository:
             )
             stats["moved"] = int(cursor.rowcount or 0)
             rest_sql = f"{where} AND sender_id=''" if where else " WHERE sender_id=''"
-            cursor = await self._db.execute(f"UPDATE memories SET status='archived'{rest_sql}", params)
+            cursor = await self._db.execute(
+                f"UPDATE memories SET status='archived'{rest_sql}", params
+            )
             stats["archived"] = int(cursor.rowcount or 0)
             return stats
 
@@ -579,8 +584,7 @@ class MemoryRepository:
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend([limit, offset])
         rows = await self._db.query(
-            f"SELECT * FROM memories{where}"
-            f" ORDER BY {memory_order_clause(sort)} LIMIT ? OFFSET ?",
+            f"SELECT * FROM memories{where} ORDER BY {memory_order_clause(sort)} LIMIT ? OFFSET ?",
             params,
         )
         return rows_to_dicts(rows)
@@ -835,6 +839,8 @@ class VectorRepository:
             "DELETE FROM memory_vectors WHERE fingerprint<>?", (fingerprint,)
         )
         return int(result.rowcount or 0)
+
+
 # --------------------------------------------------------------------------- #
 # 周记
 # --------------------------------------------------------------------------- #
@@ -1041,7 +1047,6 @@ class JournalRepository:
             (to_scope_type, to_scope_id, scope_type),
         )
         return {"matched": matched, "moved": int(getattr(cursor, "rowcount", 0) or 0)}
-
 
     @staticmethod
     def _journal_filter(keyword: str = "", entry_type: str = "") -> tuple[str, list[Any]]:
@@ -1990,7 +1995,12 @@ class GraphRepository:
             )
         )
         if dry_run or (matched_entities == 0 and matched_relations == 0):
-            return {"entities": 0, "relations": 0, "matched_entities": matched_entities, "matched_relations": matched_relations}
+            return {
+                "entities": 0,
+                "relations": 0,
+                "matched_entities": matched_entities,
+                "matched_relations": matched_relations,
+            }
         entities = await self._db.execute(
             "UPDATE graph_entities SET scope_type=?, scope_id=? WHERE scope_type=?",
             (to_scope_type, to_scope_id, scope_type),

@@ -220,9 +220,7 @@ def test_journals_table_has_bridge_columns(tmp_path: Path) -> None:
 
         db = Database(tmp_path / "bridge.db")
         await db.connect()
-        columns = [
-            str(row["name"]) for row in await db.query("PRAGMA table_info(journals)")
-        ]
+        columns = [str(row["name"]) for row in await db.query("PRAGMA table_info(journals)")]
         await db.execute(
             "INSERT INTO journals(scope_type, scope_id, content, tags, emotion,"
             " event_time, memory_id, created_at) VALUES ('global','*','旧库记录','[]',3,1.0,NULL,1.0)"
@@ -246,6 +244,7 @@ def test_upgrade_from_v4_database_adds_identity_columns(tmp_path: Path) -> None:
     再用完整清单打开同一个文件，验证 v5 增量迁移生效且旧行可读。
     """
     from super_astrbot.storage import IdentityRepository, MemoryRepository
+
     # db.py 在导入时就把 MIGRATIONS/CURRENT_VERSION 绑成了自己的名字，
     # 因此必须打在它那一侧，改 migrations 模块的变量不会影响已绑定的引用。
     from super_astrbot.storage import db as db_module
@@ -289,9 +288,7 @@ def test_upgrade_from_v4_database_adds_identity_columns(tmp_path: Path) -> None:
             ]
             tables = [
                 str(row["name"])
-                for row in await upgraded.query(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
+                for row in await upgraded.query("SELECT name FROM sqlite_master WHERE type='table'")
             ]
             row = (await MemoryRepository(upgraded).export_visible())[0]
             identities = IdentityRepository(upgraded)

@@ -126,9 +126,7 @@ def _with_fake_text_part(monkeypatch: Any) -> None:
     from super_astrbot.harness import astrbot_compat as compat
     from super_astrbot.harness import astrbot_llm
 
-    monkeypatch.setattr(
-        astrbot_llm.compat, "SYMBOLS", replace(compat.SYMBOLS, TextPart=_FakePart)
-    )
+    monkeypatch.setattr(astrbot_llm.compat, "SYMBOLS", replace(compat.SYMBOLS, TextPart=_FakePart))
 
 
 def test_injector_prefers_temp_parts_when_host_supports_them(monkeypatch: Any) -> None:

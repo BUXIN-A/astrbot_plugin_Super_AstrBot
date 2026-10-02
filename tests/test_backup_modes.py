@@ -197,7 +197,9 @@ def test_replace_mode_rolls_back_all_tables_on_failure(tmp_path: Path) -> None:
             rows = json.loads(entries["tables/memory_links.json"].decode("utf-8"))
             assert rows, "需要至少一行才能构造约束冲突"
             rows[0]["created_at"] = None
-            entries["tables/memory_links.json"] = json.dumps(rows, ensure_ascii=False).encode("utf-8")
+            entries["tables/memory_links.json"] = json.dumps(rows, ensure_ascii=False).encode(
+                "utf-8"
+            )
 
         broken = _rewrite_zip(raw, corrupt)
 
@@ -311,9 +313,7 @@ def test_legacy_package_with_snapshot_offers_full_database_restore(tmp_path: Pat
         )
         await old.start()
         try:
-            await old._memory_service.remember_text(
-                MemoryScope.for_session(UMO), "备份时刻的记忆"
-            )
+            await old._memory_service.remember_text(MemoryScope.for_session(UMO), "备份时刻的记忆")
             backup_path, _ = await _backup_and_bytes(old)
             with zipfile.ZipFile(backup_path) as archive:
                 snapshot = archive.read("database/super_astrbot.db")

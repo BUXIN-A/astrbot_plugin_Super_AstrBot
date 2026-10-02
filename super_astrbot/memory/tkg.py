@@ -110,7 +110,9 @@ class TemporalGraphService:
         await self._trim()
         return {"entities": len(node_ids), "edges": edges}
 
-    async def rebuild(self, *, scope: MemoryScope | None = None, limit: int = 500) -> dict[str, Any]:
+    async def rebuild(
+        self, *, scope: MemoryScope | None = None, limit: int = 500
+    ) -> dict[str, Any]:
         """从既有记忆重建图谱（面板「重建时序图谱」按钮 / 首次启用时的回填）。"""
         if not self.enabled():
             return {"ok": False, "message": "时序图谱不可用（缺少抽取器）"}
@@ -180,48 +182,52 @@ class TemporalGraphService:
         moment: float,
     ) -> int:
         canonical = name.lower()
-        row = await self._db.query_one(
-            "SELECT id, evidence, mentions FROM tkg_nodes"
-            " WHERE scope_type=? AND scope_id=? AND canonical=?",
-            (scope_type, scope_id, canonical),
-        )
-        if row is None:
-            cursor = await self._db.execute(
-                "INSERT INTO tkg_nodes(scope_type, scope_id, name, canonical, entity_type,"
-                " sender_id, weight, mentions, evidence, first_seen, last_seen)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    scope_type,
-                    scope_id,
-                    name,
-                    canonical,
-                    _guess_type(name),
-                    sender_id,
-                    1.0,
-                    1,
-                    evidence,
-                    moment,
-                    moment,
-                ),
+        # 读-改-写整体放进事务：并发 ingest 时不会双双判定「不存在」而撞唯一索引。
+        async with self._db.transaction() as tx:
+            row = await tx.query_one(
+                "SELECT id, evidence, mentions FROM tkg_nodes"
+                " WHERE scope_type=? AND scope_id=? AND canonical=?",
+                (scope_type, scope_id, canonical),
             )
-            return int(getattr(cursor, "lastrowid", 0) or 0)
+            if row is None:
+                cursor = await tx.execute(
+                    "INSERT INTO tkg_nodes(scope_type, scope_id, name, canonical, entity_type,"
+                    " sender_id, weight, mentions, evidence, first_seen, last_seen)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        scope_type,
+                        scope_id,
+                        name,
+                        canonical,
+                        _guess_type(name),
+                        sender_id,
+                        1.0,
+                        1,
+                        evidence,
+                        moment,
+                        moment,
+                    ),
+                )
+                return int(getattr(cursor, "lastrowid", 0) or 0)
 
-        node_id = int(row["id"])
-        evidences = str(row["evidence"] or "")
-        refs = {part.strip() for part in evidences.split(",") if part.strip()}
-        if evidence in refs:
-            # 同一条来源重复入库（例如重复执行重建）：只刷新时间，不重复计数
-            await self._db.execute(
-                "UPDATE tkg_nodes SET last_seen = MAX(last_seen, ?) WHERE id=?", (moment, node_id)
+            node_id = int(row["id"])
+            evidences = str(row["evidence"] or "")
+            refs = {part.strip() for part in evidences.split(",") if part.strip()}
+            if evidence in refs:
+                # 同一条来源重复入库（例如重复执行重建）：只刷新时间，不重复计数
+                await tx.execute(
+                    "UPDATE tkg_nodes SET last_seen = MAX(last_seen, ?) WHERE id=?",
+                    (moment, node_id),
+                )
+                return node_id
+            merged = _merge_evidence(evidences, evidence, self._evidence_limit)
+            await tx.execute(
+                "UPDATE tkg_nodes SET mentions = mentions + 1, last_seen = ?,"
+                " weight = weight + 0.2, evidence = ?,"
+                " sender_id = COALESCE(NULLIF(?, ''), sender_id) WHERE id=?",
+                (moment, merged, sender_id, node_id),
             )
             return node_id
-        merged = _merge_evidence(evidences, evidence, self._evidence_limit)
-        await self._db.execute(
-            "UPDATE tkg_nodes SET mentions = mentions + 1, last_seen = ?, weight = weight + 0.2,"
-            " evidence = ?, sender_id = COALESCE(NULLIF(?, ''), sender_id) WHERE id=?",
-            (moment, merged, sender_id, node_id),
-        )
-        return node_id
 
     async def _upsert_edge(
         self,
@@ -234,44 +240,45 @@ class TemporalGraphService:
         moment: float,
     ) -> bool:
         left, right = (src, dst) if src <= dst else (dst, src)
-        row = await self._db.query_one(
-            "SELECT id, confidence, evidence FROM tkg_edges"
-            " WHERE src_id=? AND dst_id=? AND relation=?",
-            (left, right, relation),
-        )
-        if row is None:
-            await self._db.execute(
-                "INSERT INTO tkg_edges(src_id, dst_id, relation, weight, confidence, evidence,"
-                " sender_id, valid_from, valid_to, created_at) VALUES (?,?,?,?,?,?,?,?,0,?)",
-                (
-                    left,
-                    right,
-                    relation,
-                    1.0,
-                    min(1.0, 0.4 + 0.1),
-                    evidence,
-                    sender_id,
-                    moment,
-                    moment,
-                ),
+        async with self._db.transaction() as tx:
+            row = await tx.query_one(
+                "SELECT id, confidence, evidence FROM tkg_edges"
+                " WHERE src_id=? AND dst_id=? AND relation=?",
+                (left, right, relation),
             )
-            return True
-        confidence = min(1.0, float(row["confidence"] or 0.5) + 0.1)
-        existing = str(row["evidence"] or "")
-        refs = {part.strip() for part in existing.split(",") if part.strip()}
-        if evidence in refs:
-            await self._db.execute(
-                "UPDATE tkg_edges SET valid_from = MIN(valid_from, ?), valid_to = 0 WHERE id=?",
-                (moment, int(row["id"])),
+            if row is None:
+                await tx.execute(
+                    "INSERT INTO tkg_edges(src_id, dst_id, relation, weight, confidence, evidence,"
+                    " sender_id, valid_from, valid_to, created_at) VALUES (?,?,?,?,?,?,?,?,0,?)",
+                    (
+                        left,
+                        right,
+                        relation,
+                        1.0,
+                        min(1.0, 0.4 + 0.1),
+                        evidence,
+                        sender_id,
+                        moment,
+                        moment,
+                    ),
+                )
+                return True
+            confidence = min(1.0, float(row["confidence"] or 0.5) + 0.1)
+            existing = str(row["evidence"] or "")
+            refs = {part.strip() for part in existing.split(",") if part.strip()}
+            if evidence in refs:
+                await tx.execute(
+                    "UPDATE tkg_edges SET valid_from = MIN(valid_from, ?), valid_to = 0 WHERE id=?",
+                    (moment, int(row["id"])),
+                )
+                return False
+            merged = _merge_evidence(existing, evidence, self._evidence_limit)
+            await tx.execute(
+                "UPDATE tkg_edges SET weight = weight + 0.2, confidence = ?, evidence = ?,"
+                " valid_to = 0 WHERE id=?",
+                (confidence, merged, int(row["id"])),
             )
             return False
-        merged = _merge_evidence(existing, evidence, self._evidence_limit)
-        await self._db.execute(
-            "UPDATE tkg_edges SET weight = weight + 0.2, confidence = ?, evidence = ?,"
-            " valid_to = 0 WHERE id=?",
-            (confidence, merged, int(row["id"])),
-        )
-        return False
 
     async def _trim(self) -> None:
         total = await self._db.scalar("SELECT COUNT(*) FROM tkg_nodes", (), 0)
@@ -285,7 +292,10 @@ class TemporalGraphService:
         if not ids:
             return
         placeholders = ",".join("?" for _ in ids)
-        await self._db.execute(f"DELETE FROM tkg_edges WHERE src_id IN ({placeholders}) OR dst_id IN ({placeholders})", (*ids, *ids))
+        await self._db.execute(
+            f"DELETE FROM tkg_edges WHERE src_id IN ({placeholders}) OR dst_id IN ({placeholders})",
+            (*ids, *ids),
+        )
         await self._db.execute(f"DELETE FROM tkg_nodes WHERE id IN ({placeholders})", tuple(ids))
         self._debug("时序图谱超出容量，淘汰 %s 个最久未活跃节点", len(ids))
 
@@ -370,7 +380,11 @@ class TemporalGraphService:
         return result
 
     async def expand(
-        self, *, memory_ids: Sequence[int], scope: MemoryScope | None = None, limit: int | None = None
+        self,
+        *,
+        memory_ids: Sequence[int],
+        scope: MemoryScope | None = None,
+        limit: int | None = None,
     ) -> dict[str, Any]:
         """图扩展召回：给定已召回记忆，取其图上邻居实体最近关联的记忆。"""
         if self._db is None or not memory_ids:
@@ -524,7 +538,10 @@ class TemporalGraphService:
             tuple(cleaned),
         )
         return {
-            int(row["id"]): {"name": str(row["name"] or ""), "canonical": str(row["canonical"] or "")}
+            int(row["id"]): {
+                "name": str(row["name"] or ""),
+                "canonical": str(row["canonical"] or ""),
+            }
             for row in rows
         }
 
@@ -599,11 +616,19 @@ def _guess_type(name: str) -> str:
     text = str(name or "")
     if not text:
         return "topic"
-    if text.startswith("@") or (2 <= len(text) <= 6 and not any(ch.isdigit() for ch in text) and _is_cjk(text)):
+    if text.startswith("@") or (
+        2 <= len(text) <= 6 and not any(ch.isdigit() for ch in text) and _is_cjk(text)
+    ):
         return "person" if len(text) <= 4 else "topic"
-    if any(token in text for token in ("群", "号", "房间", "实验室", "公司", "学校", "城市", "深圳", "北京", "上海")):
+    if any(
+        token in text
+        for token in ("群", "号", "房间", "实验室", "公司", "学校", "城市", "深圳", "北京", "上海")
+    ):
         return "place"
-    if any(token in text for token in ("考研", "论文", "项目", "答辩", "上线", "考试", "生日", "会议", "旅行")):
+    if any(
+        token in text
+        for token in ("考研", "论文", "项目", "答辩", "上线", "考试", "生日", "会议", "旅行")
+    ):
         return "event"
     return "topic"
 

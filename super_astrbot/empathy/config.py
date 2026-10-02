@@ -52,10 +52,6 @@ class EmpathyConfig:
             active.append(STAGE_EMPATHIZE)
         return tuple(active)
 
-    @property
-    def active(self) -> bool:
-        return self.enabled
-
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "EmpathyConfig":
         return cls(

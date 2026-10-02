@@ -19,6 +19,8 @@ from typing import Any, Mapping
 from . import __version__
 from .backup import (
     EXCLUDED_TABLES as BACKUP_EXCLUDED_TABLES,
+)
+from .backup import (
     RESTORE_MERGE,
     RESTORE_REPLACE,
     BackupService,
@@ -58,6 +60,8 @@ from .loop import ConcurrencyGate, LLMBudget, Scheduler, TaskScope
 from .maibot import MaiBotConfig, MaiBotService
 from .members import MembersConfig, MembersService
 from .memory import (
+    DEFAULT_IDENTITY_STRATEGY,
+    SOURCE_WEEKLY,
     AgentMemoryBackend,
     HybridRetriever,
     KeywordRetriever,
@@ -65,12 +69,9 @@ from .memory import (
     MemoryIdentity,
     MemoryLifecycle,
     MemoryService,
-    ResolvedIdentity,
     Reranker,
+    ResolvedIdentity,
     VectorRetriever,
-    DEFAULT_IDENTITY_STRATEGY,
-    SOURCE_JOURNAL,
-    SOURCE_WEEKLY,
     resolve_identity,
 )
 from .memory.decay import DecayService
@@ -132,8 +133,8 @@ from .storage import (
     AffinityRepository,
     Database,
     GraphRepository,
-    JargonRepository,
     IdentityRepository,
+    JargonRepository,
     JournalRepository,
     MemoryRepository,
     MetricSeriesRepository,
@@ -148,6 +149,7 @@ from .support import PromptOverlay, PromptOverrides, PromptStore, missing_placeh
 _DB_FILENAME = "super_astrbot.db"
 _SKIP_CAPTURE_PREFIXES = ("/", "!", "#", ".")
 """命令类消息不进入记忆缓冲，避免把指令当成语料。"""
+
 
 def _optional_float(value: Any) -> float | None:
     """导入用：能转成数字就转，否则返回 ``None``（语义为「按写入时刻算」）。
@@ -663,7 +665,10 @@ class SuperAstrBotApp:
             "introspection": self._enabled("forge.introspection"),
             "provider_id": str(get_path(self._config, "forge.introspection_provider_id", "") or ""),
             "timeout_seconds": as_int(
-                get_path(self._config, "forge.introspection_timeout_seconds", 45), 45, low=5, high=300
+                get_path(self._config, "forge.introspection_timeout_seconds", 45),
+                45,
+                low=5,
+                high=300,
             ),
             "max_monologue_chars": as_int(
                 get_path(self._config, "forge.max_monologue_chars", 400), 400, low=100, high=2000
@@ -678,9 +683,7 @@ class SuperAstrBotApp:
         from .spec.capabilities import as_float, as_int, get_path
 
         return {
-            "decay_write_back": bool(
-                get_path(self._config, "fusion.decay_write_back", False)
-            ),
+            "decay_write_back": bool(get_path(self._config, "fusion.decay_write_back", False)),
             "decay_strength_days": as_float(
                 get_path(self._config, "fusion.decay_default_strength_days", 7.0),
                 7.0,
@@ -1224,7 +1227,13 @@ class SuperAstrBotApp:
                 elif "default" in field:
                     out[key] = field["default"]
                 else:
-                    out[key] = {"int": 0, "float": 0.0, "bool": False, "string": "", "text": ""}.get(ftype, "")
+                    out[key] = {
+                        "int": 0,
+                        "float": 0.0,
+                        "bool": False,
+                        "string": "",
+                        "text": "",
+                    }.get(ftype, "")
             return out
 
         return defaults_of(schema)
@@ -1259,7 +1268,9 @@ class SuperAstrBotApp:
                 if isinstance(value, list):
                     return [str(item) for item in value]
                 if isinstance(value, str):
-                    return [part.strip() for part in value.replace("，", ",").split(",") if part.strip()]
+                    return [
+                        part.strip() for part in value.replace("，", ",").split(",") if part.strip()
+                    ]
                 return list(default or [])
             return value  # dict / file / template_list 等保持原样
         except (TypeError, ValueError):
@@ -1274,9 +1285,7 @@ class SuperAstrBotApp:
             if ftype == "object" and isinstance(node[key], dict):
                 self._coerce_by_schema(node[key], field.get("items") or {})
             else:
-                node[key] = self._coerce_config_value(
-                    node[key], ftype, field.get("default"), field
-                )
+                node[key] = self._coerce_config_value(node[key], ftype, field.get("default"), field)
 
     async def config_import(self, payload: Any) -> dict[str, Any]:
         """导入插件配置：按 schema 剔除未知键/补齐缺失默认值/收敛类型 → 合并进配置实体 → 落盘 → 热应用。"""
@@ -1369,13 +1378,20 @@ class SuperAstrBotApp:
             if status == STATUS_FORGOTTEN:
                 skipped += 1
                 continue
-            scope = self._parse_scope_key(str(item.get("scope") or f"{item.get('scope_type') or 'global'}:{item.get('scope_id') or '*'}"))
+            scope = self._parse_scope_key(
+                str(
+                    item.get("scope")
+                    or f"{item.get('scope_type') or 'global'}:{item.get('scope_id') or '*'}"
+                )
+            )
             tags = item.get("tags")
             if isinstance(tags, str):
                 try:
                     tags = json.loads(tags)
                 except (TypeError, ValueError):
-                    tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+                    tags = [
+                        part.strip() for part in tags.replace("，", ",").split(",") if part.strip()
+                    ]
             try:
                 importance = float(item.get("importance") or 0.5)
             except (TypeError, ValueError):
@@ -1499,7 +1515,10 @@ class SuperAstrBotApp:
             if self._graph_repo is not None:
                 try:
                     result["graph"] = await self._graph_repo.migrate_scope(
-                        scope_type=from_scope, to_scope_type="global", to_scope_id="*", dry_run=False
+                        scope_type=from_scope,
+                        to_scope_type="global",
+                        to_scope_id="*",
+                        dry_run=False,
                     )
                 except Exception as exc:  # 图谱迁移失败不影响记忆迁移结果
                     result["graph"] = {"error": safe_detail(exc)}
@@ -1617,7 +1636,9 @@ class SuperAstrBotApp:
             return {"ok": False, "message": "写入失败（内容为空）"}
         return {"ok": True, **result}
 
-    async def panel_journal_update(self, journal_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    async def panel_journal_update(
+        self, journal_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """面板编辑记录：标题/类型缺省表示保持不变，与导入同构。"""
         service = self._journal_service_or_error()
         tags = payload.get("tags")
@@ -1894,7 +1915,6 @@ class SuperAstrBotApp:
             }
         result["tables"] = outcome.tables
         result["rows_written"] = outcome.rows_written
-        result["skipped_tables"] = outcome.skipped_tables
         result["warnings"] = [*result["warnings"], *outcome.notes]
 
         # 3) 索引：覆盖模式必须先清空 FTS（旧 token 会挂到同 id 的新行上），只重建关键词
@@ -1905,9 +1925,8 @@ class SuperAstrBotApp:
                     clear=selected == RESTORE_REPLACE
                 )
                 cleared = int(stats.get("cleared") or 0)
-                reindex_note = (
-                    f"关键词索引重建 {stats.get('indexed', 0)} 条"
-                    + (f"（先清空 {cleared} 条旧索引）" if cleared else "")
+                reindex_note = f"关键词索引重建 {stats.get('indexed', 0)} 条" + (
+                    f"（先清空 {cleared} 条旧索引）" if cleared else ""
                 )
             except Exception as exc:
                 self._warn("恢复后重建关键词索引失败：%s", safe_detail(exc))
@@ -1916,9 +1935,7 @@ class SuperAstrBotApp:
 
         result["config"] = await self._restore_config_from_backup(raw)
         result["database"] = await self._stash_database_from_backup(raw)
-        result["can_replace_database"] = bool(
-            str(result["database"].get("saved_to") or "").strip()
-        )
+        result["can_replace_database"] = bool(str(result["database"].get("saved_to") or "").strip())
 
         verb = "完全覆盖" if selected == RESTORE_REPLACE else "逐表合并"
         parts = [f"{verb}恢复 {outcome.rows_written} 行 / {len(outcome.tables)} 张表"]
@@ -2037,24 +2054,21 @@ class SuperAstrBotApp:
         result["config"] = await self._restore_config_from_backup(raw)
         result["database"] = await self._stash_database_from_backup(raw)
 
-        head = (
-            f"导入完成（旧格式 format 1 包）：按视图恢复 {rows} 条"
-            + ("，配置已热应用" if result["config"].get("ok") else "")
+        head = f"导入完成（旧格式 format 1 包）：按视图恢复 {rows} 条" + (
+            "，配置已热应用" if result["config"].get("ok") else ""
         )
         snapshot_ready = bool(str(result["database"].get("saved_to") or "").strip())
         if snapshot_ready:
             # 有库快照：包内数据本身没导出风格/图谱/待审，但整库替换能把它们一起还原
             result["can_replace_database"] = True
             result["message"] = (
-                head
-                + "。该备份未导出风格 / 图谱 / 待审等表；包内**有**数据库快照，"
+                head + "。该备份未导出风格 / 图谱 / 待审等表；包内**有**数据库快照，"
                 "完整恢复请用「整库恢复」（用快照替换当前数据库，含这些未导出的表与运行态）"
             )
         else:
             result["can_replace_database"] = False
             result["message"] = (
-                head
-                + "。该备份未导出风格 / 图谱 / 待审等表，且包内无数据库快照，"
+                head + "。该备份未导出风格 / 图谱 / 待审等表，且包内无数据库快照，"
                 "这些数据无法从此备份恢复；请用新版重新导出一份全量备份（format 2）"
             )
         self._info("旧格式备份包恢复完成：%s", result["message"])
@@ -2120,14 +2134,19 @@ class SuperAstrBotApp:
                 skipped += 1
                 continue
             scope = self._parse_scope_key(
-                str(item.get("scope") or f"{item.get('scope_type') or 'global'}:{item.get('scope_id') or '*'}")
+                str(
+                    item.get("scope")
+                    or f"{item.get('scope_type') or 'global'}:{item.get('scope_id') or '*'}"
+                )
             )
             tags = item.get("tags")
             if isinstance(tags, str):
                 try:
                     tags = json.loads(tags)
                 except (TypeError, ValueError):
-                    tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+                    tags = [
+                        part.strip() for part in tags.replace("，", ",").split(",") if part.strip()
+                    ]
             result = await service.add(
                 scope,
                 content,
@@ -2219,7 +2238,9 @@ class SuperAstrBotApp:
                 try:
                     tags = json.loads(tags)
                 except (TypeError, ValueError):
-                    tags = [part.strip() for part in tags.replace("，", ",").split(",") if part.strip()]
+                    tags = [
+                        part.strip() for part in tags.replace("，", ",").split(",") if part.strip()
+                    ]
             try:
                 importance = float(item.get("importance") or 0.75)
             except (TypeError, ValueError):
@@ -2329,11 +2350,7 @@ class SuperAstrBotApp:
             if section not in primary:
                 continue
             target = next(
-                (
-                    item.key
-                    for item in CAPABILITIES
-                    if path.startswith(item.key + "_")
-                ),
+                (item.key for item in CAPABILITIES if path.startswith(item.key + "_")),
                 None,
             )
             if target is None:
@@ -2829,6 +2846,7 @@ class SuperAstrBotApp:
                 timeout_seconds=float(forge_settings.get("timeout_seconds") or 45.0),
                 max_monologue_chars=int(forge_settings.get("max_monologue_chars") or 400),
                 max_injected_chars=int(forge_settings.get("max_injected_chars") or 900),
+                prompts=getattr(self._persona_config, "prompts", None),
                 clock=self._harness.host.now,
                 logger=self._logger,
             )
@@ -2843,9 +2861,11 @@ class SuperAstrBotApp:
                 db=self._db,
                 forge=self._forge_service,
                 min_confidence=as_float(
-                    get_path(self._config, "evolution.min_confidence", 0.45), 0.45, low=0.0, high=1.0
+                    get_path(self._config, "evolution.min_confidence", 0.45),
+                    0.45,
+                    low=0.0,
+                    high=1.0,
                 ),
-                keep_events=int(settings.get("keep_events") or 2000),
                 clock=self._harness.host.now,
                 logger=self._logger,
             )
@@ -3293,7 +3313,9 @@ class SuperAstrBotApp:
             self._warn("世界书注入异常：%s", safe_detail(exc))
             return
         if result.get("applied"):
-            self._debug("世界书注入：%s 条（%s）", len(result.get("ids") or []), result.get("reason", ""))
+            self._debug(
+                "世界书注入：%s 条（%s）", len(result.get("ids") or []), result.get("reason", "")
+            )
             record(METRIC_INJECT_BLOCKS)
             record(METRIC_INJECT_CHARS, total=float(result.get("chars") or 0))
 
@@ -3308,7 +3330,9 @@ class SuperAstrBotApp:
             self._warn("共情注入异常：%s", safe_detail(exc))
             return
         if result.get("applied"):
-            self._debug("共情注入：%s（%.2f）", result.get("emotion"), result.get("intensity") or 0.0)
+            self._debug(
+                "共情注入：%s（%.2f）", result.get("emotion"), result.get("intensity") or 0.0
+            )
             record(METRIC_INJECT_BLOCKS)
 
     async def _inject_members(self, view: EventView, request: Any) -> None:
@@ -3796,9 +3820,7 @@ class SuperAstrBotApp:
             else:
                 attempts = int(item.get("attempts") or 0) + 1
                 status = "skipped" if attempts >= 3 else "pending"
-                await service.mark(
-                    int(item["id"]), status, error="发送失败", bump_attempt=True
-                )
+                await service.mark(int(item["id"]), status, error="发送失败", bump_attempt=True)
                 record(METRIC_PROACTIVE_SKIPPED)
 
     async def _job_reflection_scan(self) -> None:

@@ -250,13 +250,15 @@ class ConsolidationService:
             return ""
         return str(parsed[0].get("content") or "").strip()
 
-    async def _apply(self, group: Sequence[MemoryItem], summary: str, now: float) -> tuple[int, int]:
+    async def _apply(
+        self, group: Sequence[MemoryItem], summary: str, now: float
+    ) -> tuple[int, int]:
         """写入整合记忆并处理原始条目，返回 ``(新记忆 ID, 实际处理的原始条数)``。"""
         head = group[0]
         importance = max([float(m.importance or 0.0) for m in group] + [0.55])
         tags: list[str] = []
         for m in group:
-            for tag in (m.tags or []):
+            for tag in m.tags or []:
                 if tag not in tags and len(tags) < 5:
                     tags.append(tag)
 

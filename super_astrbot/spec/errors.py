@@ -41,4 +41,3 @@ def safe_detail(exc: BaseException, limit: int = 300) -> str:
     if len(text) > limit:
         text = text[: limit - 1] + "…"
     return text
-

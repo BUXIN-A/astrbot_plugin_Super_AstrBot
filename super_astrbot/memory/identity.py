@@ -86,6 +86,7 @@ class MemoryIdentity:
             origin_umo=str(getattr(view, "umo", "") or ""),
         )
 
+
 @dataclass(frozen=True)
 class ResolvedIdentity:
     """身份解析结果：作用域键 + 可解释的来源。"""
@@ -150,9 +151,7 @@ def describe_observation(rows: list[dict[str, Any]]) -> dict[str, Any]:
             by_id.setdefault(identifier, set()).add(umo)
 
     unstable_names = {
-        name: sorted(item for item in ids if item)
-        for name, ids in by_name.items()
-        if len(ids) > 1
+        name: sorted(item for item in ids if item) for name, ids in by_name.items() if len(ids) > 1
     }
     stable_ids = {identifier: sorted(umos) for identifier, umos in by_id.items() if len(umos) > 1}
 

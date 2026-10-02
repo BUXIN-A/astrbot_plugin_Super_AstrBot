@@ -16,6 +16,7 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Mapping
 
+from ..spec.capabilities import as_float
 from ..support import truncate
 
 KIND_CALLBACK = "callback"
@@ -69,9 +70,9 @@ class CallbackQueueService:
         kind = str(payload.get("kind") or KIND_CALLBACK).strip()
         if kind not in KINDS:
             kind = KIND_CALLBACK
-        due_at = _float(payload.get("due_at"), 0.0)
+        due_at = as_float(payload.get("due_at"), 0.0)
         if due_at <= 0:
-            after_hours = _float(payload.get("due_in_hours"), 24.0)
+            after_hours = as_float(payload.get("due_in_hours"), 24.0)
             due_at = self._clock() + max(0.05, after_hours) * 3600.0
         pending = await self._db.scalar(
             "SELECT COUNT(*) FROM proactive_queue WHERE status='pending'", (), 0
@@ -103,9 +104,7 @@ class CallbackQueueService:
     async def update(self, item_id: int, patch: Mapping[str, Any]) -> dict[str, Any]:
         if self._db is None:
             return {"ok": False, "message": "持久层未就绪"}
-        row = await self._db.query_one(
-            "SELECT * FROM proactive_queue WHERE id=?", (int(item_id),)
-        )
+        row = await self._db.query_one("SELECT * FROM proactive_queue WHERE id=?", (int(item_id),))
         if row is None:
             return {"ok": False, "message": "队列项不存在"}
         status = str(patch.get("status") or row["status"] or STATUS_PENDING)
@@ -119,7 +118,7 @@ class CallbackQueueService:
             " WHERE id=?",
             (
                 truncate(content, 500),
-                _float(patch.get("due_at"), float(row["due_at"] or 0.0)),
+                as_float(patch.get("due_at"), float(row["due_at"] or 0.0)),
                 status,
                 str(patch.get("target") or row["target"] or ""),
                 str(patch.get("umo") or row["umo"] or ""),
@@ -132,9 +131,7 @@ class CallbackQueueService:
     async def delete(self, item_id: int) -> dict[str, Any]:
         if self._db is None:
             return {"ok": False, "message": "持久层未就绪"}
-        cursor = await self._db.execute(
-            "DELETE FROM proactive_queue WHERE id=?", (int(item_id),)
-        )
+        cursor = await self._db.execute("DELETE FROM proactive_queue WHERE id=?", (int(item_id),))
         deleted = int(getattr(cursor, "rowcount", 0) or 0)
         if not deleted:
             return {"ok": False, "message": "队列项不存在"}
@@ -270,13 +267,6 @@ class CallbackQueueService:
                 self._logger.debug(message, *args)
             except Exception:  # noqa: BLE001
                 pass
-
-
-def _float(value: Any, default: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
 
 
 __all__ = [

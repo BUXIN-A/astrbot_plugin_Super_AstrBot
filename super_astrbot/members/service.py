@@ -124,9 +124,7 @@ class MembersService:
                 },
             )
             if name:
-                entry["names"][name] = entry["names"].get(name, 0) + int(
-                    row.get("events") or 1
-                )
+                entry["names"][name] = entry["names"].get(name, 0) + int(row.get("events") or 1)
                 name_to_ids.setdefault(name, set()).add(sender_id)
             entry["umos"].add(str(row.get("umo") or ""))
             entry["events"] += int(row.get("events") or 1)
@@ -167,9 +165,7 @@ class MembersService:
                     "sessions": len(entry["umos"]),
                     "events": entry["events"],
                     "stability": stability,
-                    "affinity": round(float(affinity.get("score") or 0.0), 4)
-                    if affinity
-                    else None,
+                    "affinity": round(float(affinity.get("score") or 0.0), 4) if affinity else None,
                     "mood": affinity.get("mood") or "",
                     "interactions": int(affinity.get("interactions") or 0),
                     "memory_count": int(memory.get("count") or 0),
@@ -209,11 +205,7 @@ class MembersService:
                 "stable": stable_count,
                 "unstable": unstable_count,
                 "unknown": len(members) - stable_count - unstable_count,
-                "verdict": (
-                    "unstable"
-                    if unstable_count
-                    else ("stable" if members else "unknown")
-                ),
+                "verdict": ("unstable" if unstable_count else ("stable" if members else "unknown")),
                 "hint": (
                     "同一昵称对应多个发送者标识，建议先修身份策略（改用昵称策略），"
                     "否则记忆仍会被会话切碎。"
@@ -286,8 +278,7 @@ class MembersService:
                 "mood": "",
             }
         moods = await self._db.query(
-            "SELECT target_id, mood FROM affinity_state WHERE mood != ''"
-            " ORDER BY updated_at DESC"
+            "SELECT target_id, mood FROM affinity_state WHERE mood != '' ORDER BY updated_at DESC"
         )
         for row in moods:
             target = str(row["target_id"] or "")
@@ -341,8 +332,12 @@ class MembersService:
             "relation": _text(patch.get("relation"), current.get("relation", "")),
             "tone": _text(patch.get("tone"), current.get("tone", "")),
             "address_as": _text(patch.get("address_as"), current.get("address_as", "")),
-            "topics": _dumps_list(patch["topics"]) if "topics" in patch else _dumps_list(current.get("topics")),
-            "taboo": _dumps_list(patch["taboo"]) if "taboo" in patch else _dumps_list(current.get("taboo")),
+            "topics": _dumps_list(patch["topics"])
+            if "topics" in patch
+            else _dumps_list(current.get("topics")),
+            "taboo": _dumps_list(patch["taboo"])
+            if "taboo" in patch
+            else _dumps_list(current.get("taboo")),
             "notes": _text(patch.get("notes"), current.get("notes", "")),
         }
         next_source = _text(patch.get("source"), str(current.get("source") or source))
@@ -413,9 +408,7 @@ class MembersService:
             return result
 
         roster = await self.roster()
-        member = next(
-            (item for item in roster["members"] if item["sender_id"] == key), None
-        )
+        member = next((item for item in roster["members"] if item["sender_id"] == key), None)
         if member is None:
             return {"ok": False, "message": "未观测到该群友，先让 TA 在群里说句话"}
 
@@ -499,9 +492,9 @@ class MembersService:
             return {"members": 0, "strategies": 0}
         members = await self._db.scalar(
             "SELECT COUNT(DISTINCT sender_id) FROM identity_seen WHERE sender_id != ''",
-            0,
+            default=0,
         )
-        strategies = await self._db.scalar("SELECT COUNT(*) FROM member_profiles", 0)
+        strategies = await self._db.scalar("SELECT COUNT(*) FROM member_profiles", default=0)
         return {"members": int(members or 0), "strategies": int(strategies or 0)}
 
     # ------------------------------------------------------------------ #

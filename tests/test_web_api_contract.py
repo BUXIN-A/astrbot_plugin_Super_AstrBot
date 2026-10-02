@@ -25,7 +25,6 @@ from super_astrbot.spec.scopes import MemoryScope
 
 from .test_app_integration import FakeContext, FakeStar
 
-
 # --------------------------------------------------------------------------- #
 # 框架替身：只在真实 astrbot 缺失时注入，避免遮蔽线上依赖
 # --------------------------------------------------------------------------- #
@@ -136,9 +135,7 @@ def test_routes_point_to_existing_handlers() -> None:
     source = (Path(web_api.__file__)).read_text(encoding="utf-8")
     tree = ast.parse(source)
     defined = {
-        node.name
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     endpoints: list[str] = []
     for node in ast.walk(tree):

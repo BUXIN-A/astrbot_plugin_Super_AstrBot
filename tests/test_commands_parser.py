@@ -98,7 +98,11 @@ def test_resolve_action_unknown_passes_through() -> None:
 def test_parse_journal_payload_without_title() -> None:
     """不写标题时整段都是正文，标题交给服务层补默认值。"""
     assert parse_journal_payload("这周开始跑步") == ("", "这周开始跑步", [])
-    assert parse_journal_payload("这周开始跑步 #运动 #健康") == ("", "这周开始跑步", ["运动", "健康"])
+    assert parse_journal_payload("这周开始跑步 #运动 #健康") == (
+        "",
+        "这周开始跑步",
+        ["运动", "健康"],
+    )
     assert parse_journal_payload("") == ("", "", [])
 
 

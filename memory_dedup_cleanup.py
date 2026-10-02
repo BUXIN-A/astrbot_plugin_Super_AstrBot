@@ -4,8 +4,11 @@
 运行期写前查重（``super_astrbot/memory/dedup.py`` + ``lifecycle``）只能阻止
 新重复产生；本脚本处理线上已堆积的近义重复记忆。相似判定与运行期
 ``similar_enough`` 完全一致，对每个作用域内的正式记忆做近义聚类，
-每组保留信息最全（正文最长）的一条，其余标记为 forgotten 并清理
-FTS / 向量 / 图谱关联（与 ``MemoryLifecycle.forget`` 落库行为一致）。
+每组保留信息最全（重要度 > 访问次数 > 正文长度）的一条，其余标记为 forgotten
+并清理 FTS / 向量 / 图谱关联（与 ``MemoryLifecycle.forget`` 落库行为一致）。
+
+聚类采用**完全链接**（新成员须与簇内全部成员相似），不做传递闭包——
+避免 A~B、B~C 但 A≁C 时把三条并成一组而误删。
 
 周记（``kind='journal'``）是时间线记录，与运行期一样不参与合并，一律跳过。
 
@@ -43,49 +46,51 @@ def load_similar_enough(plugin_root: Path, threshold: float):
     return lambda a, b: module.similar_enough(a, b, threshold)
 
 
-def union_find(n: int, edges: list[tuple[int, int]]) -> list[list[int]]:
-    parent = list(range(n))
+def cluster_rows(rows, similar) -> list[list[int]]:
+    """贪心完全链接聚类：新成员必须与簇内**全部**成员相似才并入。
 
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    for a, b in edges:
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
-    groups: dict[int, list[int]] = {}
-    for i in range(n):
-        groups.setdefault(find(i), []).append(i)
-    return list(groups.values())
+    行元组约定：``(id, scope_type, scope_id, content, importance, access_count)``。
+    """
+    clusters: list[list[int]] = []
+    for idx in range(len(rows)):
+        text = rows[idx][3]
+        for cluster in clusters:
+            if all(similar(text, rows[other][3]) for other in cluster):
+                cluster.append(idx)
+                break
+        else:
+            clusters.append([idx])
+    return clusters
 
 
-def cleanup_scope(conn: sqlite3.Connection, scope: tuple[str, str], rows, similar, apply: bool) -> int:
+def _keep_score(row) -> tuple[float, int, int, int]:
+    """保留优先级：重要度 > 访问次数 > 正文长度；并列时取较新（id 更大）。"""
+    return (float(row[4] or 0.0), int(row[5] or 0), len(row[3] or ""), int(row[0]))
+
+
+def cleanup_scope(
+    conn: sqlite3.Connection, scope: tuple[str, str], rows, similar, apply: bool
+) -> int:
     """对一个作用域做近义聚类与合并，返回将被移除的重复条数。"""
     if len(rows) < 2:
         return 0
-    rows = rows[:_CLUSTER_BATCH]
-    edges: list[tuple[int, int]] = []
-    for i in range(len(rows)):
-        for j in range(i + 1, len(rows)):
-            if similar(rows[i][3], rows[j][3]):
-                edges.append((i, j))
-    if not edges:
-        return 0
+    if len(rows) > _CLUSTER_BATCH:
+        print(
+            f"    [{scope[0]}:{scope[1]}] 作用域内有 {len(rows)} 条，"
+            f"仅前 {_CLUSTER_BATCH} 条参与本轮聚类，其余未处理"
+        )
+        rows = rows[:_CLUSTER_BATCH]
 
     removed = 0
     now = time.time()
-    for group in union_find(len(rows), edges):
+    for group in cluster_rows(rows, similar):
         if len(group) <= 1:
             continue
-        members = sorted((rows[i] for i in group), key=lambda r: (len(r[3]), r[0]))
-        keep = members[-1]  # 正文最长优先；并列时保留较新（id 更大）的一条
+        members = sorted((rows[i] for i in group), key=_keep_score)
+        keep = members[-1]
         for dup in members[:-1]:
             print(
-                f"    [{scope[0]}:{scope[1]}] 保留 #{keep[0]} ｜ 移除重复 #{dup[0]}"
-                f"：{dup[3][:40]}"
+                f"    [{scope[0]}:{scope[1]}] 保留 #{keep[0]} ｜ 移除重复 #{dup[0]}：{dup[3][:40]}"
             )
             removed += 1
             if apply:
@@ -125,12 +130,11 @@ def main() -> None:
         raise SystemExit(1)
 
     similar = load_similar_enough(Path(args.plugin_root), args.threshold)
-    cleanup_scope.similar = similar  # type: ignore[attr-defined]
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT id, scope_type, scope_id, kind, content FROM memories"
+        "SELECT id, scope_type, scope_id, content, importance, access_count FROM memories"
         " WHERE status='active' AND kind != 'journal' ORDER BY scope_type, scope_id, id"
     ).fetchall()
 
@@ -142,7 +146,14 @@ def main() -> None:
     scopes: dict[tuple[str, str], list] = {}
     for row in rows:
         scopes.setdefault((row["scope_type"], row["scope_id"]), []).append(
-            (row["id"], row["scope_type"], row["scope_id"], row["content"])
+            (
+                row["id"],
+                row["scope_type"],
+                row["scope_id"],
+                row["content"],
+                row["importance"],
+                row["access_count"],
+            )
         )
 
     print(f"[scope] 共 {len(scopes)} 个作用域，{len(rows)} 条正式记忆")

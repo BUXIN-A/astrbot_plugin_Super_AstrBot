@@ -122,6 +122,8 @@ def test_prompt_catalog_covers_every_domain_key() -> None:
         "jargon_template",
         "affinity_system",
         "affinity_template",
+        "forge_system",
+        "forge_monologue",
         "graph_system",
         "graph_template",
         "auto_review_system",
@@ -171,6 +173,61 @@ def test_render_never_raises() -> None:
     assert render("坏模板 { 未闭合") == "坏模板 { 未闭合"
     assert render("未知 {foo}", bar=1) == "未知 {foo}"
     assert render("{a}-{b}", a=1, b=2) == "1-2"
+
+
+def test_forge_prompts_are_overridable() -> None:
+    from super_astrbot.persona.prompts import (
+        PROMPT_FORGE_MONOLOGUE,
+        PROMPT_FORGE_SYSTEM,
+        build_forge_monologue_prompt,
+        forge_system,
+    )
+
+    overrides = PromptOverrides(
+        {
+            "prompts": {
+                PROMPT_FORGE_SYSTEM: "自定义内省系统提示词",
+                PROMPT_FORGE_MONOLOGUE: "人格：{big_five}｜对{speaker}说：{message}",
+            }
+        }
+    )
+    assert forge_system(overrides) == "自定义内省系统提示词"
+    prompt = build_forge_monologue_prompt(
+        big_five="开放 0.50",
+        values="—",
+        defense="幽默自嘲",
+        energy=60,
+        mood="平静",
+        speaker="小明",
+        message="你好",
+        overrides=overrides,
+    )
+    assert prompt == "人格：开放 0.50｜对小明说：你好"
+
+
+def test_forge_monologue_falls_back_when_placeholder_missing() -> None:
+    from super_astrbot.persona.prompts import (
+        PROMPT_FORGE_MONOLOGUE,
+        build_forge_monologue_prompt,
+    )
+
+    PromptOverrides.REJECTED.clear()
+    try:
+        overrides = PromptOverrides({"prompts": {PROMPT_FORGE_MONOLOGUE: "缺少占位符"}})
+        prompt = build_forge_monologue_prompt(
+            big_five="—",
+            values="—",
+            defense="—",
+            energy=0,
+            mood="平静",
+            speaker="小明",
+            message="你好",
+            overrides=overrides,
+        )
+        assert "缺少占位符" not in prompt
+        assert PROMPT_FORGE_MONOLOGUE in PromptOverrides.REJECTED
+    finally:
+        PromptOverrides.REJECTED.clear()
 
 
 # --------------------------------------------------------------------------- #

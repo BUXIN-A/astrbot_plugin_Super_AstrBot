@@ -12,6 +12,7 @@ import json
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from super_astrbot.app import SuperAstrBotApp
 from super_astrbot.harness.astrbot_llm import MEMORY_BLOCK_START
@@ -574,7 +575,6 @@ def test_web_api_registered_handlers_are_not_coroutines(tmp_path: Path) -> None:
         await app.shutdown()
         return list(registered.values())
 
-
     handlers = asyncio.run(_run())
     assert handlers, "未注册任何面板接口"
     import inspect
@@ -590,6 +590,7 @@ async def _async_none(default=None):
 
 async def _async_empty():
     return {}
+
 
 def test_prompt_customization_roundtrip(tmp_path: Path) -> None:
     """面板提示词定制：内置默认回填 → 保存即时生效 → 校验占位符 → 重置恢复。"""
@@ -691,7 +692,12 @@ def test_journal_panel_management_roundtrip(tmp_path: Path) -> None:
         await app.start()
         try:
             added = await app.panel_journal_add(
-                {"content": "这周打算早睡早起", "tags": "生活, 计划", "emotion": 4, "scope": "user:10086"}
+                {
+                    "content": "这周打算早睡早起",
+                    "tags": "生活, 计划",
+                    "emotion": 4,
+                    "scope": "user:10086",
+                }
             )
             page = await app.memory.list_all_journals(offset=0, limit=20, keyword="早睡")
             journal_id = page[0]["id"]
@@ -982,7 +988,9 @@ def _make_config_like_loader(schema: dict, values: dict | None = None) -> dict:
             elif "default" in field:
                 out[key] = copy.deepcopy(field["default"])
             else:
-                out[key] = {"int": 0, "float": 0.0, "bool": False, "string": "", "text": ""}.get(ftype, "")
+                out[key] = {"int": 0, "float": 0.0, "bool": False, "string": "", "text": ""}.get(
+                    ftype, ""
+                )
         return out
 
     config = defaults_of(schema)
@@ -999,17 +1007,26 @@ def test_config_export_import_roundtrip(tmp_path: Path) -> None:
     """配置导出/导入：导出即全量配置；导入剔除未知键、保留已知值、热应用生效。"""
 
     schema = {
-        "basic": {"type": "object", "items": {
-            "enabled": {"type": "bool", "default": True},
-            "admin_only_commands": {"type": "bool", "default": True},
-        }},
-        "memory": {"type": "object", "items": {
-            "enabled": {"type": "bool", "default": True},
-            "retrieval_top_k": {"type": "int", "default": 5},
-        }},
-        "persona": {"type": "object", "items": {
-            "style": {"type": "bool", "default": False},
-        }},
+        "basic": {
+            "type": "object",
+            "items": {
+                "enabled": {"type": "bool", "default": True},
+                "admin_only_commands": {"type": "bool", "default": True},
+            },
+        },
+        "memory": {
+            "type": "object",
+            "items": {
+                "enabled": {"type": "bool", "default": True},
+                "retrieval_top_k": {"type": "int", "default": 5},
+            },
+        },
+        "persona": {
+            "type": "object",
+            "items": {
+                "style": {"type": "bool", "default": False},
+            },
+        },
     }
 
     async def _run() -> dict:
@@ -1041,8 +1058,10 @@ def test_config_export_import_roundtrip(tmp_path: Path) -> None:
                 return True
 
         app = SuperAstrBotApp(
-            star=FakeStar(), context=FakeContext(),
-            config=LoaderLikeConfig({}), data_dir=tmp_path,
+            star=FakeStar(),
+            context=FakeContext(),
+            config=LoaderLikeConfig({}),
+            data_dir=tmp_path,
         )
         await app.start()
         try:
@@ -1103,16 +1122,28 @@ def test_memories_export_import_roundtrip(tmp_path: Path) -> None:
             memory = app.memory
             scope = MemoryScope(ScopeType.USER, "10086")
             await memory.remember_text(
-                scope, "有效记忆：喜欢简洁回复", kind="preference",
-                importance=0.7, source="manual", tags=["偏好"],
+                scope,
+                "有效记忆：喜欢简洁回复",
+                kind="preference",
+                importance=0.7,
+                source="manual",
+                tags=["偏好"],
             )
             await memory.remember_text(
-                scope, "被遗忘的记忆", kind="fact",
-                importance=0.5, source="manual", status="forgotten",
+                scope,
+                "被遗忘的记忆",
+                kind="fact",
+                importance=0.5,
+                source="manual",
+                status="forgotten",
             )
             await memory.remember_text(
-                scope, "对话缓冲的原始消息", kind="fact",
-                importance=0.3, source="chat", status="buffered",
+                scope,
+                "对话缓冲的原始消息",
+                kind="fact",
+                importance=0.3,
+                source="chat",
+                status="buffered",
             )
 
             exported = await app.panel_memory_export()

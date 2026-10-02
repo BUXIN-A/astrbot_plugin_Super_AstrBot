@@ -21,6 +21,7 @@ from typing import Any, Callable, Mapping
 
 from ...harness.protocols import EventView
 from ...support import truncate
+from ..prompts import build_forge_monologue_prompt, forge_system
 from .model import (
     BIG_FIVE_AXES,
     BIG_FIVE_LABELS,
@@ -37,9 +38,36 @@ _STATE_KEY = "persona.forge"
 
 # 关键交互的情绪信号（PersonaForge 原关键词表的中文裁剪版 + 压力场景词）
 _CRITICAL_KEYWORDS: tuple[str, ...] = (
-    "喜欢", "讨厌", "生气", "开心", "难过", "愤怒", "失望", "惊喜", "爱你", "恨",
-    "紧张", "担心", "委屈", "质疑", "威胁", "危机", "紧急", "重大", "关键", "离开", "别走",
-    "生病", "住院", "分手", "吵架", "离职", "裁员", "考试", "答辩", "上线",
+    "喜欢",
+    "讨厌",
+    "生气",
+    "开心",
+    "难过",
+    "愤怒",
+    "失望",
+    "惊喜",
+    "爱你",
+    "恨",
+    "紧张",
+    "担心",
+    "委屈",
+    "质疑",
+    "威胁",
+    "危机",
+    "紧急",
+    "重大",
+    "关键",
+    "离开",
+    "别走",
+    "生病",
+    "住院",
+    "分手",
+    "吵架",
+    "离职",
+    "裁员",
+    "考试",
+    "答辩",
+    "上线",
 )
 
 _ENERGY_DRIFT_PER_DAY = 18
@@ -67,6 +95,7 @@ class ForgeService:
         timeout_seconds: float = 45.0,
         max_monologue_chars: int = 400,
         max_injected_chars: int = 900,
+        prompts: Any | None = None,
         clock: Callable[[], float] | None = None,
         logger: Any | None = None,
     ) -> None:
@@ -78,6 +107,7 @@ class ForgeService:
         self._timeout = float(timeout_seconds or 45.0)
         self._max_monologue_chars = int(max_monologue_chars or 400)
         self._max_injected_chars = int(max_injected_chars or 900)
+        self._prompts = prompts
         self._clock = clock or time.time
         self._logger = logger
 
@@ -257,15 +287,14 @@ class ForgeService:
         try:
             result = await self._llm.chat(
                 prompt=prompt,
-                system_prompt=(
-                    "你在为角色扮演生成内心独白。只输出独白本身，不要解释、不要分点、"
-                    "不要出现心理学术语或数值。"
-                ),
+                system_prompt=forge_system(self._prompts),
                 provider_id=self._provider_id or None,
                 timeout=self._timeout,
                 purpose="forge-introspection",
             )
-            text = truncate(str(getattr(result, "text", "") or "").strip(), self._max_monologue_chars)
+            text = truncate(
+                str(getattr(result, "text", "") or "").strip(), self._max_monologue_chars
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001  内省失败不降级主链路
@@ -292,13 +321,15 @@ class ForgeService:
             f"{BIG_FIVE_LABELS[axis]} {core.big_five.get(axis, 0.5):.2f}" for axis in BIG_FIVE_AXES
         )
         speaker = str(getattr(view, "sender_name", "") or getattr(view, "sender_id", "") or "对方")
-        return (
-            f"你的大五人格：{big_five}；价值观：{'、'.join(core.values) or '—'}；"
-            f"防御机制：{DEFENSE_LABELS.get(core.defense_mechanism, core.defense_mechanism)}。\n"
-            f"你当前能量 {state.energy_level}/100，心情「{state.current_mood}」。\n"
-            f"{speaker}对你说：{truncate(str(getattr(view, 'text', '') or ''), 400)}\n\n"
-            "规则：神经质高时多想风险与不安；宜人性低时内心可以吐槽；外向性高时想法更主动；"
-            "能量低时想法更短更消极。只输出这一段的内心独白。"
+        return build_forge_monologue_prompt(
+            big_five=big_five,
+            values="、".join(core.values) or "—",
+            defense=DEFENSE_LABELS.get(core.defense_mechanism, core.defense_mechanism),
+            energy=state.energy_level,
+            mood=state.current_mood,
+            speaker=speaker,
+            message=truncate(str(getattr(view, "text", "") or ""), 400),
+            overrides=self._prompts,
         )
 
     # ------------------------------------------------------------------ #
@@ -344,6 +375,8 @@ class ForgeService:
 
     async def _load_locked(self) -> None:
         payload: dict[str, Any] = {}
+        row = None
+        read_ok = self._db is not None
         if self._db is not None:
             try:
                 row = await self._db.query_one(
@@ -351,23 +384,24 @@ class ForgeService:
                 )
             except Exception as exc:  # noqa: BLE001  读取失败用出厂画像兜底
                 self._warn("读取三层人格失败：%s", exc)
-                row = None
+                read_ok = False
             if row is not None:
                 try:
                     payload = json.loads(str(row["value"] or "{}"))
                 except (TypeError, ValueError):
                     payload = {}
                 self._updated_at = float(row["updated_at"] or 0.0)
-        if not payload:
-            profile = default_profile()
-            self._profile = profile
-            self._updated_at = self._clock()
-            if self._db is not None:
-                await self._save_locked(reason="init")
+        if payload:
+            self._profile = PersonalityProfile.from_dict(payload)
+            if not self._updated_at:
+                self._updated_at = self._clock()
             return
-        self._profile = PersonalityProfile.from_dict(payload)
-        if not self._updated_at:
-            self._updated_at = self._clock()
+        # 出厂画像：仅在「确认库中无记录」时才写回。读取异常、或已有记录但内容损坏时
+        # 只做内存兜底，绝不覆盖库中既有画像（避免瞬时读错把用户人格清零）。
+        self._profile = default_profile()
+        self._updated_at = self._clock()
+        if read_ok and row is None:
+            await self._save_locked(reason="init")
 
     async def _save_locked(self, *, reason: str) -> None:
         if self._profile is None:

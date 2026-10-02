@@ -64,7 +64,9 @@ def test_resolve_identity_strategies() -> None:
     auto2 = resolve_identity(sender_id="", sender_name="谷雨", strategy=IDENTITY_AUTO)
     assert auto2.user_key == "谷雨" and auto2.degraded
     # 两个来源都没有时不能退化成空键（否则所有人的记忆会挤进同一个作用域）
-    assert resolve_identity(sender_id="", sender_name="", strategy=IDENTITY_AUTO).user_key == "unknown"
+    assert (
+        resolve_identity(sender_id="", sender_name="", strategy=IDENTITY_AUTO).user_key == "unknown"
+    )
 
 
 def test_normalize_strategy_accepts_aliases() -> None:
@@ -216,7 +218,6 @@ def test_scope_migration_preview_then_apply(tmp_path: Path) -> None:
         app = SuperAstrBotApp(star=FakeStar(), context=FakeContext(), config={}, data_dir=tmp_path)
         await app.start()
         try:
-            memory = app.memory
             scopes = {
                 "attributed": (_view(sender_id="u-1"), "带身份的记忆"),
                 "orphan": (_view(sender_id="", sender_name=""), "历史无身份记忆"),
@@ -352,6 +353,7 @@ def test_global_backup_zip_contains_every_table(tmp_path: Path) -> None:
         names = set(archive.namelist())
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         config_payload = json.loads(archive.read("config/plugin_config.json").decode("utf-8"))
+        assert isinstance(config_payload, dict), "备份包应包含可解析的插件配置"
         memories = json.loads(archive.read("tables/memories.json").decode("utf-8"))
         journals = json.loads(archive.read("tables/journals.json").decode("utf-8"))
         db_bytes = archive.read("database/super_astrbot.db")
@@ -395,9 +397,10 @@ def test_backup_respects_include_switches(tmp_path: Path) -> None:
                 {"include_database": False, "include_data": False, "include_config": True}
             )
             with zipfile.ZipFile(Path(result["path"])) as archive:
-                return {"names": archive.namelist(), "manifest": json.loads(
-                    archive.read("manifest.json").decode("utf-8")
-                )}
+                return {
+                    "names": archive.namelist(),
+                    "manifest": json.loads(archive.read("manifest.json").decode("utf-8")),
+                }
         finally:
             await app.shutdown()
 
@@ -693,7 +696,6 @@ def test_backup_import_roundtrip_into_fresh_instance(tmp_path: Path) -> None:
     assert data["bad"]["ok"] is False and "zip" in data["bad"]["message"]
 
 
-
 def test_backup_import_rejects_non_backup_zip(tmp_path: Path) -> None:
     """普通 zip（不含 manifest/data/db）应被识别为「不是备份包」。"""
 
@@ -727,7 +729,10 @@ def test_import_preserves_original_timestamps(tmp_path: Path) -> None:
 
     async def _run() -> dict:
         source = SuperAstrBotApp(
-            star=FakeStar(), context=FakeContext(), config=_schema_config(), data_dir=tmp_path / "src"
+            star=FakeStar(),
+            context=FakeContext(),
+            config=_schema_config(),
+            data_dir=tmp_path / "src",
         )
         await source.start()
         try:
@@ -752,7 +757,10 @@ def test_import_preserves_original_timestamps(tmp_path: Path) -> None:
             await source.shutdown()
 
         target = SuperAstrBotApp(
-            star=FakeStar(), context=FakeContext(), config=_schema_config(), data_dir=tmp_path / "dst"
+            star=FakeStar(),
+            context=FakeContext(),
+            config=_schema_config(),
+            data_dir=tmp_path / "dst",
         )
         await target.start()
         try:
@@ -953,7 +961,9 @@ def test_import_accepts_legacy_format_one_package(tmp_path: Path) -> None:
                     "manifest.json",
                     json.dumps({"kind": "super_astrbot.backup", "format": 1}, ensure_ascii=False),
                 )
-                zf.writestr("config/plugin_config.json", json.dumps({"basic": {}}, ensure_ascii=False))
+                zf.writestr(
+                    "config/plugin_config.json", json.dumps({"basic": {}}, ensure_ascii=False)
+                )
                 zf.writestr("data/memories.json", json.dumps(memories, ensure_ascii=False))
                 zf.writestr("data/journals.json", json.dumps(journals, ensure_ascii=False))
 

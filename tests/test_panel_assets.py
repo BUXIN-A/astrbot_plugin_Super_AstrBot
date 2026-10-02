@@ -155,15 +155,20 @@ def test_no_external_cdn_references() -> None:
     assert external == [], f"页面引用了外部资源：{external}"
 
 
+def _backend_registered(source: str) -> set[str]:
+    """从后端源码提取已注册的路由名（容忍 `ruff format` 的换行与缩进）。"""
+    return set(re.findall(r'\(\s*"([^"]+)"', source))
+
+
 def test_frontend_endpoints_match_backend_registration() -> None:
     js = _read(PAGES / "app.js")
-    backend = _read(WEB_API)
+    registered = _backend_registered(_read(WEB_API))
     for endpoint in FRONTEND_ENDPOINTS:
         assert f'"{endpoint}"' in js, f"前端未使用接口 {endpoint}"
-        assert f'("{endpoint}"' in backend, f"后端未注册接口 {endpoint}"
+        assert endpoint in registered, f"后端未注册接口 {endpoint}"
     # 兼容别名只要求后端仍注册（旧入口零丢失），前端可不再引用
     for endpoint in COMPAT_ENDPOINTS:
-        assert f'("{endpoint}"' in backend, f"后端缺少兼容路由 {endpoint}"
+        assert endpoint in registered, f"后端缺少兼容路由 {endpoint}"
 
 
 def test_html_escape_covers_five_characters() -> None:
@@ -250,13 +255,26 @@ def test_style_samples_tabs_merge_reviews_and_identity() -> None:
     html = _read(PAGES / "index.html")
     js = _read(PAGES / "app.js")
 
-    assert 'id="ss-tabs"' in html and 'data-tab="ss-samples"' in html and 'data-tab="ss-review"' in html
+    assert (
+        'id="ss-tabs"' in html
+        and 'data-tab="ss-samples"' in html
+        and 'data-tab="ss-review"' in html
+    )
     assert 'id="ss-samples"' in html and 'id="ss-review"' in html
     assert 'id="ss-member-table"' in html, "缺少群友风格档案表"
-    assert 'id="ss-strategy-member"' in html and 'id="ss-strategy-save"' in html, "缺少差异化策略编辑器"
+    assert 'id="ss-strategy-member"' in html and 'id="ss-strategy-save"' in html, (
+        "缺少差异化策略编辑器"
+    )
 
     # 待审控件（原待审页）必须仍在本页标签页里
-    for element in ("rv-origin", "rv-umo", "rv-search", "rv-approve-all", "rv-reject-all", "rv-table"):
+    for element in (
+        "rv-origin",
+        "rv-umo",
+        "rv-search",
+        "rv-approve-all",
+        "rv-reject-all",
+        "rv-table",
+    ):
         assert f'id="{element}"' in html, f"待审标签页缺少控件 {element}"
     assert "reviews/batch" in js
 
@@ -293,7 +311,15 @@ def test_new_fusion_pages_present() -> None:
             assert f'id="{element}"' in html, f"{page} 页缺少控件 {element}"
 
     # 总览新增：编排流水线与融合健康；图谱新增：图层与时间线；监控新增：融合健康
-    for element in ("ov-flow", "ov-fusion", "gp-layer", "gp-timeline", "gp-rebuild", "mt-fusion", "feat-group"):
+    for element in (
+        "ov-flow",
+        "ov-fusion",
+        "gp-layer",
+        "gp-timeline",
+        "gp-rebuild",
+        "mt-fusion",
+        "feat-group",
+    ):
         assert f'id="{element}"' in html, f"缺少控件 {element}"
 
 
@@ -357,7 +383,9 @@ def test_notion_typography_rules() -> None:
     for banned in ("Inter", "Roboto", "Geist"):
         assert banned not in css, f"不应使用 {banned} 字体"
     assert "text-transform: uppercase" not in css, "母项不做大写字母 + 字距的「眉标」"
-    assert re.search(r"\.nav-group:not\(\.flat\) \.nav-items \.nav-item\s*\{\s*font-size: 13px", css)
+    assert re.search(
+        r"\.nav-group:not\(\.flat\) \.nav-items \.nav-item\s*\{\s*font-size: 13px", css
+    )
     assert re.search(r"\.nav-group\.flat \.nav-items \.nav-item\s*\{\s*font-size: 14px", css)
 
 
@@ -544,7 +572,7 @@ def test_peek_panel_is_wired_to_three_pages() -> None:
     js = _read(PAGES / "app.js")
     for fn in ("openMemoryDetail", "openJournalDetail", "openWeeklyDetail"):
         assert f"function {fn}(" in js or f"async function {fn}(" in js, f"缺少 {fn}"
-    for hook in ('data-journal=', "data-weekly=", "data-memory="):
+    for hook in ("data-journal=", "data-weekly=", "data-memory="):
         assert hook in js, f"列表行缺少可点击钩子 {hook}"
     for attr in ("data-peek-edit", "data-peek-delete", "data-peek-save", "data-peek-cancel"):
         assert attr in js, f"面板操作缺少 {attr}"

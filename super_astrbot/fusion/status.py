@@ -28,13 +28,43 @@ PIPELINE_STAGES: tuple[dict[str, str], ...] = (
 
 FUSION_MODULES: tuple[dict[str, str], ...] = (
     {"key": "members", "title": "群友识别", "domain": "members", "capability": "members.enabled"},
-    {"key": "forge", "title": "PersonaForge 三层人格", "domain": "forge", "capability": "forge.enabled"},
-    {"key": "introspection", "title": "选择性双过程内省", "domain": "forge", "capability": "forge.introspection"},
-    {"key": "evolution", "title": "人格演化轨迹", "domain": "evolution", "capability": "evolution.enabled"},
-    {"key": "empathy", "title": "CogEmp 共情管线", "domain": "empathy", "capability": "empathy.enabled"},
-    {"key": "latrace", "title": "LATRACE 时序图谱", "domain": "latrace", "capability": "latrace.enabled"},
+    {
+        "key": "forge",
+        "title": "PersonaForge 三层人格",
+        "domain": "forge",
+        "capability": "forge.enabled",
+    },
+    {
+        "key": "introspection",
+        "title": "选择性双过程内省",
+        "domain": "forge",
+        "capability": "forge.introspection",
+    },
+    {
+        "key": "evolution",
+        "title": "人格演化轨迹",
+        "domain": "evolution",
+        "capability": "evolution.enabled",
+    },
+    {
+        "key": "empathy",
+        "title": "CogEmp 共情管线",
+        "domain": "empathy",
+        "capability": "empathy.enabled",
+    },
+    {
+        "key": "latrace",
+        "title": "LATRACE 时序图谱",
+        "domain": "latrace",
+        "capability": "latrace.enabled",
+    },
     {"key": "tiers", "title": "letta 三级记忆", "domain": "tiers", "capability": "tiers.enabled"},
-    {"key": "worldbook", "title": "世界书 / Lorebook", "domain": "worldbook", "capability": "worldbook.enabled"},
+    {
+        "key": "worldbook",
+        "title": "世界书 / Lorebook",
+        "domain": "worldbook",
+        "capability": "worldbook.enabled",
+    },
     {"key": "decay", "title": "艾宾浩斯衰减", "domain": "fusion", "capability": "fusion.decay"},
 )
 
@@ -285,7 +315,9 @@ class FusionStatusService:
         if empathy is not None and self._enabled("empathy.enabled"):
             stats = await empathy.stats(hours=24)
             detail["empathy"] = stats
-            detail["hint"] = (detail.get("hint", "") + f" · 共情事件 {stats.get('events', 0)}/24h").strip(" ·")
+            detail["hint"] = (
+                detail.get("hint", "") + f" · 共情事件 {stats.get('events', 0)}/24h"
+            ).strip(" ·")
             status = "on"
         if status == "off":
             detail.setdefault("hint", "人格与共情均未启用")
@@ -366,7 +398,7 @@ class FusionStatusService:
         for spec in FUSION_MODULES:
             enabled = bool(caps.get(spec["capability"], False))
             service = self._service(spec["key"]) or self._service(
-                {"introspection": "forge"}.get(spec["key"], spec["key"])
+                {"introspection": "forge", "latrace": "tkg"}.get(spec["key"], spec["key"])
             )
             row: dict[str, Any] = {
                 "key": spec["key"],
@@ -381,7 +413,7 @@ class FusionStatusService:
                 row.update({"status": "degraded", "detail": "模块未装配"})
             elif enabled and service is not None:
                 try:
-                    stats = await self._module_stats(spec["key"], service)
+                    stats = await self._module_stats(service)
                     row["stats"] = stats
                     row["detail"] = self._describe(spec["key"], stats)
                     if row["key"] == "latrace" and not stats.get("nodes"):
@@ -403,9 +435,7 @@ class FusionStatusService:
         }
 
     @staticmethod
-    async def _module_stats(key: str, service: Any) -> dict[str, Any]:
-        if key == "forge" and hasattr(service, "stats"):
-            return await service.stats()
+    async def _module_stats(service: Any) -> dict[str, Any]:
         if hasattr(service, "stats"):
             return await service.stats()
         return {}
@@ -432,5 +462,7 @@ class FusionStatusService:
         if key == "worldbook":
             return f"条目 {stats.get('entries', 0)} 条 · 命中累计 {stats.get('hits', 0)} 次"
         if key == "decay":
-            return f"活跃记忆 {stats.get('memories', 0)} · 平均重要度 {stats.get('avg_importance', 0)}"
+            return (
+                f"活跃记忆 {stats.get('memories', 0)} · 平均重要度 {stats.get('avg_importance', 0)}"
+            )
         return ""

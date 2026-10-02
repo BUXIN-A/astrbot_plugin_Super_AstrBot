@@ -129,9 +129,6 @@ class RestoreOutcome:
     tables: dict[str, int] = field(default_factory=dict)
     """表名 → 实际写入行数。"""
 
-    skipped_tables: dict[str, int] = field(default_factory=dict)
-    """表名 → 包内行数（因本版本无此列/无此表而整体跳过时记录，便于排查）。"""
-
     manifest: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     legacy_views: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -422,7 +419,16 @@ class BackupService:
                 if not isinstance(rows, list):
                     outcome.notes.append(f"{table}：结构不是数组，已跳过")
                     continue
+                if any(not isinstance(item, Mapping) for item in rows):
+                    # 含非对象行时整表跳过：否则空 payload 会在 replace 模式下先清空该表。
+                    outcome.notes.append(f"{table}：存在非对象行，已整表跳过（不参与覆盖）")
+                    continue
                 payloads[table] = decode_rows(rows)
+
+            if selected == RESTORE_REPLACE:
+                for table in self._tables:
+                    if table not in payloads:
+                        outcome.notes.append(f"{table}：备份包内缺失，覆盖模式下保持当前数据不变")
 
             if not payloads:
                 return outcome

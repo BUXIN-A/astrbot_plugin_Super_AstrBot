@@ -52,6 +52,7 @@ HELP_TEXT = """Super_AstrBot 指令（别名 /superastrbot，等价于 /sab）�
 
 可视化管理：AstrBot 插件详情页 → Pages → dashboard（「现实桥」页）"""
 
+
 class CommandService:
     """指令门面。"""
 
@@ -420,9 +421,7 @@ class CommandService:
             title = str(row.get("title") or "").strip()
             content = str(row.get("content") or "").replace("\n", " ")
             prefix = f"【{entry_type_label(row.get('entry_type'))}】"
-            lines.append(
-                f"- #{row.get('id')} {prefix}{date} {title}｜{content[:100]}"
-            )
+            lines.append(f"- #{row.get('id')} {prefix}{date} {title}｜{content[:100]}")
         return "\n".join(lines)
 
     async def review_list(self, view: EventView) -> str:
@@ -689,9 +688,7 @@ class CommandService:
             "why": lambda: self.why(view, " ".join(args)),
             "remember": lambda: self.remember(view, " ".join(args)),
             # 现实桥：动作名携带文本类型
-            "journal": lambda: self.journal_add(
-                view, " ".join(args), entry_type=ENTRY_TYPE_WEEKLY
-            ),
+            "journal": lambda: self.journal_add(view, " ".join(args), entry_type=ENTRY_TYPE_WEEKLY),
             "diary": lambda: self.journal_add(view, " ".join(args), entry_type=ENTRY_TYPE_DIARY),
             "essay": lambda: self.journal_add(view, " ".join(args), entry_type=ENTRY_TYPE_ESSAY),
             "journal-edit": lambda: self.journal_edit(view, args),

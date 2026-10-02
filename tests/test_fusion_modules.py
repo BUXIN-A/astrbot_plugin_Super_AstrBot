@@ -53,7 +53,9 @@ from .test_web_api_contract import _data, _use_request, web_api
 UMO = "aiocqhttp:GroupMessage:1081062427"
 
 
-def _event(text: str, *, sender_id: str = "3186805099", sender_name: str = "阿柯", umo: str = UMO) -> EventView:
+def _event(
+    text: str, *, sender_id: str = "3186805099", sender_name: str = "阿柯", umo: str = UMO
+) -> EventView:
     return EventView(
         umo=umo,
         platform="aiocqhttp",
@@ -79,7 +81,14 @@ class _CollectInjector:
 
     def inject(self, target: Any, blocks: list[str], *, prefer: str = "auto") -> Any:
         self.blocks.extend(blocks)
-        return SimpleNamespace(applied=True, reason="", method="extra", chars=len("".join(blocks)), parts=len(blocks), fallback=False)
+        return SimpleNamespace(
+            applied=True,
+            reason="",
+            method="extra",
+            chars=len("".join(blocks)),
+            parts=len(blocks),
+            fallback=False,
+        )
 
 
 @pytest.fixture()
@@ -107,7 +116,11 @@ def _schema_config() -> Any:
         out: dict[str, Any] = {}
         for key, field in node.items():
             if isinstance(field, dict) and "type" in field:
-                out[key] = defaults(field.get("items") or {}) if field["type"] == "object" else field.get("default")
+                out[key] = (
+                    defaults(field.get("items") or {})
+                    if field["type"] == "object"
+                    else field.get("default")
+                )
         return out
 
     class _Config(dict):
@@ -116,6 +129,7 @@ def _schema_config() -> Any:
             self.schema = schema_ref
 
     return _Config(defaults(schema), schema)
+
 
 # --------------------------------------------------------------------------- #
 # 1. 纯函数口径                                                            #
@@ -154,8 +168,18 @@ def test_tier_classification_rules() -> None:
     assert classify_tier({"importance": 0.9, "status": "active", "access_count": 0}) == "core"
     assert classify_tier({"importance": 0.2, "status": "active"}) == "archive"
     assert classify_tier({"importance": 0.5, "status": "archived"}) == "archive"
-    assert classify_tier({"importance": 0.5, "status": "active", "confidence": 0.9, "kind": "preference"}) == "recall"
-    assert classify_tier({"importance": 0.65, "status": "active", "confidence": 0.9, "kind": "preference"}) == "core"
+    assert (
+        classify_tier(
+            {"importance": 0.5, "status": "active", "confidence": 0.9, "kind": "preference"}
+        )
+        == "recall"
+    )
+    assert (
+        classify_tier(
+            {"importance": 0.65, "status": "active", "confidence": 0.9, "kind": "preference"}
+        )
+        == "core"
+    )
     assert classify_tier({"importance": 0.5, "status": "active", "access_count": 5}) == "core"
 
 
@@ -219,7 +243,10 @@ def test_forge_model_validation_and_merge() -> None:
     # 越界数值被钳制；未知枚举回退默认
     merged = profile.merge(
         {
-            "core_traits": {"big_five": {"openness": 5, "agreeableness": -3}, "defense_mechanism": "不存在"},
+            "core_traits": {
+                "big_five": {"openness": 5, "agreeableness": -3},
+                "defense_mechanism": "不存在",
+            },
             "speaking_style": {"sentence_length": "weird"},
             "dynamic_state": {"energy_level": 999, "relationship_map": {"u1": {"intimacy": 30}}},
             "interests": ["猫", "技术"],
@@ -303,10 +330,12 @@ def test_forge_introspection_is_off_by_default(db: Database) -> None:
 
 
 def test_evolution_observe_writes_timeline_and_series(db: Database) -> None:
-    async def _scenario() -> tuple[dict[str, Any] | None, list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    async def _scenario() -> tuple[
+        dict[str, Any] | None, list[dict[str, Any]], dict[str, Any], dict[str, Any]
+    ]:
         forge = ForgeService(db=db, clock=lambda: 1_000_000.0)
         service = TraitEvolutionService(db=db, forge=forge, clock=lambda: 1_000_000.0)
-        result = await service.observe(_event("项目终于上线了，太爽了哈哈"), "恭喜！")
+        result = await service.observe(_event("项目终于上线并通过验收了，太爽了哈哈"), "恭喜！")
         timeline = await service.timeline(limit=10)
         drift = await service.drift_series(days=30)
         radar = await service.radar()
@@ -324,9 +353,18 @@ def test_worldbook_match_scope_and_budget(db: Database) -> None:
     async def _scenario() -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
         injector = _CollectInjector()
         service = WorldbookService(db=db, injector=injector, max_injected_chars=60)
-        await service.add({"triggers": "实验室", "content": "某校 AI 实验室，阿柯所在", "priority": 9})
+        await service.add(
+            {"triggers": "实验室", "content": "某校 AI 实验室，阿柯所在", "priority": 9}
+        )
         await service.add({"triggers": ["猫舍"], "content": "小满家三只布偶猫", "priority": 3})
-        await service.add({"triggers": ["私密"], "content": "只有阿柯能看到", "scope_type": "user", "scope_id": "u-x"})
+        await service.add(
+            {
+                "triggers": ["私密"],
+                "content": "只有阿柯能看到",
+                "scope_type": "user",
+                "scope_id": "u-x",
+            }
+        )
         await service.add({"content": "手动条目不自动注入"})
 
         hits = await service.match(_event("今天在实验室待了一天"))
@@ -341,12 +379,16 @@ def test_worldbook_match_scope_and_budget(db: Database) -> None:
     assert injected["applied"] is True and injected["ids"]
 
 
-
 def test_worldbook_scope_user_matches_owner(db: Database) -> None:
     async def _scenario() -> list[dict[str, Any]]:
         service = WorldbookService(db=db)
         await service.add(
-            {"triggers": ["私密"], "content": "只有阿柯能看到", "scope_type": "user", "scope_id": "3186805099"}
+            {
+                "triggers": ["私密"],
+                "content": "只有阿柯能看到",
+                "scope_type": "user",
+                "scope_id": "3186805099",
+            }
         )
         return await service.match(_event("说个私密的事"))
 
@@ -429,20 +471,34 @@ def test_tkg_ingest_snapshot_provenance_and_expand(db: Database) -> None:
         def extract(self, content: str) -> list[str]:
             return [token for token in ("阿柯", "考研", "论文", "猫") if token in content]
 
-    async def _scenario() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    async def _scenario() -> tuple[
+        dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any]
+    ]:
         service = TemporalGraphService(db=db, extractor=_Extractor(), clock=lambda: 1_000_000.0)
         await service.ingest_memory(
-            memory_id=1, content="阿柯在准备考研", scope_type="user", scope_id="3186805099",
-            sender_id="3186805099", created_at=1_000_000.0,
+            memory_id=1,
+            content="阿柯在准备考研",
+            scope_type="user",
+            scope_id="3186805099",
+            sender_id="3186805099",
+            created_at=1_000_000.0,
         )
         await service.ingest_memory(
-            memory_id=2, content="阿柯的论文和考研冲突", scope_type="user", scope_id="3186805099",
-            sender_id="3186805099", created_at=1_000_100.0,
+            memory_id=2,
+            content="阿柯的论文和考研冲突",
+            scope_type="user",
+            scope_id="3186805099",
+            sender_id="3186805099",
+            created_at=1_000_100.0,
         )
         # 重复入库不应重复计数（重建幂等）
         await service.ingest_memory(
-            memory_id=1, content="阿柯在准备考研", scope_type="user", scope_id="3186805099",
-            sender_id="3186805099", created_at=1_000_000.0,
+            memory_id=1,
+            content="阿柯在准备考研",
+            scope_type="user",
+            scope_id="3186805099",
+            sender_id="3186805099",
+            created_at=1_000_000.0,
         )
         snapshot = await service.snapshot()
         provenance = await service.provenance(memory_ids=[1])
@@ -501,7 +557,11 @@ def test_decay_write_back_is_gated(db: Database) -> None:
 
 def test_tiers_overview_counts(db: Database) -> None:
     async def _scenario() -> dict[str, Any]:
-        for importance, status, access in ((0.9, "active", 1), (0.5, "active", 0), (0.1, "active", 0)):
+        for importance, status, access in (
+            (0.9, "active", 1),
+            (0.5, "active", 0),
+            (0.1, "active", 0),
+        ):
             await db.execute(
                 "INSERT INTO memories(scope_type, scope_id, kind, content, importance, confidence, source, tags,"
                 " created_at, updated_at, last_access_at, access_count, status) VALUES"
@@ -517,7 +577,9 @@ def test_tiers_overview_counts(db: Database) -> None:
 
 
 def test_callback_queue_lifecycle(db: Database) -> None:
-    async def _scenario() -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    async def _scenario() -> tuple[
+        dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any]
+    ]:
         now = [1_000_000.0]
         service = CallbackQueueService(db=db, clock=lambda: now[0])
         added = await service.add({"umo": UMO, "content": "答辩完问问进展", "due_in_hours": 1})
@@ -635,7 +697,9 @@ def test_llm_request_injects_worldbook_empathy_and_persona(tmp_path: Path) -> No
             )
             from .test_app_integration import FakeEvent
 
-            await app.on_llm_request(FakeEvent("今天在实验室待到很晚，论文答辩没过，好难过"), request)
+            await app.on_llm_request(
+                FakeEvent("今天在实验室待到很晚，论文答辩没过，好难过"), request
+            )
             blob = "\n".join(str(part) for part in request.extra_user_content_parts)
             if not blob.strip():
                 blob = str(getattr(request, "system_prompt", ""))
@@ -664,7 +728,9 @@ def test_new_panel_routes_are_served(tmp_path: Path) -> None:
 
             _use_request(body={"core_traits": {"mbti": "ENFP-T"}}, method="POST")
             updated = _data(await web_api._forge_update(app)())
-            results["forge_update"] = updated.get("snapshot", {}).get("profile", {}).get("core_traits", {}).get("mbti")
+            results["forge_update"] = (
+                updated.get("snapshot", {}).get("profile", {}).get("core_traits", {}).get("mbti")
+            )
 
             _use_request(query={})
             results["evolution"] = "radar" in _data(await web_api._evolution(app)())
@@ -672,7 +738,10 @@ def test_new_panel_routes_are_served(tmp_path: Path) -> None:
             _use_request(query={})
             results["members"] = "members" in _data(await web_api._members(app)())
 
-            _use_request(body={"action": "save", "sender_id": "u-1", "tone": "温柔倾听", "topics": ["猫"]}, method="POST")
+            _use_request(
+                body={"action": "save", "sender_id": "u-1", "tone": "温柔倾听", "topics": ["猫"]},
+                method="POST",
+            )
             saved = _data(await web_api._member_strategy(app)())
             results["strategy_save"] = saved.get("ok")
 
@@ -685,7 +754,9 @@ def test_new_panel_routes_are_served(tmp_path: Path) -> None:
             entry_id = added.get("id")
             _use_request(query={})
             results["worldbook"] = len(_data(await web_api._worldbook(app)()).get("items") or [])
-            _use_request(body={"id": entry_id, "content": "某校 AI 实验室（已更新）"}, method="POST")
+            _use_request(
+                body={"id": entry_id, "content": "某校 AI 实验室（已更新）"}, method="POST"
+            )
             results["worldbook_update"] = _data(await web_api._worldbook_update(app)()).get("ok")
             _use_request(body={"id": entry_id}, method="POST")
             results["worldbook_del"] = _data(await web_api._worldbook_del(app)()).get("ok")
@@ -695,18 +766,23 @@ def test_new_panel_routes_are_served(tmp_path: Path) -> None:
             _use_request(query={})
             results["empathy_log"] = "items" in _data(await web_api._empathy_log(app)())
 
-            _use_request(body={"action": "add", "umo": UMO, "content": "记得问进展", "due_in_hours": 2}, method="POST")
+            _use_request(
+                body={"action": "add", "umo": UMO, "content": "记得问进展", "due_in_hours": 2},
+                method="POST",
+            )
             queued = _data(await web_api._proactive_queue(app)())
             results["queue_add"] = queued.get("ok")
             _use_request(query={})
-            results["queue_list"] = ("items" in _data(await web_api._proactive_queue(app)()))
+            results["queue_list"] = "items" in _data(await web_api._proactive_queue(app)())
             _use_request(query={})
             results["schedule"] = "config" in _data(await web_api._proactive_schedule(app)())
             _use_request(query={})
             results["queue_log"] = "items" in _data(await web_api._proactive_log(app)())
 
             _use_request(query={})
-            results["backends"] = len(_data(await web_api._memory_backends(app)()).get("backends") or [])
+            results["backends"] = len(
+                _data(await web_api._memory_backends(app)()).get("backends") or []
+            )
             _use_request(query={})
             results["tiers"] = len(_data(await web_api._memory_tiers(app)()).get("tiers") or [])
             _use_request(query={})
@@ -723,9 +799,13 @@ def test_new_panel_routes_are_served(tmp_path: Path) -> None:
             results["graph_timeline"] = "items" in _data(await web_api._graph_timeline(app)())
 
             _use_request(query={})
-            results["pipeline"] = len(_data(await web_api._fusion_pipeline(app)()).get("stages") or [])
+            results["pipeline"] = len(
+                _data(await web_api._fusion_pipeline(app)()).get("stages") or []
+            )
             _use_request(query={})
-            results["fusion_health"] = len(_data(await web_api._fusion_health(app)()).get("items") or [])
+            results["fusion_health"] = len(
+                _data(await web_api._fusion_health(app)()).get("items") or []
+            )
             _use_request(query={})
             results["group_context"] = "enabled" in _data(await web_api._group_context(app)())
 
@@ -777,7 +857,9 @@ def test_legacy_routes_still_served(tmp_path: Path) -> None:
             _use_request(query={})
             observed = _data(await web_api._identity_observe(app)())
             return {
-                "identities": "observations" in identities or "rows" in identities or isinstance(identities, dict),
+                "identities": "observations" in identities
+                or "rows" in identities
+                or isinstance(identities, dict),
                 "search": "items" in search,
                 "memories": "items" in memories,
                 "identity_observe": isinstance(observed, dict),
@@ -807,6 +889,7 @@ def test_shutdown_leaves_no_services(tmp_path: Path) -> None:
     result = run_async(_scenario())
     assert all(value is None for key, value in result.items() if key != "ready")
     assert result["ready"] is False
+
 
 def test_decay_write_back_requires_capability(tmp_path: Path) -> None:
     """写回重要度受「艾宾浩斯衰减接管」能力双重约束：能力关 → 设置开了也不写。"""

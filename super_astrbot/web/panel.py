@@ -80,7 +80,7 @@ async def recall(app: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
         record = _memory_item(item)
         chain = provenance.get(item.id) or {}
         record["provenance"] = chain
-        record["match"] = _match_summary(item, result)
+        record["match"] = _match_summary(item)
         rows.append(record)
 
     filtered_out = 0
@@ -130,7 +130,7 @@ def _memory_item(item: Any) -> dict[str, Any]:
     }
 
 
-def _match_summary(item: Any, result: Any) -> str:
+def _match_summary(item: Any) -> str:
     breakdown = dict(getattr(item, "score_breakdown", {}) or {})
     if not breakdown:
         return "关键词（未指定会话时无打分构成）"
@@ -547,7 +547,6 @@ async def affinity_set(app: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
         updated_at=now,
     )
     return {"ok": True, "message": "好感度已更新", "score": score}
-
 
 
 __all__ = [

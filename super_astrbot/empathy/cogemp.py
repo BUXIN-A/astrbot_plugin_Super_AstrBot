@@ -25,7 +25,19 @@ _ALL_STAGES = (STAGE_IDENTIFY, STAGE_UNDERSTAND, STAGE_EMPATHIZE)
 # --------------------------------------------------------------------------- #
 
 EMOTION_LEXICON: dict[str, tuple[str, ...]] = {
-    "开心": ("开心", "高兴", "快乐", "兴奋", "太好了", "爽", "哈哈", "嘿嘿", "笑死", "满足", "幸福"),
+    "开心": (
+        "开心",
+        "高兴",
+        "快乐",
+        "兴奋",
+        "太好了",
+        "爽",
+        "哈哈",
+        "嘿嘿",
+        "笑死",
+        "满足",
+        "幸福",
+    ),
     "难过": ("难过", "伤心", "想哭", "哭了", "低落", "沮丧", "心碎", "失落", "emo", "破防"),
     "焦虑": ("焦虑", "紧张", "慌", "担心", "害怕", "恐惧", "不安", "压力", "来不及", "赶不上"),
     "愤怒": ("生气", "愤怒", "气死", "烦死", "恼火", "火大", "离谱", "怎么能", "受不了了"),
@@ -58,8 +70,33 @@ _NEGATION_PREFIX = ("不", "没", "别", "无", "毫无")
 
 # 原因线索词：把「因为什么情绪」落到可解释的话题域，而不是编造细节。
 CAUSE_CUES: dict[str, tuple[str, ...]] = {
-    "学业": ("考试", "论文", "答辩", "毕业", "考研", "保研", "成绩", "挂科", "导师", "作业", "期末"),
-    "工作": ("工作", "上班", "加班", "项目", "上线", "需求", "老板", "同事", "裁员", "面试", "绩效", "汇报"),
+    "学业": (
+        "考试",
+        "论文",
+        "答辩",
+        "毕业",
+        "考研",
+        "保研",
+        "成绩",
+        "挂科",
+        "导师",
+        "作业",
+        "期末",
+    ),
+    "工作": (
+        "工作",
+        "上班",
+        "加班",
+        "项目",
+        "上线",
+        "需求",
+        "老板",
+        "同事",
+        "裁员",
+        "面试",
+        "绩效",
+        "汇报",
+    ),
     "关系": ("吵架", "分手", "前任", "朋友", "喜欢的人", "表白", "家里人", "父母", "对象", "冷战"),
     "健康": ("生病", "发烧", "住院", "失眠", "头疼", "胃", "体检", "阳了", "感冒"),
     "金钱": ("没钱", "穷", "房租", "花呗", "房贷", "工资", "借钱", "花超"),
@@ -169,13 +206,12 @@ def understand(text: str, hit: EmotionHit | None = None) -> list[str]:
         return []
     if hit is not None and hit.polarity == "positive":
         positive_cues = ("考上", "通过", "过了", "拿到", "赢了", "升职", "脱单", "满分", "录取")
-        domains = [
-            domain
-            for domain, words in CAUSE_CUES.items()
-            if any(word in source for word in words)
-        ]
-        if any(cue in source for cue in positive_cues) and not domains:
+        # 正面情绪只在确有正向线索词时才解释原因，避免把「高兴」硬套成学业/工作压力源
+        if not any(cue in source for cue in positive_cues):
             return []
+        domains = [
+            domain for domain, words in CAUSE_CUES.items() if any(word in source for word in words)
+        ]
         return domains[:3]
     domains = [
         domain for domain, words in CAUSE_CUES.items() if any(word in source for word in words)
@@ -186,7 +222,11 @@ def understand(text: str, hit: EmotionHit | None = None) -> list[str]:
 _TONE_BANDS: tuple[tuple[float, str, str], ...] = (
     (0.34, "克制陪伴", "语气保持平稳，先接住情绪，再给一个可执行的小建议；不要过度抒情。"),
     (0.67, "温和共情", "先明确说出你理解的感受与处境，再自然过渡到回应内容；允许温和的关心。"),
-    (1.01, "深度陪伴", "把倾听放在第一位：先复述对方的处境与情绪、给出接纳，暂缓给建议；句子放短、放慢。"),
+    (
+        1.01,
+        "深度陪伴",
+        "把倾听放在第一位：先复述对方的处境与情绪、给出接纳，暂缓给建议；句子放短、放慢。",
+    ),
 )
 
 _EMOTION_HINTS: dict[str, str] = {
@@ -248,6 +288,8 @@ def plan(
     stages: Sequence[str] = _ALL_STAGES,
 ) -> EmpathyPlan | None:
     """跑完整三阶段；低于强度门槛时返回带 ``skipped_reason`` 的计划（便于日志）。"""
+    if STAGE_IDENTIFY not in stages:
+        return None
     hit = identify(text)
     if hit is None:
         return None

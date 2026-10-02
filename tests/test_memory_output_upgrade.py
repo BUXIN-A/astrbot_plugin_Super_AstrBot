@@ -34,26 +34,24 @@ DAY = 86400.0
 
 
 def test_extract_json_entries_handles_think_block() -> None:
-    text = "<think>先想一下</think>[{\"content\": \"甲\", \"kind\": \"fact\"}]"
+    text = '<think>先想一下</think>[{"content": "甲", "kind": "fact"}]'
     assert len(extract_json_entries(text)) == 1
 
 
 def test_extract_json_entries_handles_trailing_comma_and_cn_quotes() -> None:
-    text = "[{\"content\": “乙”, \"kind\": \"fact\"},]"
+    text = '[{"content": “乙”, "kind": "fact"},]'
     assert extract_json_entries(text)[0]["content"] == "乙"
 
 
 def test_extract_json_entries_handles_jsonl() -> None:
-    text = "{\"content\": \"甲\", \"kind\": \"fact\"}\n{\"content\": \"乙\", \"kind\": \"fact\"}"
+    text = '{"content": "甲", "kind": "fact"}\n{"content": "乙", "kind": "fact"}'
     assert len(extract_json_entries(text)) == 2
 
 
 def test_extract_json_entries_handles_single_object_with_array_field() -> None:
     """回归：单个对象内含数组字段（如 tags）时，数组探测会命中内层数组，
     不能因此短路返回空——整合/审核要求的「单个 JSON 对象」就是这种形状。"""
-    text = (
-        '{"content":"合并后的摘要","kind":"insight","importance":0.6,"tags":["近况"]}'
-    )
+    text = '{"content":"合并后的摘要","kind":"insight","importance":0.6,"tags":["近况"]}'
     entries = extract_json_entries(text)
     assert len(entries) == 1
     assert entries[0]["content"] == "合并后的摘要"
@@ -429,7 +427,9 @@ def test_memory_body_renders_episode_as_paragraph_block() -> None:
         source="reflection",
         created_at=1_700_000_000.0,
     )
-    fact = MemoryItem(id=2, kind="fact", content="用户偏好清晨跑步", source="manual", created_at=0.0)
+    fact = MemoryItem(
+        id=2, kind="fact", content="用户偏好清晨跑步", source="manual", created_at=0.0
+    )
     body = build_memory_body([episode, fact], max_chars=2000)
     assert "【" in body and "｜反思】" in body, "叙事块应有日期头"
     assert "\n我就安静地陪在群里。" in body, "叙事正文的换行应保留"

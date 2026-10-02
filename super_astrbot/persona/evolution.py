@@ -123,8 +123,32 @@ AXIS_LABELS: dict[str, str] = {
 # 经验分类关键词（中文；命中即给置信度，多命中加权）
 _EXPERIENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "conflict": ("吵架", "争执", "针对", "对立", "吵起来", "顶回去", "不爽", "翻脸", "掰扯"),
-    "vulnerability": ("其实我", "说点心里话", "不敢说", "怕被", "第一次说", "只能跟你", "倾诉", "绷不住"),
-    "success": ("搞定", "通过", "拿到", "赢了", "成功", "过了", "上岸", "完成", "达标", "入职", "上线", "做完", "解决了", "通关"),
+    "vulnerability": (
+        "其实我",
+        "说点心里话",
+        "不敢说",
+        "怕被",
+        "第一次说",
+        "只能跟你",
+        "倾诉",
+        "绷不住",
+    ),
+    "success": (
+        "搞定",
+        "通过",
+        "拿到",
+        "赢了",
+        "成功",
+        "过了",
+        "上岸",
+        "完成",
+        "达标",
+        "入职",
+        "上线",
+        "做完",
+        "解决了",
+        "通关",
+    ),
     "rejection": ("被拒", "没要我", "不要我", "落选", "被刷", "没通过", "被退货"),
     "connection": ("一起", "约", "陪你", "同道", "同好", "加好友", "组队", "带带我"),
     "betrayal": ("背叛", "背刺", "坑我", "出卖", "背后说", "翻旧账", "骗我"),
@@ -148,8 +172,25 @@ _DISSONANCE_PAIRS: tuple[tuple[str, str], ...] = (
     ("humor", "loss"),
 )
 
-_POSITIVE = {"success", "connection", "discovery", "humor", "triumph", "forgiveness", "inspiration", "gratitude"}
-_NEGATIVE = {"conflict", "vulnerability", "rejection", "betrayal", "loss", "humiliation", "loneliness"}
+_POSITIVE = {
+    "success",
+    "connection",
+    "discovery",
+    "humor",
+    "triumph",
+    "forgiveness",
+    "inspiration",
+    "gratitude",
+}
+_NEGATIVE = {
+    "conflict",
+    "vulnerability",
+    "rejection",
+    "betrayal",
+    "loss",
+    "humiliation",
+    "loneliness",
+}
 
 
 @dataclass(frozen=True)
@@ -248,14 +289,12 @@ class TraitEvolutionService:
         db: Any | None = None,
         forge: Any | None = None,
         min_confidence: float = 0.45,
-        keep_events: int = 2000,
         clock: Callable[[], float] | None = None,
         logger: Any | None = None,
     ) -> None:
         self._db = db
         self._forge = forge
         self._min_confidence = float(min_confidence)
-        self._keep_events = int(keep_events)
         self._clock = clock or time.time
         self._logger = logger
 
@@ -268,7 +307,7 @@ class TraitEvolutionService:
             return None
         text = str(getattr(view, "text", "") or "")
         verdict = classify_experience(text, reply)
-        if verdict.experience == "neutral" or verdict.confidence < self._min_confidence:
+        if verdict.experience == "neutral" or verdict.confidence <= self._min_confidence:
             return None
         milestone = bool(verdict.dissonance) or verdict.confidence >= 0.9
         deltas = compute_deltas(verdict, milestone=milestone)
@@ -306,11 +345,12 @@ class TraitEvolutionService:
             parts.append(f"原文「{text}」")
         return "｜".join(part for part in parts if part)
 
-    async def _record_milestone(self, deltas: Mapping[str, float], verdict: ExperienceVerdict) -> None:
-        """里程碑与漂移共用 persona_events，这里不重复写入——仅调整事件类型。
+    async def _record_milestone(
+        self, deltas: Mapping[str, float], verdict: ExperienceVerdict
+    ) -> None:
+        """在 ``persona_events`` 额外写一条 ``kind='milestone'`` 摘要，供时间线区分。
 
-        说明：``forge.apply_shift`` 已把 shift 事件写入 ``persona_events``；
-        里程碑的额外语义通过 ``kind='milestone'`` 再写一条轻量摘要，供时间线区分。
+        ``forge.apply_shift`` 已把 shift 事件写入 ``persona_events``；这里只补里程碑语义。
         """
         if self._db is None:
             return
@@ -340,7 +380,9 @@ class TraitEvolutionService:
     # 查询：时间线 / 漂移曲线 / 雷达
     # ------------------------------------------------------------------ #
 
-    async def timeline(self, *, limit: int = 30, kinds: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    async def timeline(
+        self, *, limit: int = 30, kinds: Sequence[str] | None = None
+    ) -> list[dict[str, Any]]:
         if self._db is None:
             return []
         cap = max(1, min(200, int(limit)))
@@ -409,7 +451,9 @@ class TraitEvolutionService:
         values["assertiveness"] = round(
             values["extraversion"] * 0.6 + values["conscientiousness"] * 0.4, 4
         )
-        values["humor_inclination"] = round(values["extraversion"] * 0.5 + values["openness"] * 0.5, 4)
+        values["humor_inclination"] = round(
+            values["extraversion"] * 0.5 + values["openness"] * 0.5, 4
+        )
         values["interest_breadth"] = round(min(1.0, len(profile.interests) / 6.0), 4)
         return {
             "axes": list(AXIS_LABELS.keys()),

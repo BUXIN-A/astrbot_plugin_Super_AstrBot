@@ -194,14 +194,16 @@ class WorldbookService:
         text = str(getattr(view, "text", "") or "")
         if not text.strip():
             return []
-        rows = await self._db.query(
-            "SELECT * FROM worldbook_entries WHERE enabled=1"
-            " ORDER BY priority DESC, updated_at DESC LIMIT ?",
-            (self._max_entries,),
-        )
-        lowered = text.lower()
         sender_id = str(getattr(view, "sender_id", "") or "")
         umo = str(getattr(view, "umo", "") or "")
+        rows = await self._db.query(
+            "SELECT * FROM worldbook_entries WHERE enabled=1 AND ("
+            " scope_type=? OR (scope_type=? AND scope_id=?)"
+            " OR (scope_type=? AND scope_id=?))"
+            " ORDER BY priority DESC, updated_at DESC LIMIT ?",
+            (SCOPE_GLOBAL, SCOPE_USER, sender_id, SCOPE_SESSION, umo, self._max_entries),
+        )
+        lowered = text.lower()
         hits: list[dict[str, Any]] = []
         budget = self._max_injected_chars
         for row in rows:
@@ -278,9 +280,7 @@ class WorldbookService:
         enabled = await self._db.scalar(
             "SELECT COUNT(*) FROM worldbook_entries WHERE enabled=1", (), 0
         )
-        hits = await self._db.scalar(
-            "SELECT COALESCE(SUM(hits), 0) FROM worldbook_entries", (), 0
-        )
+        hits = await self._db.scalar("SELECT COALESCE(SUM(hits), 0) FROM worldbook_entries", (), 0)
         return {
             "entries": int(entries or 0),
             "enabled": int(enabled or 0),

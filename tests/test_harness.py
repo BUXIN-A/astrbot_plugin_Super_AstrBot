@@ -252,4 +252,3 @@ def test_to_event_view_ignores_callable_sender_fields() -> None:
     assert view.sender_id == "u-5"
     assert view.sender_name == ""
     assert view.display_user == "u-5"
-

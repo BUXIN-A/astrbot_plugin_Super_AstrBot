@@ -100,8 +100,10 @@ def _raw_sender(event: Any) -> Any:
     而 ``message_obj.sender`` 可能只有昵称甚至为空，因此这里再兜一层。
     """
     message_obj = getattr(event, "message_obj", None)
-    raw = message_obj.get("raw_message") if isinstance(message_obj, dict) else getattr(
-        message_obj, "raw_message", None
+    raw = (
+        message_obj.get("raw_message")
+        if isinstance(message_obj, dict)
+        else getattr(message_obj, "raw_message", None)
     )
     return raw.get("sender") if isinstance(raw, dict) else getattr(raw, "sender", None)
 

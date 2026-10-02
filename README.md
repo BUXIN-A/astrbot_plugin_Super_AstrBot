@@ -550,7 +550,7 @@ git clone https://github.com/BUXIN-A/astrbot_plugin_Super_AstrBot.git
 | 时序图谱 | `memory/tkg.py` | 节点 / 边带 `first_seen`·`last_seen`·`valid_from`·`valid_to` 与证据链；抽取复用图谱域确定性抽取；重复入库幂等；超容量淘汰最久未活跃 |
 | 三级记忆 | `memory/tiers.py` | 只读派生：核心（重要度 ≥0.75 或访问 ≥3）/ 归档（<0.35 或已归档）/ 其余为召回；不改写记忆 |
 | 世界书 | `persona/worldbook.py` | 命中 = 触发词出现在**当前消息**；作用域 global / user / session；按优先级取用并受字符预算约束；触发词留空＝手动条目 |
-| 衰减 | `memory/decay.py` | `R=exp(-Δt/S)`，强度按重要度 / 置信度 / 访问次数派生；写回重要度默认关闭（幂等，只更新 `active` 记忆，不删除任何数据） |
+| 衰减 | `memory/decay.py` | `R=exp(-Δt/S)`，强度按重要度 / 置信度 / 访问次数派生；写回重要度默认关闭且**非严格幂等**（`importance` 既是输入也是输出），只更新 `active` 记忆，不删除任何数据 |
 | 回访队列 | `proactive/queue.py` | 到期由调度器投递（复用宿主 `send_message`），失败重试 3 次转「已跳过」 |
 
 ### 注入顺序与边界标记

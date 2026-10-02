@@ -190,13 +190,6 @@ class TierService:
         weight = {TIER_CORE: 0, TIER_RECALL: 1, TIER_ARCHIVE: 2}
         return sorted(items, key=lambda item: weight.get(classify(item), 1))
 
-    def _debug(self, message: str, *args: Any) -> None:
-        if self._logger is not None:
-            try:
-                self._logger.debug(message, *args)
-            except Exception:  # noqa: BLE001
-                pass
-
 
 __all__ = [
     "ARCHIVE_IMPORTANCE",

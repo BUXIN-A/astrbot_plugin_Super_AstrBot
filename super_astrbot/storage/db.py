@@ -195,9 +195,7 @@ class Database:
 
     async def table_names(self) -> list[str]:
         """当前库里的普通表（不含 FTS 虚拟表及其影子表、SQLite 内部表）。"""
-        rows = await self.query(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
+        rows = await self.query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         return [
             str(row["name"])
             for row in rows
@@ -212,11 +210,29 @@ class Database:
         rows = await self.query(f"PRAGMA table_info({table})")
         return [str(row["name"]) for row in rows]
 
-    async def dump_table(self, table: str, *, limit: int = 200_000) -> list[dict[str, Any]]:
-        """整表导出为普通字典列表（字段一字不改，恢复时按原样写回）。"""
+    async def dump_table(self, table: str, *, batch: int = 5000) -> list[dict[str, Any]]:
+        """整表导出为普通字典列表（字段一字不改，恢复时按原样写回）。
+
+        按 ``rowid`` keyset 分批读完整表：既避免大表单条 ``SELECT`` 撑爆内存，
+        也避免 ``LIMIT`` 造成的静默截断（截断后配合 replace 恢复会丢失数据）。
+        """
         self._require_table_name(table)
-        rows = await self.query(f"SELECT * FROM {table} LIMIT ?", (int(limit),))
-        return [{key: row[key] for key in row.keys()} for row in rows]
+        step = max(1, int(batch))
+        exported: list[dict[str, Any]] = []
+        last_rowid = 0
+        while True:
+            rows = await self.query(
+                f"SELECT rowid AS __rowid, * FROM {table} WHERE rowid > ? ORDER BY rowid LIMIT ?",
+                (last_rowid, step),
+            )
+            if not rows:
+                break
+            for row in rows:
+                exported.append({key: row[key] for key in row.keys() if key != "__rowid"})
+            last_rowid = int(rows[-1]["__rowid"])
+            if len(rows) < step:
+                break
+        return exported
 
     async def count_rows(self, table: str) -> int:
         """表内行数（恢复前估算「将删除多少行」用）。"""

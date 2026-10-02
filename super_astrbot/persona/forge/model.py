@@ -184,9 +184,7 @@ class SpeakingStyle:
             sentence_length=str(data.get("sentence_length") or "short"),
             vocabulary_level=str(data.get("vocabulary_level") or "casual"),
             punctuation_habit=str(data.get("punctuation_habit") or "minimal"),
-            emoji_frequency=str(
-                data.get("emoji_frequency") or emoji.get("frequency") or "none"
-            ),
+            emoji_frequency=str(data.get("emoji_frequency") or emoji.get("frequency") or "none"),
             emoji_preferred=list(data.get("emoji_preferred") or emoji.get("preferred") or []),
             emoji_avoided=list(data.get("emoji_avoided") or emoji.get("avoided") or []),
             catchphrases=list(data.get("catchphrases") or []),
@@ -271,9 +269,10 @@ class DynamicState:
                 relationships[str(key)] = RelationshipInfo.from_dict(
                     value if isinstance(value, Mapping) else {}
                 )
+        raw_energy = data.get("energy_level")
         return cls(
             current_mood=str(data.get("current_mood") or "平静"),
-            energy_level=data.get("energy_level") or 60,
+            energy_level=60 if raw_energy is None else raw_energy,
             relationship_map=relationships,
         )
 
@@ -301,7 +300,10 @@ class PersonalityProfile:
             "social_goals": list(self.social_goals),
             "long_term_goals": list(self.long_term_goals),
             "style_examples": [
-                {"context": str(item.get("context") or ""), "response": str(item.get("response") or "")}
+                {
+                    "context": str(item.get("context") or ""),
+                    "response": str(item.get("response") or ""),
+                }
                 for item in self.style_examples[:10]
             ],
         }
@@ -330,7 +332,14 @@ class PersonalityProfile:
         """用面板提交的补丁合并出新画像（缺失层沿用现值，不整体替换）。"""
         merged = copy.deepcopy(self.to_dict())
         if isinstance(patch.get("core_traits"), Mapping):
-            merged["core_traits"].update(patch["core_traits"])
+            traits_patch = dict(patch["core_traits"])
+            big_five = traits_patch.pop("big_five", None)
+            merged["core_traits"].update(traits_patch)
+            # big_five 是内层映射：只覆盖提交到的轴，缺失的轴沿用现值
+            if isinstance(big_five, Mapping):
+                current_big = dict(merged["core_traits"].get("big_five") or {})
+                current_big.update(big_five)
+                merged["core_traits"]["big_five"] = current_big
         if isinstance(patch.get("speaking_style"), Mapping):
             merged["speaking_style"].update(patch["speaking_style"])
         if isinstance(patch.get("dynamic_state"), Mapping):

@@ -96,7 +96,9 @@ def test_add_keeps_user_title(tmp_path: Path) -> None:
     async def _run() -> dict:
         stack = await build_stack(tmp_path)
         try:
-            result = await stack.journal.add(_scope(), "内容", title="自定义标题", entry_type="essay")
+            result = await stack.journal.add(
+                _scope(), "内容", title="自定义标题", entry_type="essay"
+            )
             return await stack.journals_repo.get(int(result["journal_id"]))
         finally:
             await stack.close()
@@ -149,7 +151,9 @@ def test_update_changes_title_and_type(tmp_path: Path) -> None:
             await stack.close()
 
     data = asyncio.run(_run())
-    assert data["kept"]["title"] == _SAMPLE_TITLE and data["kept"]["entry_type"] == ENTRY_TYPE_WEEKLY
+    assert (
+        data["kept"]["title"] == _SAMPLE_TITLE and data["kept"]["entry_type"] == ENTRY_TYPE_WEEKLY
+    )
     assert data["changed"]["title"] == "新的标题"
     assert data["changed"]["entry_type"] == ENTRY_TYPE_ESSAY
     assert data["restored"]["title"] == _SAMPLE_TITLE

@@ -95,7 +95,7 @@ def test_only_documented_filters_are_used() -> None:
 def test_web_routes_are_prefixed_and_endpoints_are_relative() -> None:
     api = _read(WEB_API)
     # route 必须带插件名前缀（文档：注册时带名字，Page 端调用时不带）
-    assert "for prefix in (f\"/{PLUGIN_NAME}\", f\"/{PLUGIN_NAME_LOWER}\"):" in api
+    assert 'for prefix in (f"/{PLUGIN_NAME}", f"/{PLUGIN_NAME_LOWER}"):' in api
     assert 'context.register_web_api(f"{prefix}/{endpoint}", handler, methods, desc)' in api
 
     endpoints = re.findall(r'\("([^"]+)",\s*_[a-z_]+\(app\),\s*\[', api)

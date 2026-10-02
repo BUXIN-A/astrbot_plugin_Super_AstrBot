@@ -15,6 +15,8 @@ PROMPT_JARGON_SYSTEM = "jargon_system"
 PROMPT_JARGON_TEMPLATE = "jargon_template"
 PROMPT_AFFINITY_SYSTEM = "affinity_system"
 PROMPT_AFFINITY_TEMPLATE = "affinity_template"
+PROMPT_FORGE_SYSTEM = "forge_system"
+PROMPT_FORGE_MONOLOGUE = "forge_monologue"
 """配置键：与 `_conf_schema.json` 的 `prompts.*` 一一对应。"""
 
 _JARGON_REQUIRED = ("candidates",)
@@ -64,6 +66,18 @@ _AFFINITY_TEMPLATE = """请判断下面这句话对对话对象的态度类型�
 
 注意：否定表达要按整体语义判断，例如「不难过」属于 neutral，「你太笨了」属于 insult。
 """
+
+FORGE_SYSTEM = (
+    "你在为角色扮演生成内心独白。只输出独白本身，不要解释、不要分点、不要出现心理学术语或数值。"
+)
+
+_FORGE_MONOLOGUE_REQUIRED = ("big_five", "message")
+
+_FORGE_MONOLOGUE = """你的大五人格：{big_five}；价值观：{values}；防御机制：{defense}。
+你当前能量 {energy}/100，心情「{mood}」。
+{speaker}对你说：{message}
+
+规则：神经质高时多想风险与不安；宜人性低时内心可以吐槽；外向性高时想法更主动；能量低时想法更短更消极。只输出这一段的内心独白。"""
 
 _MIN_MEANING = 2
 _MAX_MEANING = 60
@@ -122,6 +136,20 @@ PROMPT_SPECS: tuple[PromptSpec, ...] = (
         default=_AFFINITY_TEMPLATE,
         required=_AFFINITY_REQUIRED,
     ),
+    PromptSpec(
+        key=PROMPT_FORGE_SYSTEM,
+        title="三层人格内省系统提示词",
+        group="拟人化学习",
+        default=FORGE_SYSTEM,
+        hint="约束内心独白的输出形式；留空即用内置默认。",
+    ),
+    PromptSpec(
+        key=PROMPT_FORGE_MONOLOGUE,
+        title="三层人格内省模板",
+        group="拟人化学习",
+        default=_FORGE_MONOLOGUE,
+        required=_FORGE_MONOLOGUE_REQUIRED,
+    ),
 )
 
 
@@ -164,6 +192,42 @@ def build_affinity_prompt(message: str, *, overrides: PromptOverrides | None = N
             PROMPT_AFFINITY_TEMPLATE, _AFFINITY_TEMPLATE, required=_AFFINITY_REQUIRED
         )
     return render(template, message=truncate(message, 300))
+
+
+def forge_system(overrides: PromptOverrides | None = None) -> str:
+    """三层人格内省系统提示词：页面优先、内置兜底。"""
+    if overrides is None:
+        return FORGE_SYSTEM
+    return overrides.get(PROMPT_FORGE_SYSTEM, FORGE_SYSTEM)
+
+
+def build_forge_monologue_prompt(
+    *,
+    big_five: str,
+    values: str,
+    defense: str,
+    energy: int,
+    mood: str,
+    speaker: str,
+    message: str,
+    overrides: PromptOverrides | None = None,
+) -> str:
+    """渲染三层人格内省模板；缺失必填占位符时回退内置默认。"""
+    template = _FORGE_MONOLOGUE
+    if overrides is not None:
+        template = overrides.get(
+            PROMPT_FORGE_MONOLOGUE, _FORGE_MONOLOGUE, required=_FORGE_MONOLOGUE_REQUIRED
+        )
+    return render(
+        template,
+        big_five=big_five,
+        values=values,
+        defense=defense,
+        energy=energy,
+        mood=mood,
+        speaker=speaker,
+        message=message,
+    )
 
 
 def parse_jargon_insights(

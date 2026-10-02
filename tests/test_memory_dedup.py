@@ -39,9 +39,7 @@ def test_content_fingerprint_is_stable_across_naming() -> None:
 
 def test_similar_enough_accepts_prefix_overlap() -> None:
     """前缀重叠的近义改写应判为同一事实（2-gram 的设计目标）。"""
-    assert similar_enough(
-        "用户本地文献库搭建尚未完成", "用户本地文献库搭建（未完成），仍在建设中"
-    )
+    assert similar_enough("用户本地文献库搭建尚未完成", "用户本地文献库搭建（未完成），仍在建设中")
 
 
 def test_similar_enough_rejects_distinct_facts() -> None:

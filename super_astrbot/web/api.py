@@ -70,7 +70,12 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("journals/update", _journal_update(app), ["POST"], "面板编辑现实记录"),
         ("journals/delete", _journal_delete(app), ["POST"], "面板删除现实记录"),
         ("journals/export", _journal_export(app), ["GET"], "导出全部现实记录 JSON"),
-        ("journals/export-selected", _journal_export_selected(app), ["POST"], "按勾选导出所选记录 JSON"),
+        (
+            "journals/export-selected",
+            _journal_export_selected(app),
+            ["POST"],
+            "按勾选导出所选记录 JSON",
+        ),
         ("journals/import", _journal_import(app), ["POST"], "导入现实记录 JSON"),
         ("weeklies", _weeklies(app), ["GET"], "每周总结列表"),
         ("weeklies/update", _weekly_update(app), ["POST"], "面板编辑每周总结"),
@@ -90,7 +95,12 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("scopes/migrate", _scopes_migrate(app), ["POST"], "作用域迁移（支持预览）"),
         ("backup/export", _backup_export(app), ["GET", "POST"], "导出备份包（配置+数据库+数据）"),
         ("backup/import", _backup_import(app), ["POST"], "从备份包恢复（merge/replace）"),
-        ("backup/replace-database", _backup_replace_database(app), ["POST"], "整库恢复（用包内快照替换数据库）"),
+        (
+            "backup/replace-database",
+            _backup_replace_database(app),
+            ["POST"],
+            "整库恢复（用包内快照替换数据库）",
+        ),
         ("backup/list", _backup_list(app), ["GET"], "历史备份包列表"),
         ("persona", _persona(app), ["GET"], "拟人化学习数据（风格 / 黑话 / 好感度）"),
         ("graph", _graph(app), ["GET"], "知识图谱子图（可视化用）"),
@@ -103,16 +113,36 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("persona/forge", _forge(app), ["GET"], "PersonaForge 三层人格画像"),
         ("persona/forge-update", _forge_update(app), ["POST"], "保存 / 重置三层人格"),
         ("persona/evolution", _evolution(app), ["GET"], "人格演化轨迹（漂移 / 雷达 / 里程碑）"),
-        ("persona/evolution-reset", _evolution_reset(app), ["POST"], "清空演化事件（不影响当前画像）"),
+        (
+            "persona/evolution-reset",
+            _evolution_reset(app),
+            ["POST"],
+            "清空演化事件（不影响当前画像）",
+        ),
         ("persona/affinity", _affinity(app), ["GET", "POST"], "按群友好感度（读取 / 人工校准）"),
         ("members/list", _members(app), ["GET"], "群友档案（身份 + 记忆 + 好感度 + 策略）"),
-        ("members/strategy", _member_strategy(app), ["GET", "POST"], "群友策略（读 / 写 / 删 / 蒸馏）"),
+        (
+            "members/strategy",
+            _member_strategy(app),
+            ["GET", "POST"],
+            "群友策略（读 / 写 / 删 / 蒸馏）",
+        ),
         ("identity/observe", _identity_observe(app), ["GET"], "身份稳定性观测（身份诊断）"),
         ("identity/migrate", _identity_migrate(app), ["POST"], "作用域迁移（先预览后执行）"),
         ("memory/list", _memory_list(app), ["GET"], "记忆列表（带发送者与层级）"),
-        ("memory/recall", _memory_recall(app), ["GET", "POST"], "混合召回 + 时序图谱证据链 + 图扩展"),
+        (
+            "memory/recall",
+            _memory_recall(app),
+            ["GET", "POST"],
+            "混合召回 + 时序图谱证据链 + 图扩展",
+        ),
         ("memory/facets", _memory_facets(app), ["GET"], "记忆页筛选项（发送者清单 / 层级）"),
-        ("memory/backends", _memory_backends(app), ["GET"], "记忆后端状态（本地 / LATRACE / 三级 / 衰减）"),
+        (
+            "memory/backends",
+            _memory_backends(app),
+            ["GET"],
+            "记忆后端状态（本地 / LATRACE / 三级 / 衰减）",
+        ),
         ("memory/tiers", _memory_tiers(app), ["GET"], "letta 三级占比与样本"),
         ("memory/decay", _memory_decay(app), ["GET"], "艾宾浩斯衰减曲线与风险样本"),
         ("memory/worldbook", _worldbook(app), ["GET"], "世界书条目列表"),
@@ -121,8 +151,18 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("memory/worldbook-del", _worldbook_del(app), ["POST"], "删除世界书条目"),
         ("empathy/config", _empathy(app), ["GET", "POST"], "共情管线配置与日志（三阶段 / 温度）"),
         ("empathy/log", _empathy_log(app), ["GET"], "共情事件日志"),
-        ("proactive/schedule", _proactive_schedule(app), ["GET"], "计划轨 / 空闲轨状态（原主动消息）"),
-        ("proactive/queue", _proactive_queue(app), ["GET", "POST"], "回访队列（约定回访 / 前瞻关怀）"),
+        (
+            "proactive/schedule",
+            _proactive_schedule(app),
+            ["GET"],
+            "计划轨 / 空闲轨状态（原主动消息）",
+        ),
+        (
+            "proactive/queue",
+            _proactive_queue(app),
+            ["GET", "POST"],
+            "回访队列（约定回访 / 前瞻关怀）",
+        ),
         ("proactive/log", _proactive_log(app), ["GET"], "回访投递日志"),
         ("group/context", _group_context(app), ["GET"], "群上下文与接管原则"),
         ("fusion/pipeline", _fusion_pipeline(app), ["GET"], "①→⑧ 编排流水线状态"),
@@ -351,20 +391,30 @@ def _config_export(app: Any) -> Handler:
     return handler
 
 
+async def _read_json_upload() -> tuple[Any, Any]:
+    """读取上传的 UTF-8 JSON 文件。
+
+    返回 ``(data, None)``；失败时返回 ``(None, error_response)``，调用方直接返回该错误。
+    """
+    files = await request.files()
+    upload = files.get("file") if isinstance(files, dict) else None
+    if upload is None:
+        return None, error_response("缺少文件字段 file")
+    try:
+        raw = (await upload.read()).decode("utf-8")
+    except UnicodeDecodeError:
+        return None, error_response("文件必须是 UTF-8 编码的 JSON")
+    try:
+        return json.loads(raw), None
+    except ValueError:
+        return None, error_response("JSON 解析失败")
+
+
 def _config_import(app: Any) -> Handler:
     async def handler() -> Any:
-        files = await request.files()
-        upload = files.get("file")
-        if upload is None:
-            return error_response("缺少文件字段 file")
-        try:
-            raw = (await upload.read()).decode("utf-8")
-        except UnicodeDecodeError:
-            return error_response("文件必须是 UTF-8 编码的 JSON")
-        try:
-            data = json.loads(raw)
-        except ValueError:
-            return error_response("JSON 解析失败")
+        data, error = await _read_json_upload()
+        if error is not None:
+            return error
         if isinstance(data, dict) and isinstance(data.get("config"), dict):
             data = data["config"]  # 兼容本插件导出的完整信封
         try:
@@ -398,18 +448,9 @@ def _memories_export(app: Any) -> Handler:
 
 def _memories_import(app: Any) -> Handler:
     async def handler() -> Any:
-        files = await request.files()
-        upload = files.get("file")
-        if upload is None:
-            return error_response("缺少文件字段 file")
-        try:
-            raw = (await upload.read()).decode("utf-8")
-        except UnicodeDecodeError:
-            return error_response("文件必须是 UTF-8 编码的 JSON")
-        try:
-            data = json.loads(raw)
-        except ValueError:
-            return error_response("JSON 解析失败")
+        data, error = await _read_json_upload()
+        if error is not None:
+            return error
         if isinstance(data, dict):
             data = data.get("items")
         if not isinstance(data, list):
@@ -520,18 +561,9 @@ def _journal_export_selected(app: Any) -> Handler:
 
 def _journal_import(app: Any) -> Handler:
     async def handler() -> Any:
-        files = await request.files()
-        upload = files.get("file")
-        if upload is None:
-            return error_response("缺少文件字段 file")
-        try:
-            raw = (await upload.read()).decode("utf-8")
-        except UnicodeDecodeError:
-            return error_response("文件必须是 UTF-8 编码的 JSON")
-        try:
-            data = json.loads(raw)
-        except ValueError:
-            return error_response("JSON 解析失败")
+        data, error = await _read_json_upload()
+        if error is not None:
+            return error
         if isinstance(data, dict):
             data = data.get("items")
         if not isinstance(data, list):
@@ -625,18 +657,9 @@ def _weekly_export(app: Any) -> Handler:
 
 def _weekly_import(app: Any) -> Handler:
     async def handler() -> Any:
-        files = await request.files()
-        upload = files.get("file")
-        if upload is None:
-            return error_response("缺少文件字段 file")
-        try:
-            raw = (await upload.read()).decode("utf-8")
-        except UnicodeDecodeError:
-            return error_response("文件必须是 UTF-8 编码的 JSON")
-        try:
-            data = json.loads(raw)
-        except ValueError:
-            return error_response("JSON 解析失败")
+        data, error = await _read_json_upload()
+        if error is not None:
+            return error
         if isinstance(data, dict):
             data = data.get("items")
         if not isinstance(data, list):
@@ -1363,8 +1386,7 @@ def _backup_export(app: Any) -> Handler:
             return error_response(f"备份包读取失败：{exc}")
         if len(raw) > _INLINE_BACKUP_LIMIT:
             return error_response(
-                f"备份包 {len(raw) / 1048576:.1f}MB 超过内联上限，"
-                f"请直接从服务器取用：{path}"
+                f"备份包 {len(raw) / 1048576:.1f}MB 超过内联上限，请直接从服务器取用：{path}"
             )
         return _ok(
             {

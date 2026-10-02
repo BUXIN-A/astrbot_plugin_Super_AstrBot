@@ -435,7 +435,7 @@ def test_scope_type_roundtrip_in_reflection_rows(tmp_path: Path) -> None:
 
 NARRATIVE_JSON = (
     '{"summary": "这几天群里围绕养猫聊了很多。2026-09-30 buld 问 выбрал哪种猫粮，'
-    '我整理了三个品牌的对比；10-01 他家猫体检正常，大家都松了口气。'
+    "我整理了三个品牌的对比；10-01 他家猫体检正常，大家都松了口气。"
     '语气上他从焦虑到放松，我就安静地陪着聊。",'
     ' "importance": 0.7, "tags": ["养猫"],'
     ' "facts": [{"content": "buld 的猫叫小鉴", "kind": "fact", "importance": 0.6}]}'
@@ -474,7 +474,9 @@ def test_reflection_prompt_includes_previous_block() -> None:
     prompt = build_reflection_prompt("[10-01 10:00] 用户：在吗", max_facts=3)
     assert "<previous_summary>" not in prompt
     prompt_with_prev = build_reflection_prompt(
-        "[10-01 10:00] 用户：在吗", max_facts=3, previous_block="<previous_summary>\n旧叙事\n</previous_summary>\n"
+        "[10-01 10:00] 用户：在吗",
+        max_facts=3,
+        previous_block="<previous_summary>\n旧叙事\n</previous_summary>\n",
     )
     assert "<previous_summary>" in prompt_with_prev
     assert "续写合并" in prompt_with_prev
@@ -493,9 +495,7 @@ def test_reflect_writes_narrative_episode(tmp_path: Path) -> None:
         outcome = await service.reflect(scope)
         rows = await stack.memories.list_by_status([scope], status="active", limit=50)
         episodes = [
-            row
-            for row in rows
-            if row["kind"] == "episode" and row["source"] == "reflection"
+            row for row in rows if row["kind"] == "episode" and row["source"] == "reflection"
         ]
         remaining = await stack.memory.count_buffer(scope)
         await stack.close()

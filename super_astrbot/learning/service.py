@@ -230,9 +230,7 @@ class ReflectionService:
             return ReflectionOutcome(ran=True, reason=reason, log_id=log_id, error=error)
 
         narrative = parse_reflection(text or "", max_facts=self._config.max_facts)
-        if narrative is None or not (
-            str(narrative.get("summary") or "") or narrative.get("facts")
-        ):
+        if narrative is None or not (str(narrative.get("summary") or "") or narrative.get("facts")):
             # 拿不到可用产出（解析失败或模型没写出叙事与事实）时保留原始输出片段，
             # 否则「模型调用成功但写不进记忆」将无从排查。
             self._warn(

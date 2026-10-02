@@ -176,9 +176,7 @@ class MemoryLifecycle:
                 return item.id
         for item in items:
             if similar_enough(draft.content, item.content):
-                await self._memories.update_fields(
-                    item.id, content=draft.content, updated_at=now
-                )
+                await self._memories.update_fields(item.id, content=draft.content, updated_at=now)
                 try:
                     await self.refresh_indexes(item.id, draft.content, now=now)
                 except Exception as exc:

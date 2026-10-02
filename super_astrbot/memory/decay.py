@@ -10,7 +10,7 @@
 - 本模块是**连续**保留率口径，服务于「记忆后端」页的双曲线展示，
   以及可选的「写回重要度」维护（默认关闭，避免与既有打分口径打架）。
 
-合规：不依赖任何外部服务；``apply_retention`` 用一条 SQL 批量推进，
+合规：不依赖任何外部服务；``apply_retention`` 用 ``executemany`` 批量推进，
 在调度器的每日维护里调用（受能力开关 ``fusion.decay`` + 写回开关双重约束）。
 """
 
@@ -31,6 +31,9 @@ DECAY_THRESHOLD_PCT = 20.0
 
 DEFAULT_CURVE_POINTS: tuple[int, ...] = (0, 1, 2, 4, 7, 15, 30, 60)
 """曲线采样点（天）：前密后疏，覆盖艾宾浩斯经典复习间隔。"""
+
+RETENTION_BATCH = 20000
+"""单轮写回处理的最大记忆条数：按 ``id`` 顺序取，避免一次维护加载过多行。"""
 
 
 def retention_pct(elapsed_days: float, strength_days: float) -> float:
@@ -200,8 +203,12 @@ class DecayService:
     async def apply_retention(self) -> dict[str, Any]:
         """把保留率写回 ``memories.importance``（仅当写回开关开启时执行）。
 
-        幂等：保留率由「距上次访问 / 创建」的绝对时长计算，重复执行同值；
-        只更新 ``active`` 记忆，且不做任何删除 / 归档动作。
+        注意：``importance`` 既是 strength 的输入、也是写回的目标，因此下一轮会基于
+        上一轮的写回值再算一次，结果随维护轮次渐进变化，**并非严格幂等**；该列同时
+        参与检索打分权重，属预期内的渐进调整。
+
+        只更新 ``active`` 记忆，且不做任何删除 / 归档动作；按 ``id`` 顺序取前
+        ``RETENTION_BATCH`` 条并用 ``executemany`` 一次提交，避免逐条 await 与不确定子集。
         """
         if self._db is None:
             return {"ok": False, "message": "持久层未就绪"}
@@ -210,9 +217,10 @@ class DecayService:
         now = self._clock()
         rows = await self._db.query(
             "SELECT id, importance, confidence, access_count, created_at, last_access_at"
-            " FROM memories WHERE status='active' LIMIT 20000"
+            " FROM memories WHERE status='active' ORDER BY id LIMIT ?",
+            (RETENTION_BATCH,),
         )
-        updated = 0
+        updates: list[tuple[float, int]] = []
         for row in rows:
             base = float(row["last_access_at"] or row["created_at"] or now)
             elapsed_days = max(0.0, (now - base) / 86400.0)
@@ -224,18 +232,20 @@ class DecayService:
             )
             pct = retention_pct(elapsed_days, strength)
             normalized = max(0.0, min(1.0, pct / DECAY_MAX_PCT))
-            await self._db.execute(
-                "UPDATE memories SET importance=? WHERE id=?", (round(normalized, 4), int(row["id"]))
-            )
-            updated += 1
-        return {"ok": True, "updated": updated, "threshold_pct": self._threshold}
+            updates.append((round(normalized, 4), int(row["id"])))
+        if updates:
+            await self._db.executemany("UPDATE memories SET importance=? WHERE id=?", updates)
+        return {
+            "ok": True,
+            "updated": len(updates),
+            "capped": len(rows) >= RETENTION_BATCH,
+            "threshold_pct": self._threshold,
+        }
 
     async def stats(self) -> dict[str, Any]:
         if self._db is None:
             return {"memories": 0}
-        total = await self._db.scalar(
-            "SELECT COUNT(*) FROM memories WHERE status='active'", (), 0
-        )
+        total = await self._db.scalar("SELECT COUNT(*) FROM memories WHERE status='active'", (), 0)
         avg_importance = await self._db.scalar(
             "SELECT AVG(importance) FROM memories WHERE status='active'", (), 0.0
         )
@@ -245,13 +255,6 @@ class DecayService:
             "strength_days": self._base_strength,
             "write_back": self._write_back,
         }
-
-    def _warn(self, message: str, *args: Any) -> None:
-        if self._logger is not None:
-            try:
-                self._logger.warning(message, *args)
-            except Exception:  # noqa: BLE001
-                pass
 
 
 __all__ = [
