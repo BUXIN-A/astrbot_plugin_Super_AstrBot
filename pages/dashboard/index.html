@@ -91,11 +91,67 @@
 
     <main class="main">
       <header class="topbar">
-        <h1 id="page-title"><span class="title-index" id="page-index">01</span>总览</h1>
+        <button
+          class="btn ghost icon-btn nav-toggle"
+          id="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="nav"
+          data-i18n-aria="action.nav"
+          aria-label="导航"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path
+              d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <div class="topbar-titles">
+          <h1 id="page-title"><span class="title-index" id="page-index">01</span>总览</h1>
+          <div class="page-desc" id="page-desc"></div>
+        </div>
         <div class="app-status-line" id="app-status-line"></div>
+        <button class="topbar-badge" id="tb-pending" type="button" data-goto="style-samples" hidden></button>
         <div class="topbar-actions">
-          <button class="btn ghost" id="btn-theme" data-i18n="action.theme">主题</button>
-          <button class="btn ghost" id="btn-refresh" data-i18n="action.refresh">刷新</button>
+          <button
+            class="btn ghost icon-btn"
+            id="btn-theme"
+            type="button"
+            data-i18n-aria="action.theme"
+            aria-label="主题"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                d="M8 1.6a6.4 6.4 0 1 0 6.4 6.4A5 5 0 0 1 8 1.6Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            class="btn ghost icon-btn"
+            id="btn-refresh"
+            type="button"
+            data-i18n-aria="action.refresh"
+            aria-label="刷新"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                d="M13.2 8a5.2 5.2 0 1 1-1.7-3.8M13.2 2.2v3.4H9.8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -976,6 +1032,9 @@
       </div>
     </main>
   </div>
+
+  <!-- 窄屏侧栏抽屉的遮罩：点击即收起导航（仅 ≤980px 生效） -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
 
   <div class="toast-region" id="toasts"></div>
 

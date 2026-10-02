@@ -205,6 +205,27 @@ const LOCAL_I18N = {
     "domain.maibot": "MaiBot 增强",
     "action.refresh": "刷新",
     "action.theme": "主题",
+    "action.nav": "导航",
+    "badge.pending": "待审",
+    "desc.overview": "一屏看清运行状态、能力开关与最近写入",
+    "desc.features": "逐项开启 / 关闭能力，即改即生效",
+    "desc.personaForge": "单人格的三层内核与双过程内省",
+    "desc.personaLegacy": "表达样本、群内用语与好感度明细",
+    "desc.personaEvolution": "人格漂移曲线、里程碑与失谐点",
+    "desc.styleSamples": "群友风格档案、差异化策略与待审队列",
+    "desc.memories": "浏览、筛选与检索长期记忆",
+    "desc.recall": "输入一句话，看召回结果与打分明细",
+    "desc.graph": "记忆知识图谱的实体与关系",
+    "desc.memoryBackend": "三级记忆分层、时序图谱与艾宾浩斯衰减",
+    "desc.worldbook": "触发词命中即注入的事实卡",
+    "desc.empathy": "情绪识别 → 原因理解 → 语气指引",
+    "desc.proactive": "约定回访与前瞻关怀的到期队列",
+    "desc.journals": "周记 / 日记 / 随笔等现实记录",
+    "desc.weeklies": "每周总结的浏览与导入导出",
+    "desc.monitor": "运行指标、趋势图与自动审核状态",
+    "desc.models": "三类模型的分工与当前提供商",
+    "desc.prompts": "逐项覆盖各功能的系统提示词与模板",
+    "desc.system": "框架诊断、后台任务与维护操作",
     "action.query": "查询",
     "action.search": "检索",
     "action.prev": "上一页",
@@ -633,6 +654,27 @@ const LOCAL_I18N = {
     "domain.maibot": "MaiBot boost",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
+    "action.nav": "Navigation",
+    "badge.pending": "Pending",
+    "desc.overview": "Runtime status, capability toggles and recent writes at a glance",
+    "desc.features": "Toggle capabilities item by item; applies immediately",
+    "desc.personaForge": "The single persona's three-layer core and dual-process introspection",
+    "desc.personaLegacy": "Style samples, group jargon and affinity details",
+    "desc.personaEvolution": "Persona drift curve, milestones and dissonance points",
+    "desc.styleSamples": "Member style profiles, per-member strategy and the review queue",
+    "desc.memories": "Browse, filter and search long-term memories",
+    "desc.recall": "Try a query and inspect recall results plus score breakdown",
+    "desc.graph": "Entities and relations of the memory knowledge graph",
+    "desc.memoryBackend": "Three memory tiers, temporal graph and Ebbinghaus decay",
+    "desc.worldbook": "Fact cards injected when a trigger word matches",
+    "desc.empathy": "Emotion detection -> cause understanding -> tone guidance",
+    "desc.proactive": "Due queue of scheduled callbacks and forecasts",
+    "desc.journals": "Journal / diary / notes stored as real-life records",
+    "desc.weeklies": "Browse and import / export weekly summaries",
+    "desc.monitor": "Runtime metrics, trend chart and auto-review status",
+    "desc.models": "The three model roles and the active providers",
+    "desc.prompts": "Override each feature's system prompts and templates",
+    "desc.system": "Framework diagnostics, scheduled jobs and maintenance",
     "action.query": "Query",
     "action.search": "Search",
     "action.prev": "Prev",
@@ -1238,6 +1280,20 @@ async function loadOverview(force = false) {
 
     $("footer-version").textContent = `v${data.plugin_version || "?"} · AstrBot ${framework.version || "?"}`;
     $("footer-ready").textContent = data.ready ? `就绪 · ${data.database || ""}` : "未就绪";
+
+    // 顶栏徽标：待审条数（点击直达待审队列所在页）
+    try {
+      const pending = await apiGet("reviews", { limit: 1 });
+      const badge = $("tb-pending");
+      if (badge) {
+        const count = Number(pending.total || 0);
+        badge.hidden = count <= 0;
+        badge.textContent = `${t("badge.pending")} ${count}`;
+        badge.title = `${t("badge.pending")} ${count}`;
+      }
+    } catch (error) {
+      /* 徽标失败不影响总览 */
+    }
 
     // 能力开关（点击任意一个跳到「功能」页）
     const caps = data.capabilities || {};
@@ -3733,6 +3789,29 @@ const PAGE_TITLES = {
   system: "nav.system",
 };
 
+/** 每个页面的「一句话用途」：显示在顶栏标题下方，降低新用户的摸索成本。 */
+const PAGE_DESCS = {
+  overview: "desc.overview",
+  features: "desc.features",
+  "persona-forge": "desc.personaForge",
+  "persona-legacy": "desc.personaLegacy",
+  "persona-evolution": "desc.personaEvolution",
+  "style-samples": "desc.styleSamples",
+  memories: "desc.memories",
+  recall: "desc.recall",
+  graph: "desc.graph",
+  "memory-backend": "desc.memoryBackend",
+  worldbook: "desc.worldbook",
+  empathy: "desc.empathy",
+  proactive: "desc.proactive",
+  journals: "desc.journals",
+  weeklies: "desc.weeklies",
+  monitor: "desc.monitor",
+  models: "desc.models",
+  prompts: "desc.prompts",
+  system: "desc.system",
+};
+
 const LOADERS = {
   overview: () => loadOverview(true),
   features: () => loadFeatures(),
@@ -3771,7 +3850,10 @@ function navigate(page, options = {}) {
   const target = PAGE_TITLES[page] ? page : "overview";
   state.page = target;
   document.querySelectorAll(".nav-item").forEach((node) => {
-    node.classList.toggle("active", node.dataset.page === target);
+    const active = node.dataset.page === target;
+    node.classList.toggle("active", active);
+    if (active) node.setAttribute("aria-current", "page");
+    else node.removeAttribute("aria-current");
   });
   document.querySelectorAll(".page").forEach((node) => {
     node.classList.toggle("active", node.id === `page-${target}`);
@@ -3783,6 +3865,9 @@ function navigate(page, options = {}) {
   const indexNode = $("page-index");
   if (indexNode) indexNode.textContent = index;
   $("page-title").innerHTML = `<span class="title-index">${index}</span>${esc(t(PAGE_TITLES[target]))}`;
+  const descNode = $("page-desc");
+  if (descNode) descNode.textContent = t(PAGE_DESCS[target] || "", "");
+  setNavOpen(false);
   if (!options.skipLoad && target !== "recall") {
     runLoader(target);
   }
@@ -3809,7 +3894,9 @@ function applyStaticI18n() {
   // 属性型文案（读屏与提示气泡）：纯图标按钮的可见文本是符号，兜底文案留在属性里
   document.querySelectorAll("[data-i18n-aria]").forEach((node) => {
     const key = node.getAttribute("data-i18n-aria");
-    node.setAttribute("aria-label", t(key, node.getAttribute("aria-label") || ""));
+    const text = t(key, node.getAttribute("aria-label") || "");
+    node.setAttribute("aria-label", text);
+    node.setAttribute("title", text);
   });
 }
 
@@ -4399,6 +4486,7 @@ function bindEvents() {
       return;
     }
     closePeekPanel();
+    setNavOpen(false);
   });
 
   window.addEventListener("hashchange", () => {
@@ -4604,6 +4692,40 @@ function revealNavGroup(page) {
   } catch (error) {
     /* 忽略 */
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 窄屏侧栏抽屉                                                            */
+/* ---------------------------------------------------------------------- */
+
+const NAV_MEDIA = "(max-width: 980px)";
+
+/** 打开 / 收起窄屏侧栏抽屉；桌面端调用是安全的空操作。 */
+function setNavOpen(open) {
+  const app = document.querySelector(".app");
+  const toggle = $("nav-toggle");
+  const backdrop = $("sidebar-backdrop");
+  const shouldOpen = Boolean(open) && window.matchMedia(NAV_MEDIA).matches;
+  if (app) app.classList.toggle("nav-open", shouldOpen);
+  if (toggle) toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+  if (backdrop) backdrop.hidden = !shouldOpen;
+  document.body.classList.toggle("nav-locked", shouldOpen);
+}
+
+function bindSidebar() {
+  const toggle = $("nav-toggle");
+  const backdrop = $("sidebar-backdrop");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const app = document.querySelector(".app");
+      setNavOpen(!(app && app.classList.contains("nav-open")));
+    });
+  }
+  if (backdrop) backdrop.addEventListener("click", () => setNavOpen(false));
+  // 视口变宽后立即收起，避免遗留抽屉状态
+  window.addEventListener("resize", () => {
+    if (!window.matchMedia(NAV_MEDIA).matches) setNavOpen(false);
+  });
 }
 
 function bindTabs() {
@@ -5976,6 +6098,7 @@ async function loadGraphTimeline() {
 
 function bindFusionControls() {
   bindNavGroups();
+  bindSidebar();
   bindTabs();
   injectDragHandles();
 
