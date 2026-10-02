@@ -21,10 +21,18 @@ from .astrbot_group import (
 )
 from .astrbot_host import AstrBotHost
 from .astrbot_llm import (
+    EMPATHY_BLOCK_END,
+    EMPATHY_BLOCK_START,
+    FORGE_BLOCK_END,
+    FORGE_BLOCK_START,
+    MEMBERS_BLOCK_END,
+    MEMBERS_BLOCK_START,
     MEMORY_BLOCK_END,
     MEMORY_BLOCK_START,
     PERSONA_BLOCK_END,
     PERSONA_BLOCK_START,
+    WORLDBOOK_BLOCK_END,
+    WORLDBOOK_BLOCK_START,
     AstrBotEmbeddingGateway,
     AstrBotInjector,
     AstrBotLlmGateway,
@@ -121,6 +129,18 @@ class Harness:
     persona_injector: AstrBotInjector
     """拟人化学习专用注入器：使用独立边界标记，与记忆注入互不覆盖。"""
 
+    worldbook_injector: AstrBotInjector
+    """世界书（事实卡）专用注入器。"""
+
+    empathy_injector: AstrBotInjector
+    """共情管线（语气指引）专用注入器。"""
+
+    members_injector: AstrBotInjector
+    """群友档案（差异化策略）专用注入器。"""
+
+    forge_injector: AstrBotInjector
+    """PersonaForge 三层人格专用注入器：与「学习参考」分开，两者都要注入。"""
+
     def describe(self) -> str:
         """一行描述，用于启动日志。"""
         parts = [compat.describe()]
@@ -159,6 +179,31 @@ def create_harness(
         block_end=PERSONA_BLOCK_END,
         label="拟人化学习",
     )
+    # 融合域各自独立标记：``inject`` 会先清掉自己的旧块，共用标记会互相擦除
+    worldbook_injector = AstrBotInjector(
+        host,
+        block_start=WORLDBOOK_BLOCK_START,
+        block_end=WORLDBOOK_BLOCK_END,
+        label="世界书",
+    )
+    empathy_injector = AstrBotInjector(
+        host,
+        block_start=EMPATHY_BLOCK_START,
+        block_end=EMPATHY_BLOCK_END,
+        label="共情管线",
+    )
+    members_injector = AstrBotInjector(
+        host,
+        block_start=MEMBERS_BLOCK_START,
+        block_end=MEMBERS_BLOCK_END,
+        label="群友档案",
+    )
+    forge_injector = AstrBotInjector(
+        host,
+        block_start=FORGE_BLOCK_START,
+        block_end=FORGE_BLOCK_END,
+        label="人格内核",
+    )
     return Harness(
         host=host,
         llm=llm,
@@ -166,4 +211,8 @@ def create_harness(
         rerank=rerank,
         injector=injector,
         persona_injector=persona_injector,
+        worldbook_injector=worldbook_injector,
+        empathy_injector=empathy_injector,
+        members_injector=members_injector,
+        forge_injector=forge_injector,
     )

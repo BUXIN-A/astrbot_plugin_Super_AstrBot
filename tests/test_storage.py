@@ -319,3 +319,36 @@ def test_upgrade_from_v4_database_adds_identity_columns(tmp_path: Path) -> None:
     assert data["row"]["content"] == "历史记忆"
     assert data["row"]["sender_id"] == "" and data["row"]["origin_umo"] == ""
     assert data["observed"][0]["sender_name"] == "谷雨"
+
+
+def test_memory_list_all_page_and_count_without_status_filter(tmp_path: Path) -> None:
+    """``status=""`` 表示不过滤状态（面板「全部」选项）：混合状态都应返回，
+    且在无任何过滤条件时 SQL 不能因空 WHERE 子句而出错。"""
+
+    async def _run() -> tuple[int, int, int, int]:
+        db = Database(tmp_path / "all.db")
+        await db.connect()
+        repo = MemoryRepository(db)
+        for index, status in enumerate(("active", "buffered", "archived")):
+            await repo.insert(
+                scope_type="session",
+                scope_id="s1",
+                kind="fact",
+                content=f"第 {index} 条 {status} 记忆",
+                importance=0.5,
+                confidence=0.8,
+                source="manual",
+                tags=[],
+                status=status,
+                created_at=float(index),
+            )
+        rows = await repo.list_all_page(offset=0, limit=10, status="")
+        total = await repo.count_filtered(status="")
+        active_rows = await repo.list_all_page(offset=0, limit=10, status="active")
+        active_total = await repo.count_filtered(status="active")
+        await db.close()
+        return len(rows), total, len(active_rows), active_total
+
+    all_count, all_total, active_count, active_total = asyncio.run(_run())
+    assert all_count == 3 and all_total == 3, "「全部」应返回混合状态的所有记忆"
+    assert active_count == 1 and active_total == 1, "显式 status 过滤行为不变"

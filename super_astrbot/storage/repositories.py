@@ -308,6 +308,50 @@ class MemoryRepository:
         )
         return [row_to_dict(row) for row in rows]
 
+    async def list_consolidation_candidates(
+        self,
+        *,
+        max_importance: float,
+        created_before: float,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """整合候选：active、重要度低、足够旧；按作用域+时间排序，便于顺序分组。
+
+        排除 journal（周记有独立生命周期）与已整合产物（按 source 排除，避免反复吞并）。
+        字面量与 ``memory.models`` 的常量对应（storage 不反向依赖 memory）。
+        """
+        rows = await self._db.query(
+            "SELECT * FROM memories "
+            "WHERE status = 'active' AND importance <= ? AND created_at <= ? "
+            "AND kind != 'journal' AND source != 'consolidation' "
+            "ORDER BY scope_type ASC, scope_id ASC, created_at ASC "
+            "LIMIT ?",
+            (float(max_importance), float(created_before), int(limit)),
+        )
+        return [row_to_dict(row) for row in rows]
+
+    async def latest_reflection_episode(
+        self,
+        scopes: Sequence[MemoryScope],
+        *,
+        created_after: float,
+    ) -> dict[str, Any] | None:
+        """取最近一条「反思产出的叙事记忆」（叙事续写的基础）。
+
+        字面量对应：kind='episode'、source='reflection'、status='active'。
+        只看 ``created_after`` 之后创建的：太旧的叙事不再续写（另起一条新叙事），
+        避免「一条记忆无限生长」跨度失控。
+        """
+        where, params = _scope_where(scopes)
+        row = await self._db.query_one(
+            f"SELECT * FROM memories "
+            f"WHERE ({where}) AND kind = 'episode' AND source = 'reflection' "
+            f"AND status = 'active' AND created_at >= ? "
+            f"ORDER BY created_at DESC, id DESC LIMIT 1",
+            [*params, float(created_after)],
+        )
+        return None if row is None else row_to_dict(row)
+
     # ------------------------------------------------------------------ #
     # 作用域分布与迁移（跨会话识别用户的核心维护动作）
     # ------------------------------------------------------------------ #
@@ -505,13 +549,24 @@ class MemoryRepository:
         limit: int,
         keyword: str = "",
         status: str = "active",
+        exclude_status: str = "",
         kind: str = "",
         source: str = "",
         sort: str = DEFAULT_MEMORY_SORT,
     ) -> list[dict[str, Any]]:
-        """跨作用域分页（面板总览用），支持按状态/类型/来源/关键词过滤与排序。"""
-        clauses = ["status=?"]
-        params: list[Any] = [status]
+        """跨作用域分页（面板总览用），支持按状态/类型/来源/关键词过滤与排序。
+
+        ``status`` 为空表示不过滤状态；``exclude_status`` 用于反向排除
+        （面板「全部」用它排除对话缓冲，避免原始聊天碎片混进记忆列表）。
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if exclude_status:
+            clauses.append("status != ?")
+            params.append(exclude_status)
         if kind:
             clauses.append("kind=?")
             params.append(kind)
@@ -521,9 +576,10 @@ class MemoryRepository:
         if keyword:
             clauses.append("content LIKE ? ESCAPE '\\'")
             params.append(_like_pattern(keyword))
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend([limit, offset])
         rows = await self._db.query(
-            f"SELECT * FROM memories WHERE {' AND '.join(clauses)}"
+            f"SELECT * FROM memories{where}"
             f" ORDER BY {memory_order_clause(sort)} LIMIT ? OFFSET ?",
             params,
         )
@@ -533,13 +589,20 @@ class MemoryRepository:
         self,
         *,
         status: str = "active",
+        exclude_status: str = "",
         kind: str = "",
         source: str = "",
         keyword: str = "",
     ) -> int:
-        """与 ``list_all_page`` 同条件的总数（面板分页需要）。"""
-        clauses = ["status=?"]
-        params: list[Any] = [status]
+        """与 ``list_all_page`` 同条件的总数（面板分页需要）。``status`` 为空表示不过滤。"""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if exclude_status:
+            clauses.append("status != ?")
+            params.append(exclude_status)
         if kind:
             clauses.append("kind=?")
             params.append(kind)
@@ -549,9 +612,10 @@ class MemoryRepository:
         if keyword:
             clauses.append("content LIKE ? ESCAPE '\\'")
             params.append(_like_pattern(keyword))
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         return int(
             await self._db.scalar(
-                f"SELECT COUNT(*) FROM memories WHERE {' AND '.join(clauses)}",
+                f"SELECT COUNT(*) FROM memories{where}",
                 params,
                 default=0,
             )

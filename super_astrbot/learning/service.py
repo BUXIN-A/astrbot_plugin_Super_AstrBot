@@ -22,10 +22,12 @@ from typing import Any, Sequence
 from ..harness.protocols import LlmGateway
 from ..journal import JournalService
 from ..memory import (
+    KIND_EPISODE,
     KIND_INSIGHT,
     SOURCE_REFLECTION,
     SOURCE_WEEKLY,
     MemoryDraft,
+    MemoryItem,
     MemoryService,
 )
 from ..spec.errors import LlmError, safe_detail
@@ -39,12 +41,31 @@ from .prompts import (
     build_weekly_prompt,
     ensure_kind_valid,
     parse_insights,
+    parse_reflection,
     reflection_system,
     weekly_system,
 )
 
 _TRANSCRIPT_LINE_MAX = 200
 _TRANSCRIPT_TOTAL_MAX = 6000
+
+_NARRATIVE_WINDOW_DAYS = 14.0
+"""叙事续写窗口：只续写这个天数内创建的旧叙事，更早的另起一条新叙事。"""
+
+_PREVIOUS_MAX = 1600
+"""传给模型的旧叙事上限：给合并后的新叙事留出 2000 字以内的空间。"""
+
+
+def _build_previous_block(previous: MemoryItem | None) -> str:
+    """构造续写上下文块；没有可续写的旧叙事时为空串。"""
+    if previous is None or not str(previous.content or "").strip():
+        return ""
+    body = truncate(str(previous.content).strip(), _PREVIOUS_MAX)
+    return (
+        "你在更早时候为同一对象写下的叙事记忆如下（其中记录的事件发生在这段对话之前）：\n\n"
+        f"<previous_summary>\n{body}\n</previous_summary>\n\n"
+        "请把这条旧叙事与下面的新对话**续写合并**为一条更完整的叙事。\n\n"
+    )
 
 
 @dataclass
@@ -187,8 +208,14 @@ class ReflectionService:
             scope_type=scope.scope_type.value, scope_id=scope.scope_id, started_at=moment
         )
         transcript = self._render_transcript(material)
+        previous = await self._memory.latest_reflection_episode(
+            scope, within_days=_NARRATIVE_WINDOW_DAYS, now=moment
+        )
         prompt = build_reflection_prompt(
-            transcript, max_facts=self._config.max_facts, overrides=self._config.prompts
+            transcript,
+            max_facts=self._config.max_facts,
+            previous_block=_build_previous_block(previous),
+            overrides=self._config.prompts,
         )
 
         text, error = await self._invoke(prompt, system=reflection_system(self._config.prompts))
@@ -202,13 +229,22 @@ class ReflectionService:
             )
             return ReflectionOutcome(ran=True, reason=reason, log_id=log_id, error=error)
 
-        insights = parse_insights(text or "", max_facts=self._config.max_facts)
-        return await self._store(
+        narrative = parse_reflection(text or "", max_facts=self._config.max_facts)
+        if narrative is None or not (
+            str(narrative.get("summary") or "") or narrative.get("facts")
+        ):
+            # 拿不到可用产出（解析失败或模型没写出叙事与事实）时保留原始输出片段，
+            # 否则「模型调用成功但写不进记忆」将无从排查。
+            self._warn(
+                "反思产出无法解析，原始输出版本片段：%s",
+                truncate(str(text).replace("\n", " "), 500),
+            )
+        return await self._store_narrative(
             scope,
-            insights,
+            narrative,
+            previous,
             log_id=log_id,
             material_ids=[item.id for item in material],
-            source=SOURCE_REFLECTION,
             reason=reason,
             now=moment,
         )
@@ -239,6 +275,12 @@ class ReflectionService:
             return ReflectionOutcome(ran=True, reason="weekly", log_id=log_id, error=error)
 
         insights = parse_insights(text or "", max_facts=self._config.max_facts)
+        if not insights and (text or "").strip():
+            # 解析失败时保留原始输出片段，否则「模型调用成功但写不进记忆」将无从排查。
+            self._warn(
+                "反思产出无法解析，原始输出版本片段：%s",
+                truncate(str(text).replace("\n", " "), 500),
+            )
         return await self._store(
             scope,
             insights,
@@ -317,8 +359,9 @@ class ReflectionService:
             )
             produced += 1
 
-        # 无论是否审批，缓冲都视为已消费，避免下次重复反思。
-        if material_ids:
+        # 仅在确有产出（写入或转待审）时才消费缓冲：
+        # 0 产出说明模型输出不可解析，此时归档会把原始素材静默丢弃且无法重试。
+        if material_ids and (produced + pending) > 0:
             await self._memory.consume_buffer(list(material_ids), now=now)
 
         await self._reflections.finish(
@@ -329,6 +372,113 @@ class ReflectionService:
             detail=f"reason={reason};pending={pending}",
         )
         self._info("反思完成（%s）：写入 %s 条，待审 %s 条", reason, produced, pending)
+        return ReflectionOutcome(
+            ran=True,
+            reason=reason,
+            produced=produced,
+            pending=pending,
+            log_id=log_id,
+        )
+
+    async def _store_narrative(
+        self,
+        scope: MemoryScope,
+        narrative: dict[str, Any] | None,
+        previous: MemoryItem | None,
+        *,
+        log_id: int,
+        material_ids: Sequence[int],
+        reason: str,
+        now: float,
+    ) -> ReflectionOutcome:
+        """落库叙事反思的产出：1 条第一人称叙事（可续写合并）+ 可选事实条目。
+
+        - summary 命中续写窗口内的旧叙事时**就地更新**该条（ID 与创建时间不变，
+          索引随正文刷新）——同一对象始终只有一条生长中的叙事；
+        - facts 走与事实路径相同的审批/直写流程；
+        - 缓冲消费与事实路径同一约定：确有产出才消费。
+        """
+        produced = 0
+        pending = 0
+        data = narrative or {}
+        summary = str(data.get("summary") or "")
+        facts = list(data.get("facts") or [])
+
+        if summary:
+            if previous is not None:
+                await self._memory.update_content(previous.id, summary, at=now)
+            else:
+                await self._memory.remember(
+                    MemoryDraft(
+                        scope_type=scope.scope_type.value,
+                        scope_id=scope.scope_id,
+                        content=summary,
+                        kind=KIND_EPISODE,
+                        importance=float(data.get("importance") or 0.6),
+                        confidence=0.75,
+                        source=SOURCE_REFLECTION,
+                        tags=list(data.get("tags") or []),
+                    )
+                )
+            produced += 1
+            self._info(
+                "反思叙事（%s）：%s",
+                reason,
+                f"续写合并到记忆 #{previous.id}" if previous is not None else "新建叙事记忆",
+            )
+
+        for insight in facts:
+            payload = {
+                "content": insight["content"],
+                "kind": ensure_kind_valid(insight.get("kind", KIND_INSIGHT)),
+                "importance": float(insight.get("importance") or 0.6),
+                "tags": list(insight.get("tags") or []),
+                "source": SOURCE_REFLECTION,
+                "log_id": log_id,
+            }
+            if self._config.approval_required:
+                await self._reviews.add(
+                    scope_type=scope.scope_type.value,
+                    scope_id=scope.scope_id,
+                    origin=SOURCE_REFLECTION,
+                    payload=payload,
+                    created_at=now,
+                )
+                pending += 1
+                continue
+
+            await self._memory.remember(
+                MemoryDraft(
+                    scope_type=scope.scope_type.value,
+                    scope_id=scope.scope_id,
+                    content=payload["content"],
+                    kind=payload["kind"],
+                    importance=payload["importance"],
+                    confidence=0.75,
+                    source=SOURCE_REFLECTION,
+                    tags=payload["tags"],
+                )
+            )
+            produced += 1
+
+        # 仅在确有产出（写入或转待审）时才消费缓冲；0 产出保留原料等下次重试。
+        if material_ids and (produced + pending) > 0:
+            await self._memory.consume_buffer(list(material_ids), now=now)
+
+        await self._reflections.finish(
+            log_id,
+            finished_at=time.time(),
+            status="ok",
+            produced=produced + pending,
+            detail=f"reason={reason};pending={pending};narrative={1 if summary else 0}",
+        )
+        self._info(
+            "反思完成（%s）：叙事 %s，事实 %s 条，待审 %s 条",
+            reason,
+            "已更新" if summary and previous is not None else ("已写入" if summary else "无"),
+            produced - (1 if summary else 0),
+            pending,
+        )
         return ReflectionOutcome(
             ran=True,
             reason=reason,
@@ -400,3 +550,7 @@ class ReflectionService:
     def _info(self, message: str, *args: Any) -> None:
         if self._logger is not None:
             self._logger.info(message, *args)
+
+    def _warn(self, message: str, *args: Any) -> None:
+        if self._logger is not None:
+            self._logger.warning(message, *args)

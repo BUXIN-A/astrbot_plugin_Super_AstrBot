@@ -54,10 +54,13 @@ class FakeRequest:
         query: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         files: dict[str, Any] | None = None,
+        method: str = "GET",
     ) -> None:
         self.query = FakeQuery(query or {})
         self._body = body
         self._files = files or {}
+        # 融合域路由按 HTTP 方法分派（GET 读 / POST 写），替身必须提供同一面
+        self.method = method
 
     async def json(self, default: Any = None) -> Any:
         return self._body if self._body is not None else default
@@ -104,10 +107,12 @@ def _use_request(
     query: dict[str, Any] | None = None,
     body: dict[str, Any] | None = None,
     files: dict[str, Any] | None = None,
+    method: str = "GET",
 ) -> None:
     _REQUEST.query = FakeQuery(query or {})
     _REQUEST._body = body
     _REQUEST._files = files or {}
+    _REQUEST.method = method
 
 
 def _data(response: dict[str, Any]) -> dict[str, Any]:
@@ -434,3 +439,50 @@ def test_weekly_update_endpoint_edits_memory_row(app: Any) -> None:
     assert data["content"] == "本周用户完成了两轮修复与回归测试"
     assert data["count"] == 1
     assert data["blank"]["status"] == "error"
+
+
+def test_memory_list_status_all_is_unfiltered(app: Any) -> None:
+    """记忆列表：``status=all``（面板「全部」）= 全部正式记忆（排除缓冲原料）；
+    ``status=""`` 为字面不过滤；未知状态保守回退 active。"""
+
+    async def _run() -> dict[str, Any]:
+        await app.start()
+        try:
+            scope = MemoryScope.for_session(UMO)
+            await app._memory_service.remember_text(scope, "正式记忆条目", status="active")
+            await app._memory_service.remember_text(
+                scope, "缓冲记忆条目", status="buffered", kind="episode", importance=0.1
+            )
+
+            _use_request(query={"status": "all", "limit": "10"})
+            all_page = _data(await web_api._memories(app)())
+            _use_request(query={"status": "", "limit": "10"})
+            empty_page = _data(await web_api._memories(app)())
+            _use_request(query={"status": "buffered", "limit": "10"})
+            buffered_page = _data(await web_api._memories(app)())
+            _use_request(query={"status": "active", "limit": "10"})
+            active_page = _data(await web_api._memories(app)())
+            _use_request(query={"status": "不存在的状态", "limit": "10"})
+            unknown_page = _data(await web_api._memories(app)())
+            return {
+                "all": all_page,
+                "empty": empty_page,
+                "buffered": buffered_page,
+                "active": active_page,
+                "unknown": unknown_page,
+            }
+        finally:
+            await app.shutdown()
+
+    data = asyncio.run(_run())
+    assert {row["status"] for row in data["all"]["items"]} == {"active"}, (
+        "「全部」= 全部正式记忆，不应混入缓冲原料"
+    )
+    assert data["all"]["total"] == 1
+    assert data["empty"]["total"] == 2, "空串 status 为字面不过滤"
+    assert {row["status"] for row in data["buffered"]["items"]} == {"buffered"}
+    assert data["buffered"]["total"] == 1, "缓冲原料用「缓冲」筛选显式查看"
+    assert {row["status"] for row in data["active"]["items"]} == {"active"}
+    assert data["active"]["total"] == 1
+    assert data["unknown"]["status"] == "active", "未知状态应保守回退 active"
+    assert {row["status"] for row in data["unknown"]["items"]} == {"active"}

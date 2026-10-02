@@ -30,13 +30,13 @@ from .models import (
     KIND_FACT,
     SOURCE_CAPTURE,
     SOURCE_MANUAL,
+    SOURCE_WEEKLY,
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
     STATUS_BUFFERED,
     STATUS_PENDING,
     MemoryDraft,
     MemoryItem,
-    SOURCE_WEEKLY,
 )
 from .retriever import HybridRetriever, RetrievalResult
 
@@ -224,6 +224,38 @@ class MemoryService:
     async def delete(self, ids: Sequence[int]) -> int:
         return await self._lifecycle.forget(ids)
 
+    async def archive(self, ids: Sequence[int]) -> int:
+        """把若干条记忆归档（不参与检索）。整合后用。
+
+        与 ``consume_buffer`` 的区别：那是「消费反思缓冲」的语义入口，本方法是
+        通用归档；内部同样走 ``MemoryLifecycle.archive``。
+        """
+        if not ids:
+            return 0
+        return await self._lifecycle.archive(list(ids))
+
+    async def consolidation_candidates(
+        self, *, max_importance: float, created_before: float, limit: int = 500
+    ) -> list[MemoryItem]:
+        """整合候选（供 ConsolidationService 使用）。"""
+        rows = await self._memories.list_consolidation_candidates(
+            max_importance=max_importance, created_before=created_before, limit=limit
+        )
+        return [MemoryItem.from_row(row) for row in rows]
+
+    async def latest_reflection_episode(
+        self, scope: MemoryScope, *, within_days: float, now: float | None = None
+    ) -> MemoryItem | None:
+        """取当前作用域（含全局并集）内最近一条反思产出的叙事记忆。
+
+        供反思服务做「叙事续写」：找到就传给模型合并，找不到则新起一条。
+        """
+        moment = now if now is not None else time.time()
+        row = await self._memories.latest_reflection_episode(
+            retrieval_scopes(scope), created_after=moment - max(0.0, within_days) * 86400.0
+        )
+        return None if row is None else MemoryItem.from_row(row)
+
     # ------------------------------------------------------------------ #
     # 检索与注入
     # ------------------------------------------------------------------ #
@@ -330,16 +362,18 @@ class MemoryService:
         limit: int = 20,
         keyword: str = "",
         status: str = STATUS_ACTIVE,
+        exclude_status: str = "",
         kind: str = "",
         source: str = "",
         sort: str = DEFAULT_MEMORY_SORT,
     ) -> list[MemoryItem]:
-        """跨作用域列出记忆（面板总览用）。"""
+        """跨作用域列出记忆（面板总览用）。``exclude_status`` 用于反向排除。"""
         rows = await self._memories.list_all_page(
             offset=offset,
             limit=limit,
             keyword=keyword,
             status=status,
+            exclude_status=exclude_status,
             kind=kind,
             source=source,
             sort=sort,
@@ -350,13 +384,18 @@ class MemoryService:
         self,
         *,
         status: str = STATUS_ACTIVE,
+        exclude_status: str = "",
         kind: str = "",
         source: str = "",
         keyword: str = "",
     ) -> int:
         """与 ``list_all`` 同条件的总数。"""
         return await self._memories.count_filtered(
-            status=status, kind=kind, source=source, keyword=keyword
+            status=status,
+            exclude_status=exclude_status,
+            kind=kind,
+            source=source,
+            keyword=keyword,
         )
 
     async def list_weeklies(

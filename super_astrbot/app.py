@@ -25,7 +25,10 @@ from .backup import (
     normalize_mode,
 )
 from .context import ContextConfig, ContextGovernor
+from .empathy import EmpathyConfig, EmpathyService
+from .fusion import FusionStatusService
 from .graph import GraphConfig, GraphService
+from .graph.extractor import deterministic_extract
 from .group import GroupChatService, GroupConfig
 from .harness import (
     GROUP_FILTER_AVAILABLE,
@@ -50,9 +53,10 @@ from .journal import (
     JournalService,
     normalize_entry_type,
 )
-from .learning import ReflectionConfig, ReflectionService
+from .learning import ConsolidationConfig, ConsolidationService, ReflectionConfig, ReflectionService
 from .loop import ConcurrencyGate, LLMBudget, Scheduler, TaskScope
 from .maibot import MaiBotConfig, MaiBotService
+from .members import MembersConfig, MembersService
 from .memory import (
     AgentMemoryBackend,
     HybridRetriever,
@@ -69,7 +73,10 @@ from .memory import (
     SOURCE_WEEKLY,
     resolve_identity,
 )
+from .memory.decay import DecayService
 from .memory.retriever import GraphRetriever
+from .memory.tiers import TierService
+from .memory.tkg import TemporalGraphService
 from .monitor import (
     METRIC_GRAPH_ENTITIES,
     METRIC_GRAPH_INDEXED,
@@ -105,9 +112,13 @@ from .monitor import (
     record,
 )
 from .persona import PersonaConfig, PersonaService, summarize_reviews
+from .persona.evolution import TraitEvolutionService
+from .persona.forge import ForgeService
+from .persona.worldbook import WorldbookService
 from .proactive import (
     TRACK_DAILY,
     TRACK_IDLE,
+    CallbackQueueService,
     MemoryMaterialSource,
     ProactiveConfig,
     ProactiveService,
@@ -163,6 +174,30 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+class _TkgExtractor:
+    """时序图谱的实体抽取适配器。
+
+    复用图谱域的「确定性抽取」实现与同一套分词参数：两个图（共现图谱 / 时序图谱）
+    看到的实体集合因此一致，用户在面板上对比两者时不会因为抽取器不同而困惑。
+    """
+
+    __slots__ = ("_min_chars", "_max_chars", "_limit")
+
+    def __init__(self, graph_config: Any) -> None:
+        self._min_chars = int(getattr(graph_config, "min_term_chars", 2) or 2)
+        self._max_chars = int(getattr(graph_config, "max_term_chars", 12) or 12)
+        self._limit = int(getattr(graph_config, "max_entities", 12) or 12)
+
+    def extract(self, content: str) -> list[str]:
+        entities, _ = deterministic_extract(
+            content,
+            min_chars=self._min_chars,
+            max_chars=self._max_chars,
+            limit=self._limit,
+        )
+        return list(entities)
+
+
 SCOPE_MIGRATION_TARGETS: tuple[str, ...] = (
     "user",
     "global",
@@ -216,6 +251,10 @@ _JOB_MONITOR_FLUSH = "monitor-flush"
 _MONITOR_FLUSH_INTERVAL = 60.0
 """指标落盘间隔（秒）：内存聚合按小时桶，只需分钟级批量写入。"""
 
+_JOB_MEMORY_CONSOLIDATION = "memory-consolidation"
+_CONSOLIDATION_JOB_TIMEOUT = 300.0
+"""记忆整合任务超时（秒）：一轮最多若干组，每组一次模型调用。"""
+
 
 _STYLE_PAIR_TTL = 300.0
 """风格配对的有效期（秒）：用户消息与 Bot 回复超过该间隔就不再配对成样本。"""
@@ -259,6 +298,7 @@ class SuperAstrBotApp:
         self._memory_config: MemoryConfig | None = None
         self._journal_config: JournalConfig | None = None
         self._reflection_config: ReflectionConfig | None = None
+        self._consolidation_config: ConsolidationConfig | None = None
         self._context_config: ContextConfig | None = None
         self._group_config: GroupConfig | None = None
         self._proactive_config: ProactiveConfig | None = None
@@ -266,6 +306,11 @@ class SuperAstrBotApp:
         self._graph_config: GraphConfig | None = None
         self._review_config: ReviewConfig | None = None
         self._maibot_config: MaiBotConfig | None = None
+        # --- 融合域配置（群聊拟人化：全部为进程内模块） ---
+        self._members_config: MembersConfig | None = None
+        self._empathy_config: EmpathyConfig | None = None
+        self._forge_settings: dict[str, Any] = {}
+        self._fusion_settings: dict[str, Any] = {}
 
         self._memories: MemoryRepository | None = None
         self._journals_repo: JournalRepository | None = None
@@ -282,6 +327,7 @@ class SuperAstrBotApp:
         self._memory_service: MemoryService | None = None
         self._journal_service: JournalService | None = None
         self._reflection_service: ReflectionService | None = None
+        self._consolidation_service: ConsolidationService | None = None
         self._context_governor: ContextGovernor | None = None
         self._group_service: GroupChatService | None = None
         self._proactive_service: ProactiveService | None = None
@@ -290,6 +336,16 @@ class SuperAstrBotApp:
         self._auto_review_service: AutoReviewService | None = None
         self._maibot_service: MaiBotService | None = None
         self._monitor_service: MonitorService | None = None
+        self._members_service: MembersService | None = None
+        self._forge_service: ForgeService | None = None
+        self._evolution_service: TraitEvolutionService | None = None
+        self._empathy_service: EmpathyService | None = None
+        self._worldbook_service: WorldbookService | None = None
+        self._tkg_service: TemporalGraphService | None = None
+        self._decay_service: DecayService | None = None
+        self._tiers_service: TierService | None = None
+        self._queue_service: CallbackQueueService | None = None
+        self._fusion_status: FusionStatusService | None = None
         self._group_gate: Any | None = None
         """当前注入给 harness 的门控闭包（卸载时按对象身份清除，避免误清新实例）。"""
 
@@ -349,6 +405,43 @@ class SuperAstrBotApp:
         return self._reflection_config
 
     @property
+    def group_config(self) -> GroupConfig | None:
+        return self._group_config
+
+    @property
+    def proactive_config(self) -> ProactiveConfig | None:
+        return self._proactive_config
+
+    @property
+    def empathy_config(self) -> EmpathyConfig | None:
+        return self._empathy_config
+
+    @property
+    def members_config(self) -> MembersConfig | None:
+        return self._members_config
+
+    @property
+    def db(self) -> Any:
+        """持久层句柄（面板聚合层需要直接查询统计，不另设仓储）。"""
+        return self._db
+
+    @property
+    def affinity_repo(self) -> Any:
+        return self._affinity_repo
+
+    @property
+    def logger(self) -> Any:
+        return self._logger
+
+    @property
+    def clock(self) -> Any:
+        return self._harness.host.now if self._harness is not None else None
+
+    @property
+    def group_service(self) -> GroupChatService | None:
+        return self._group_service
+
+    @property
     def proactive_service(self) -> ProactiveService | None:
         return self._proactive_service
 
@@ -367,6 +460,48 @@ class SuperAstrBotApp:
     @property
     def monitor_service(self) -> MonitorService | None:
         return self._monitor_service
+
+    # --- 融合域服务（群聊拟人化：全部为进程内模块） ---
+
+    @property
+    def members_service(self) -> MembersService | None:
+        return self._members_service
+
+    @property
+    def forge_service(self) -> ForgeService | None:
+        return self._forge_service
+
+    @property
+    def evolution_service(self) -> TraitEvolutionService | None:
+        return self._evolution_service
+
+    @property
+    def empathy_service(self) -> EmpathyService | None:
+        return self._empathy_service
+
+    @property
+    def worldbook_service(self) -> WorldbookService | None:
+        return self._worldbook_service
+
+    @property
+    def tkg_service(self) -> TemporalGraphService | None:
+        return self._tkg_service
+
+    @property
+    def decay_service(self) -> DecayService | None:
+        return self._decay_service
+
+    @property
+    def tiers_service(self) -> TierService | None:
+        return self._tiers_service
+
+    @property
+    def queue_service(self) -> CallbackQueueService | None:
+        return self._queue_service
+
+    @property
+    def fusion_status(self) -> FusionStatusService | None:
+        return self._fusion_status
 
     @property
     def host(self) -> Any:
@@ -470,6 +605,21 @@ class SuperAstrBotApp:
                 self._warn("运行指标落盘失败：%s", safe_detail(exc))
             self._monitor_service = None
 
+        # 融合域：画像 / 事件 / 队列都是即写即落盘，这里只摘引用，避免卸载后仍被钩子触达
+        for name in (
+            "_members_service",
+            "_forge_service",
+            "_evolution_service",
+            "_empathy_service",
+            "_worldbook_service",
+            "_tkg_service",
+            "_decay_service",
+            "_tiers_service",
+            "_queue_service",
+            "_fusion_status",
+        ):
+            setattr(self, name, None)
+
         if self._db is not None:
             try:
                 await self._db.close()
@@ -490,6 +640,7 @@ class SuperAstrBotApp:
         self._memory_config = MemoryConfig.from_mapping(self._config)
         self._journal_config = JournalConfig.from_mapping(self._config)
         self._reflection_config = ReflectionConfig.from_mapping(self._config)
+        self._consolidation_config = ConsolidationConfig.from_mapping(self._config)
         self._context_config = ContextConfig.from_mapping(self._config)
         self._group_config = GroupConfig.from_mapping(self._config)
         self._proactive_config = ProactiveConfig.from_mapping(self._config)
@@ -497,8 +648,82 @@ class SuperAstrBotApp:
         self._graph_config = GraphConfig.from_mapping(self._config)
         self._review_config = ReviewConfig.from_mapping(self._config)
         self._maibot_config = MaiBotConfig.from_mapping(self._config)
+        self._members_config = MembersConfig.from_mapping(self._config)
+        self._empathy_config = EmpathyConfig.from_mapping(self._config)
+        self._forge_settings = self._read_forge_settings()
+        self._fusion_settings = self._read_fusion_settings()
         self._sync_derived_configs()
         self._bind_prompt_overrides()
+
+    def _read_forge_settings(self) -> dict[str, Any]:
+        """读取 PersonaForge 的数值设置（与能力开关分开，便于热更新时重建服务）。"""
+        from .spec.capabilities import as_int, get_path
+
+        return {
+            "introspection": self._enabled("forge.introspection"),
+            "provider_id": str(get_path(self._config, "forge.introspection_provider_id", "") or ""),
+            "timeout_seconds": as_int(
+                get_path(self._config, "forge.introspection_timeout_seconds", 45), 45, low=5, high=300
+            ),
+            "max_monologue_chars": as_int(
+                get_path(self._config, "forge.max_monologue_chars", 400), 400, low=100, high=2000
+            ),
+            "max_injected_chars": as_int(
+                get_path(self._config, "forge.max_injected_chars", 900), 900, low=200, high=3000
+            ),
+        }
+
+    def _read_fusion_settings(self) -> dict[str, Any]:
+        """融合域数值设置：衰减曲线参数与回访队列容量。"""
+        from .spec.capabilities import as_float, as_int, get_path
+
+        return {
+            "decay_write_back": bool(
+                get_path(self._config, "fusion.decay_write_back", False)
+            ),
+            "decay_strength_days": as_float(
+                get_path(self._config, "fusion.decay_default_strength_days", 7.0),
+                7.0,
+                low=0.5,
+                high=365.0,
+            ),
+            "decay_threshold_pct": as_float(
+                get_path(self._config, "fusion.decay_threshold_pct", 20.0),
+                20.0,
+                low=0.0,
+                high=100.0,
+            ),
+            "queue_max_pending": as_int(
+                get_path(self._config, "fusion.queue_max_pending", 200), 200, low=10, high=2000
+            ),
+            "latrace_max_nodes": as_int(
+                get_path(self._config, "latrace.max_nodes", 4000), 4000, low=200, high=50000
+            ),
+            "latrace_recall_extra": as_int(
+                get_path(self._config, "latrace.recall_extra", 3), 3, low=0, high=10
+            ),
+            "latrace_evidence_limit": as_int(
+                get_path(self._config, "latrace.evidence_limit", 3), 3, low=1, high=10
+            ),
+            "latrace_ingest_on_write": bool(
+                get_path(self._config, "latrace.ingest_on_write", True)
+            ),
+            "worldbook_max_entries": as_int(
+                get_path(self._config, "worldbook.max_entries", 200), 200, low=10, high=2000
+            ),
+            "worldbook_max_chars": as_int(
+                get_path(self._config, "worldbook.max_injected_chars", 600), 600, low=100, high=3000
+            ),
+            "evolution_min_confidence": as_float(
+                get_path(self._config, "evolution.min_confidence", 0.45),
+                0.45,
+                low=0.0,
+                high=1.0,
+            ),
+            "evolution_keep": as_int(
+                get_path(self._config, "evolution.keep_events", 2000), 2000, low=100, high=20000
+            ),
+        }
 
     # ------------------------------------------------------------------ #
     # 提示词定制（面板）
@@ -685,6 +910,8 @@ class SuperAstrBotApp:
             self._journal_config.enabled = self._enabled("journal.enabled")
         if self._reflection_config is not None:
             self._reflection_config.enabled = self._enabled("reflection.enabled")
+        if self._consolidation_config is not None:
+            self._consolidation_config.enabled = self._enabled("consolidation.enabled")
         if self._context_config is not None:
             self._context_config.enabled = self._enabled("context.enabled")
         if self._group_config is not None:
@@ -780,14 +1007,39 @@ class SuperAstrBotApp:
             self._enabled("memory.enabled")
             or self._enabled("persona.style")
             or self._enabled("graph.enabled")
-            or self._enabled("maibot.enabled"),
+            or self._enabled("maibot.enabled")
+            or self._enabled("latrace.enabled")
+            or self._enabled("fusion.decay"),
         )
         self._scheduler.set_enabled("reflection-scan", self._enabled("reflection.enabled"))
         self._scheduler.set_enabled("weekly-insight", self._enabled("journal.weekly_reflection"))
+        self._scheduler.set_enabled("callback-queue", self._enabled("basic.enabled"))
         self._sync_proactive_jobs()
         self._sync_persona_jobs()
         self._sync_review_jobs()
+        self._sync_consolidation_jobs()
         self._sync_monitor_jobs()
+
+    def _sync_consolidation_jobs(self) -> None:
+        """增删记忆整合任务（支持热切换）。"""
+        scheduler = self._scheduler
+        config = self._consolidation_config
+        if scheduler is None or config is None or self._consolidation_service is None:
+            return
+
+        interval = max(600.0, float(config.interval_minutes) * 60.0)
+        job = scheduler.get(_JOB_MEMORY_CONSOLIDATION)
+        if not self._enabled("consolidation.enabled"):
+            scheduler.remove(_JOB_MEMORY_CONSOLIDATION)
+        elif job is None or job.interval != interval:
+            scheduler.every(
+                interval,
+                self._job_consolidation,
+                key=_JOB_MEMORY_CONSOLIDATION,
+                timeout=_CONSOLIDATION_JOB_TIMEOUT,
+            )
+        else:
+            scheduler.set_enabled(_JOB_MEMORY_CONSOLIDATION, True)
 
     def _sync_review_jobs(self) -> None:
         """增删自动审核任务（支持热切换与周期调整）。"""
@@ -917,6 +1169,10 @@ class SuperAstrBotApp:
         self._sync_retriever_routes()
         self._sync_rerank()
         self._sync_scheduler_jobs()
+        # 融合域：开关拨动后重建实例，下一轮对话即刻生效
+        self._forge_settings = self._read_forge_settings()
+        self._fusion_settings = self._read_fusion_settings()
+        self._sync_fusion_services()
 
         changed = {
             key: value
@@ -2152,6 +2408,16 @@ class SuperAstrBotApp:
             return {"ok": False, "message": "写入配置失败（配置结构异常）"}
 
         persisted = await self._persist_config()
+        # 热应用：融合域的数值设置（人格内省开关、衰减强度、共情温度…）在装配时读取，
+        # 这里重建一次服务实例，保证「保存即生效」，与页面文案一致。
+        try:
+            self._forge_settings = self._read_forge_settings()
+            self._fusion_settings = self._read_fusion_settings()
+            if "empathy." in key and self._empathy_config is not None:
+                self._empathy_config = EmpathyConfig.from_mapping(self._config)
+            self._sync_fusion_services()
+        except Exception as exc:  # noqa: BLE001
+            self._warn("设置热应用失败（下次重载后生效）：%s", safe_detail(exc))
         message = "已保存" + ("" if persisted else "；配置落盘失败，重启后可能回到原值")
         return {
             "ok": True,
@@ -2465,6 +2731,13 @@ class SuperAstrBotApp:
             llm=self._harness.llm,
             logger=self._logger,
         )
+        # 记忆整合与反思共用同一个记忆门面与 LLM 网关；默认关闭（见 consolidation.enabled）。
+        self._consolidation_service = ConsolidationService(
+            config=self._consolidation_config,
+            memory_service=self._memory_service,
+            llm=self._harness.llm,
+            logger=self._logger,
+        )
         assert self._context_config is not None
         self._context_governor = ContextGovernor(
             config=self._context_config,
@@ -2529,6 +2802,155 @@ class SuperAstrBotApp:
         # 检索路在能力解析之后统一增删：图谱路依赖上面刚创建的服务实例。
         self._sync_retriever_routes()
         self._sync_group_gate()
+        # 融合域（群友识别 / 三层人格 / 演化 / 共情 / 世界书 / 时序图谱 / 衰减 / 三级 / 回访队列）
+        self._sync_fusion_services()
+
+    def _sync_fusion_services(self) -> None:
+        """装配（或热重建）融合域服务。
+
+        设计取舍：**热切换 = 重建实例**。融合服务不持有不可重建的状态
+        （画像与事件都在 SQLite），重建代价是一次查询；换来的是
+        「开关一拨即刻生效」，不需要为每个子开关写一套就地更新逻辑。
+        依赖持久层缺失时整体降级为未装配（面板显示 degraded）。
+        """
+        if self._db is None or self._harness is None:
+            return
+        settings = self._fusion_settings or {}
+        forge_settings = self._forge_settings or {}
+
+        # 三层人格（PersonaForge）
+        if self._enabled("forge.enabled"):
+            self._forge_service = ForgeService(
+                db=self._db,
+                llm=self._harness.llm,
+                injector=self._harness.forge_injector,
+                introspection=bool(forge_settings.get("introspection")),
+                provider_id=str(forge_settings.get("provider_id") or ""),
+                timeout_seconds=float(forge_settings.get("timeout_seconds") or 45.0),
+                max_monologue_chars=int(forge_settings.get("max_monologue_chars") or 400),
+                max_injected_chars=int(forge_settings.get("max_injected_chars") or 900),
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+        else:
+            self._forge_service = None
+
+        # 人格演化（character-sim 影响向量）
+        if self._enabled("evolution.enabled") and self._forge_service is not None:
+            from .spec.capabilities import as_float, get_path
+
+            self._evolution_service = TraitEvolutionService(
+                db=self._db,
+                forge=self._forge_service,
+                min_confidence=as_float(
+                    get_path(self._config, "evolution.min_confidence", 0.45), 0.45, low=0.0, high=1.0
+                ),
+                keep_events=int(settings.get("keep_events") or 2000),
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+        else:
+            self._evolution_service = None
+
+        # 共情管线（CogEmp 三阶段）
+        if self._enabled("empathy.enabled") and self._empathy_config is not None:
+            self._empathy_service = EmpathyService(
+                config=self._empathy_config,
+                db=self._db,
+                injector=self._harness.empathy_injector,
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+        else:
+            self._empathy_service = None
+
+        # 群友识别（身份聚合 + 差异化策略）
+        if self._enabled("members.enabled") and self._members_config is not None:
+            self._members_service = MembersService(
+                config=self._members_config,
+                db=self._db,
+                identities=self._identities_repo,
+                data_dir=self._data_dir,
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+        else:
+            self._members_service = None
+
+        # 世界书（AMBRACE Lorebook）
+        if self._enabled("worldbook.enabled"):
+            self._worldbook_service = WorldbookService(
+                db=self._db,
+                injector=self._harness.worldbook_injector,
+                max_entries=int(settings.get("worldbook_max_entries") or 200),
+                max_injected_chars=int(settings.get("worldbook_max_chars") or 600),
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+        else:
+            self._worldbook_service = None
+
+        # 时序图谱（LATRACE 进程内重写）：抽取器复用图谱域的确定性抽取配置
+        if self._enabled("latrace.enabled") and self._graph_config is not None:
+            self._tkg_service = TemporalGraphService(
+                db=self._db,
+                memories=self._memories,
+                extractor=_TkgExtractor(self._graph_config),
+                max_nodes=int(settings.get("latrace_max_nodes") or 4000),
+                recall_extra=int(settings.get("latrace_recall_extra") or 3),
+                evidence_limit=int(settings.get("latrace_evidence_limit") or 3),
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+        else:
+            self._tkg_service = None
+
+        # 艾宾浩斯衰减
+        if self._enabled("memory.enabled"):
+            self._decay_service = DecayService(
+                db=self._db,
+                base_strength_days=float(settings.get("decay_strength_days") or 7.0),
+                threshold_pct=float(settings.get("decay_threshold_pct") or 20.0),
+                write_back=bool(settings.get("decay_write_back")) and self._enabled("fusion.decay"),
+                clock=self._harness.host.now,
+                logger=self._logger,
+            )
+            self._tiers_service = TierService(
+                db=self._db, clock=self._harness.host.now, logger=self._logger
+            )
+        else:
+            self._decay_service = None
+            self._tiers_service = None
+
+        # 回访队列（约定回访 + 前瞻关怀）
+        self._queue_service = CallbackQueueService(
+            db=self._db,
+            max_pending=int(settings.get("queue_max_pending") or 200),
+            clock=self._harness.host.now,
+            logger=self._logger,
+        )
+
+        # 融合状态聚合（编排流水线 / 记忆后端 / 模块健康）
+        self._fusion_status = FusionStatusService(
+            services={
+                "members": self._members_service,
+                "forge": self._forge_service,
+                "evolution": self._evolution_service,
+                "empathy": self._empathy_service,
+                "worldbook": self._worldbook_service,
+                "tkg": self._tkg_service,
+                "decay": self._decay_service,
+                "tiers": self._tiers_service,
+                "queue": self._queue_service,
+                "memory": self._memory_service,
+                "graph": self._graph_service,
+                "auto_review": self._auto_review_service,
+            },
+            capabilities=lambda: dict(self._effective_capabilities),
+            db=self._db,
+            clock=self._harness.host.now,
+            logger=self._logger,
+        )
 
     async def _start_background(self) -> None:
         assert self._scheduler is not None and self._memory_service is not None
@@ -2572,6 +2994,15 @@ class SuperAstrBotApp:
 
         # 5) 按能力开关统一启停（主动交互 / 黑话扫描 / 自动审核 / 指标落盘）
         self._sync_scheduler_jobs()
+
+        # 6) 回访队列投递（约定回访 / 前瞻关怀）：每 5 分钟检查到期项
+        self._scheduler.every(
+            300.0,
+            self._job_callback_queue,
+            key="callback-queue",
+            timeout=180.0,
+        )
+        self._scheduler.set_enabled("callback-queue", self._enabled("basic.enabled"))
 
         await self._scheduler.start()
         self._info(
@@ -2836,9 +3267,94 @@ class SuperAstrBotApp:
         self._note_activity(view)
         self._remember_user_text(view)
         self._observe_persona(view)
+        # 注入顺序即语义优先级：世界书（事实）→ 记忆（经历）→ 共情（语气）
+        # → 既有拟人化（风格/黑话/好感度）→ 群友策略（对谁说话）→ 三层人格（我是谁）。
+        # 每段都独立 try/except，任一失败不影响其余段，也不影响对话本身。
+        await self._inject_worldbook(view, request)
         await self._inject_memory(view, request)
+        await self._inject_empathy(view, request)
         await self._govern_context(view, request)
         await self._inject_persona(view, request)
+        await self._inject_members(view, request)
+        await self._inject_forge(view, request)
+
+    # ------------------------------------------------------------------ #
+    # 融合域注入（世界书 / 共情 / 群友策略 / 三层人格）
+    # ------------------------------------------------------------------ #
+
+    async def _inject_worldbook(self, view: EventView, request: Any) -> None:
+        """世界书：触发词命中才注入；无条目 / 无命中即跳过（正常路径）。"""
+        service = self._worldbook_service
+        if service is None or not self._enabled("worldbook.enabled"):
+            return
+        try:
+            result = await service.inject(view, request)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("世界书注入异常：%s", safe_detail(exc))
+            return
+        if result.get("applied"):
+            self._debug("世界书注入：%s 条（%s）", len(result.get("ids") or []), result.get("reason", ""))
+            record(METRIC_INJECT_BLOCKS)
+            record(METRIC_INJECT_CHARS, total=float(result.get("chars") or 0))
+
+    async def _inject_empathy(self, view: EventView, request: Any) -> None:
+        """共情三阶段：识别到情绪才注入语气指引。"""
+        service = self._empathy_service
+        if service is None or not self._enabled("empathy.enabled"):
+            return
+        try:
+            result = await service.inject(view, request)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("共情注入异常：%s", safe_detail(exc))
+            return
+        if result.get("applied"):
+            self._debug("共情注入：%s（%.2f）", result.get("emotion"), result.get("intensity") or 0.0)
+            record(METRIC_INJECT_BLOCKS)
+
+    async def _inject_members(self, view: EventView, request: Any) -> None:
+        """群友策略：有档案才注入，只做表层微调。"""
+        service = self._members_service
+        if service is None or not self._enabled("members.enabled"):
+            return
+        try:
+            body = await service.inject_block(view)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("群友策略读取异常：%s", safe_detail(exc))
+            return
+        if not body:
+            return
+        try:
+            result = (
+                self._harness.members_injector.inject(request, [body], prefer="auto")
+                if self._harness
+                else None
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._warn("群友策略注入异常：%s", safe_detail(exc))
+            return
+        if result is not None and getattr(result, "applied", False):
+            self._debug("群友策略已注入（%s 字）", getattr(result, "chars", 0))
+            record(METRIC_INJECT_BLOCKS)
+            record(METRIC_INJECT_CHARS, total=float(getattr(result, "chars", 0) or 0))
+
+    async def _inject_forge(self, view: EventView, request: Any) -> None:
+        """三层人格（含可选双过程内省）：单人格内核，随时可注入。"""
+        service = self._forge_service
+        if service is None or not self._enabled("forge.enabled"):
+            return
+        try:
+            result = await service.inject(view, request)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("人格注入异常：%s", safe_detail(exc))
+            return
+        if result.get("applied"):
+            self._debug(
+                "人格注入（%s 字%s）",
+                result.get("chars"),
+                "，含内心独白" if result.get("introspected") else "",
+            )
+            record(METRIC_INJECT_BLOCKS)
+            record(METRIC_INJECT_CHARS, total=float(result.get("chars") or 0))
 
     async def _inject_memory(self, view: EventView, request: Any) -> None:
         """召回并注入长期记忆；失败只降级。"""
@@ -3031,9 +3547,64 @@ class SuperAstrBotApp:
         self._note_activity(view, reply_text=reply)
         if self._enabled("persona.style") and reply:
             await self._learn_style(view, reply)
+        # 融合域：人格演化 + 动态状态推进（规则判定，零模型调用）
+        await self._observe_evolution(view, reply)
         if not self._enabled("memory.capture") or not reply:
             return
         self._queue_buffer(view, f"我：{truncate(reply, 500)}")
+
+    async def _observe_evolution(self, view: EventView, reply: str) -> None:
+        """消息发送后推进人格演化与状态；顺带把本轮文本增量入时序图谱。
+
+        三件事都在同一处触发，因为它们的输入相同（用户消息 + Bot 回复）、
+        时机相同（回复已发出、不影响本轮对话），失败也都不该影响任何东西。
+        """
+        if self._evolution_service is not None and self._enabled("evolution.enabled"):
+            try:
+                await self._evolution_service.observe(view, reply)
+            except Exception as exc:  # noqa: BLE001
+                self._warn("人格演化推进失败：%s", safe_detail(exc))
+
+        if self._forge_service is not None and self._enabled("forge.enabled"):
+            try:
+                await self._forge_service.touch(view)
+            except Exception as exc:  # noqa: BLE001
+                self._debug("动态状态推进失败：%s", safe_detail(exc))
+
+        if (
+            self._tkg_service is not None
+            and self._enabled("latrace.enabled")
+            and (self._fusion_settings or {}).get("latrace_ingest_on_write", True)
+        ):
+            scope = self.memory_scope_for(view) if self._memory_service is not None else None
+            if scope is not None and str(view.text or "").strip():
+                moment = float(view.timestamp or time.time())
+                self._spawn(
+                    self._tkg_service.ingest_memory(
+                        memory_id=0,
+                        content=str(view.text),
+                        scope_type=scope.scope_type,
+                        scope_id=scope.scope_id,
+                        sender_id=str(view.sender_id or ""),
+                        created_at=moment,
+                        source="dialog",
+                        evidence_key=f"dialog:{view.umo}:{int(moment)}",
+                    ),
+                    name="tkg-ingest",
+                )
+
+    def _spawn(self, coro: Any, *, name: str) -> None:
+        """把旁路协程丢到后台任务域；无任务域时静默跳过（测试环境）。"""
+        if self._scope is None:
+            try:
+                coro.close()  # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        try:
+            self._scope.spawn(coro, name=name)
+        except Exception as exc:  # noqa: BLE001
+            self._debug("后台任务派发失败（%s）：%s", name, safe_detail(exc))
 
     def _note_activity(self, view: EventView, *, reply_text: str = "") -> None:
         """记录会话活动（供主动交互判断静默）与 Bot 发言（供群聊话题延续）。"""
@@ -3155,7 +3726,80 @@ class SuperAstrBotApp:
             stats["maibot"] = await self._maibot_service.maintain()
         if self._monitor_service is not None:
             stats["metrics_purged"] = await self._monitor_service.purge()
+        # 融合域维护：衰减写回（可选）→ 时序图谱增量回填 → 演化事件裁剪
+        if self._decay_service is not None and self._enabled("fusion.decay"):
+            try:
+                if self._decay_service.write_back:
+                    stats["decay"] = await self._decay_service.apply_retention()
+                else:
+                    overview = await self._decay_service.overview(limit=1)
+                    stats["decay"] = {
+                        "mode": "monitor-only",
+                        "below_threshold": overview.get("below_threshold", 0),
+                    }
+            except Exception as exc:  # noqa: BLE001
+                self._warn("衰减维护失败：%s", safe_detail(exc))
+        if self._tkg_service is not None and self._enabled("latrace.enabled"):
+            try:
+                stats["tkg"] = await self._tkg_service.rebuild(limit=300)
+            except Exception as exc:  # noqa: BLE001
+                self._warn("时序图谱回填失败：%s", safe_detail(exc))
+        if self._evolution_service is not None and self._db is not None:
+            try:
+                keep = int((self._fusion_settings or {}).get("evolution_keep") or 2000)
+                await self._db.execute(
+                    "DELETE FROM persona_events WHERE id NOT IN"
+                    " (SELECT id FROM persona_events ORDER BY created_at DESC LIMIT ?)",
+                    (max(100, keep),),
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._warn("演化事件裁剪失败：%s", safe_detail(exc))
         self._info("每日维护完成：%s", stats)
+
+    async def _job_callback_queue(self) -> None:
+        """回访队列投递：取出到期项，经宿主发送；失败退避重试。
+
+        投递是「另一条发送链路」吗？不是——它复用宿主 ``send_message``，
+        与 ProactiveService 的发送同源；这里只负责队列语义（到期 / 状态 / 重试）。
+        """
+        service = self._queue_service
+        if service is None or not self._enabled("basic.enabled"):
+            return
+        try:
+            due = await service.due(limit=5)
+        except Exception as exc:  # noqa: BLE001
+            self._warn("读取回访队列失败：%s", safe_detail(exc))
+            return
+        if not due:
+            return
+        for item in due:
+            umo = str(item.get("umo") or "")
+            if not umo:
+                await service.mark(int(item["id"]), "skipped", error="缺少会话 UMO")
+                continue
+            text = str(item.get("content") or "").strip()
+            if not text:
+                await service.mark(int(item["id"]), "skipped", error="内容为空")
+                continue
+            try:
+                sent = bool(await self._harness.host.send_message(umo, text))
+            except Exception as exc:  # noqa: BLE001
+                sent = False
+                await service.mark(
+                    int(item["id"]), "pending", error=safe_detail(exc), bump_attempt=True
+                )
+                continue
+            if sent:
+                record(METRIC_PROACTIVE_SENT)
+                await service.mark(int(item["id"]), "sent")
+                self._info("回访已发送（%s）：%s", umo, truncate(text, 40))
+            else:
+                attempts = int(item.get("attempts") or 0) + 1
+                status = "skipped" if attempts >= 3 else "pending"
+                await service.mark(
+                    int(item["id"]), status, error="发送失败", bump_attempt=True
+                )
+                record(METRIC_PROACTIVE_SKIPPED)
 
     async def _job_reflection_scan(self) -> None:
         if self._memory_service is None or self._reflection_service is None:
@@ -3252,6 +3896,16 @@ class SuperAstrBotApp:
                 self._warn("周度洞察异常（%s）：%s", scope.key, safe_detail(exc))
                 continue
             self._info("周度洞察（%s）：%s", scope.key, outcome.summary())
+
+    async def _job_consolidation(self) -> None:
+        """定时记忆整合：把零散的低价值记忆聚合为更精炼的记忆。"""
+        service = self._consolidation_service
+        if service is None:
+            return
+        try:
+            await service.run_once()
+        except Exception as exc:  # 定时任务异常不得外溢
+            self._debug("记忆整合任务异常：%s", safe_detail(exc))
 
     async def _job_proactive_daily(self) -> None:
         """计划轨：每天固定时间尝试发起一次主动消息。"""
@@ -3566,6 +4220,14 @@ class SuperAstrBotApp:
         if self._monitor_service is not None:
             monitor = await self._monitor_service.snapshot()
         maibot = self._maibot_service.snapshot() if self._maibot_service is not None else {}
+        # 融合域状态（群聊拟人化）：各模块自报，读不到就是空 dict，不影响总览
+        fusion = await self._fusion_status.health() if self._fusion_status is not None else {}
+        members: dict[str, Any] = {}
+        if self._members_service is not None:
+            try:
+                members = await self._members_service.stats()
+            except Exception as exc:  # noqa: BLE001
+                members = {"error": safe_detail(exc)}
         rerank = self._rerank_status()
         identity = await self._identity_status()
         if umo:
@@ -3602,6 +4264,8 @@ class SuperAstrBotApp:
             "review": review,
             "monitor": monitor,
             "maibot": maibot,
+            "fusion": fusion,
+            "members": members,
             "rerank": rerank,
             "identity": identity,
             "pending_tasks": self._scope.pending_count() if self._scope is not None else 0,

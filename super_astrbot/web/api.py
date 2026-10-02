@@ -39,6 +39,7 @@ from ..storage import (
     JOURNAL_SORT_OPTIONS,
     MEMORY_SORT_OPTIONS,
 )
+from . import panel
 
 PLUGIN_NAME = "astrbot_plugin_Super_AstrBot"
 PLUGIN_NAME_LOWER = PLUGIN_NAME.lower()
@@ -98,6 +99,36 @@ def register_web_apis(context: Any, app: Any) -> None:
         ("prompt-save", _prompt_save(app), ["POST"], "保存单条提示词覆盖"),
         ("prompt-reset", _prompt_reset(app), ["POST"], "重置单条提示词为内置默认"),
         ("maintenance", _maintenance(app), ["POST"], "维护操作（重建索引）"),
+        # ---------------- 融合域（群聊拟人化 · 全部进程内模块） ---------------- #
+        ("persona/forge", _forge(app), ["GET"], "PersonaForge 三层人格画像"),
+        ("persona/forge-update", _forge_update(app), ["POST"], "保存 / 重置三层人格"),
+        ("persona/evolution", _evolution(app), ["GET"], "人格演化轨迹（漂移 / 雷达 / 里程碑）"),
+        ("persona/evolution-reset", _evolution_reset(app), ["POST"], "清空演化事件（不影响当前画像）"),
+        ("persona/affinity", _affinity(app), ["GET", "POST"], "按群友好感度（读取 / 人工校准）"),
+        ("members/list", _members(app), ["GET"], "群友档案（身份 + 记忆 + 好感度 + 策略）"),
+        ("members/strategy", _member_strategy(app), ["GET", "POST"], "群友策略（读 / 写 / 删 / 蒸馏）"),
+        ("identity/observe", _identity_observe(app), ["GET"], "身份稳定性观测（身份诊断）"),
+        ("identity/migrate", _identity_migrate(app), ["POST"], "作用域迁移（先预览后执行）"),
+        ("memory/list", _memory_list(app), ["GET"], "记忆列表（带发送者与层级）"),
+        ("memory/recall", _memory_recall(app), ["GET", "POST"], "混合召回 + 时序图谱证据链 + 图扩展"),
+        ("memory/facets", _memory_facets(app), ["GET"], "记忆页筛选项（发送者清单 / 层级）"),
+        ("memory/backends", _memory_backends(app), ["GET"], "记忆后端状态（本地 / LATRACE / 三级 / 衰减）"),
+        ("memory/tiers", _memory_tiers(app), ["GET"], "letta 三级占比与样本"),
+        ("memory/decay", _memory_decay(app), ["GET"], "艾宾浩斯衰减曲线与风险样本"),
+        ("memory/worldbook", _worldbook(app), ["GET"], "世界书条目列表"),
+        ("memory/worldbook-add", _worldbook_add(app), ["POST"], "新增世界书条目"),
+        ("memory/worldbook-update", _worldbook_update(app), ["POST"], "更新世界书条目"),
+        ("memory/worldbook-del", _worldbook_del(app), ["POST"], "删除世界书条目"),
+        ("empathy/config", _empathy(app), ["GET", "POST"], "共情管线配置与日志（三阶段 / 温度）"),
+        ("empathy/log", _empathy_log(app), ["GET"], "共情事件日志"),
+        ("proactive/schedule", _proactive_schedule(app), ["GET"], "计划轨 / 空闲轨状态（原主动消息）"),
+        ("proactive/queue", _proactive_queue(app), ["GET", "POST"], "回访队列（约定回访 / 前瞻关怀）"),
+        ("proactive/log", _proactive_log(app), ["GET"], "回访投递日志"),
+        ("group/context", _group_context(app), ["GET"], "群上下文与接管原则"),
+        ("fusion/pipeline", _fusion_pipeline(app), ["GET"], "①→⑧ 编排流水线状态"),
+        ("monitor/fusion", _fusion_health(app), ["GET"], "融合模块健康（含 degraded 占位）"),
+        ("graph/rebuild", _graph_rebuild(app), ["POST"], "重建时序图谱（从既有记忆回填）"),
+        ("graph/timeline", _graph_timeline(app), ["GET"], "时序图谱关系时间线（证据链）"),
     ]
     for prefix in (f"/{PLUGIN_NAME}", f"/{PLUGIN_NAME_LOWER}"):
         for endpoint, handler, methods, desc in routes:
@@ -635,7 +666,14 @@ def _memories(app: Any) -> Handler:
         keyword = _str_param("keyword").strip()
         kind = _str_param("kind").strip()
         status = _str_param("status", "active").strip().lower()
-        if status not in _ALLOWED_MEMORY_STATUS:
+        # "all" 是面板「全部」的哨兵值（空串会被前端 cleanParams 丢弃，不能用作哨兵）。
+        # 「全部」= 全部正式记忆：排除缓冲（原始聊天碎片不是记忆，有独立的「缓冲」筛选）；
+        # 未知值保守回退 active。
+        exclude_status = ""
+        if status == "all":
+            status = ""
+            exclude_status = "buffered"
+        elif status and status not in _ALLOWED_MEMORY_STATUS:
             status = "active"
         sort = _str_param("sort", DEFAULT_MEMORY_SORT).strip()
         if sort not in MEMORY_SORT_OPTIONS:
@@ -647,10 +685,13 @@ def _memories(app: Any) -> Handler:
                 limit=limit,
                 keyword=keyword,
                 status=status,
+                exclude_status=exclude_status,
                 kind=kind,
                 sort=sort,
             )
-            total = await memory.count_filtered(status=status, kind=kind, keyword=keyword)
+            total = await memory.count_filtered(
+                status=status, exclude_status=exclude_status, kind=kind, keyword=keyword
+            )
         except Exception as exc:
             return error_response(f"读取记忆失败：{exc}")
 
@@ -1417,5 +1458,380 @@ def _backup_list(app: Any) -> Handler:
             return _ok(await app.panel_backup_list())
         except Exception as exc:  # noqa: BLE001
             return error_response(f"读取备份列表失败：{exc}")
+
+    return handler
+
+
+# --------------------------------------------------------------------------- #
+# 融合域：三层人格 / 演化 / 群友识别 / 世界书 / 共情 / 回访队列 / 融合状态
+# --------------------------------------------------------------------------- #
+
+
+def _forge(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            return _ok(await panel.forge_snapshot(app))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取三层人格失败：{exc}")
+
+    return handler
+
+
+def _forge_update(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        try:
+            result = await panel.forge_update(app, payload)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"保存三层人格失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "保存失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _evolution(app: Any) -> Handler:
+    async def handler() -> Any:
+        limit = _int_param("limit", 30, low=5, high=200)
+        days = _int_param("days", 30, low=1, high=365)
+        try:
+            return _ok(await panel.evolution_overview(app, limit=limit, days=days))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取演化轨迹失败：{exc}")
+
+    return handler
+
+
+def _evolution_reset(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            result = await panel.evolution_reset(app)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"清空演化事件失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "清空失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _affinity(app: Any) -> Handler:
+    async def handler() -> Any:
+        if request.method.upper() == "POST":
+            payload = await request.json(default={}) or {}
+            try:
+                result = await panel.affinity_set(app, payload)
+            except Exception as exc:  # noqa: BLE001
+                return error_response(f"更新好感度失败：{exc}")
+            if not result.get("ok"):
+                return error_response(str(result.get("message") or "更新失败"))
+            return _ok(result)
+        umo = _str_param("umo").strip()
+        limit = _int_param("limit", 50, low=1, high=200)
+        try:
+            return _ok(await panel.affinity_rows(app, umo=umo, limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取好感度失败：{exc}")
+
+    return handler
+
+
+def _members(app: Any) -> Handler:
+    async def handler() -> Any:
+        limit = _int_param("limit", 200, low=10, high=5000)
+        try:
+            return _ok(await panel.members_roster(app, limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取群友档案失败：{exc}")
+
+    return handler
+
+
+def _member_strategy(app: Any) -> Handler:
+    async def handler() -> Any:
+        if request.method.upper() == "POST":
+            payload: dict[str, Any] = await request.json(default={}) or {}
+        else:
+            payload = {
+                "sender_id": _str_param("sender_id").strip(),
+                "action": _str_param("action", "get").strip() or "get",
+            }
+        try:
+            result = await panel.member_strategy(app, payload)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"群友策略操作失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "操作失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _identity_observe(app: Any) -> Handler:
+    """身份诊断：与既有 ``identities`` 路由同源，供新版「风格样本」页使用。"""
+    return _identities(app)
+
+
+def _identity_migrate(app: Any) -> Handler:
+    """作用域迁移：与既有 ``scopes/migrate`` 同源（先预览、再执行）。"""
+    return _scopes_migrate(app)
+
+
+def _memory_list(app: Any) -> Handler:
+    """记忆列表：与既有 ``memories`` 路由同源（旧入口零丢失）。"""
+    return _memories(app)
+
+
+def _memory_facets(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            return _ok(await panel.memory_facets(app))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取筛选项失败：{exc}")
+
+    return handler
+
+
+def _memory_recall(app: Any) -> Handler:
+    async def handler() -> Any:
+        if request.method.upper() == "POST":
+            payload: dict[str, Any] = await request.json(default={}) or {}
+        else:
+            payload = {
+                "query": _str_param("query"),
+                "umo": _str_param("umo"),
+                "sender_id": _str_param("sender_id"),
+                "limit": _int_param("limit", 5, low=1, high=20),
+            }
+        try:
+            return _ok(await panel.recall(app, payload))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"检索失败：{exc}")
+
+    return handler
+
+
+def _memory_backends(app: Any) -> Handler:
+    async def handler() -> Any:
+        umo = _str_param("umo").strip()
+        try:
+            return _ok(await panel.fusion_backends(app, umo=umo))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取记忆后端失败：{exc}")
+
+    return handler
+
+
+def _memory_tiers(app: Any) -> Handler:
+    async def handler() -> Any:
+        samples = _int_param("samples", 5, low=1, high=20)
+        service = app.tiers_service
+        if service is None:
+            return _ok({"degraded": "三级分级未装配（能力未启用或持久层不可用）", "tiers": []})
+        try:
+            return _ok(await service.overview(samples=samples))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取三级占比失败：{exc}")
+
+    return handler
+
+
+def _memory_decay(app: Any) -> Handler:
+    async def handler() -> Any:
+        limit = _int_param("limit", 8, low=1, high=50)
+        service = app.decay_service
+        if service is None:
+            return _ok({"degraded": "衰减模块未装配（记忆能力未启用）", "curves": {}})
+        try:
+            return _ok(await service.overview(limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取衰减曲线失败：{exc}")
+
+    return handler
+
+
+def _worldbook(app: Any) -> Handler:
+    async def handler() -> Any:
+        umo = _str_param("umo").strip()
+        limit = _int_param("limit", 200, low=1, high=1000)
+        try:
+            return _ok(await panel.worldbook_list(app, umo=umo, limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取世界书失败：{exc}")
+
+    return handler
+
+
+def _worldbook_add(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        try:
+            result = await panel.worldbook_save(app, payload)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"新增条目失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "新增失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _worldbook_update(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        if not payload.get("id"):
+            return error_response("缺少参数 id")
+        try:
+            result = await panel.worldbook_save(app, payload)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"保存条目失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "保存失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _worldbook_del(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        try:
+            result = await panel.worldbook_delete(app, payload)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"删除条目失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "删除失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _empathy(app: Any) -> Handler:
+    async def handler() -> Any:
+        if request.method.upper() == "POST":
+            payload = await request.json(default={}) or {}
+            try:
+                result = await panel.empathy_save(app, payload)
+            except Exception as exc:  # noqa: BLE001
+                return error_response(f"保存共情设置失败：{exc}")
+            if not result.get("ok"):
+                return error_response(str(result.get("message") or "保存失败"))
+            return _ok(result)
+        limit = _int_param("limit", 50, low=5, high=200)
+        try:
+            return _ok(await panel.empathy_overview(app, limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取共情管线失败：{exc}")
+
+    return handler
+
+
+def _empathy_log(app: Any) -> Handler:
+    async def handler() -> Any:
+        limit = _int_param("limit", 50, low=5, high=200)
+        umo = _str_param("umo").strip()
+        service = app.empathy_service
+        if service is None:
+            return _ok({"degraded": "共情管线未装配（能力未启用）", "items": [], "total": 0})
+        try:
+            return _ok(await service.log(limit=limit, umo=umo))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取共情日志失败：{exc}")
+
+    return handler
+
+
+def _proactive_schedule(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            return _ok(await panel.proactive_schedule(app))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取主动关怀计划失败：{exc}")
+
+    return handler
+
+
+def _proactive_queue(app: Any) -> Handler:
+    async def handler() -> Any:
+        status = _str_param("status").strip()
+        limit = _int_param("limit", 50, low=1, high=200)
+        payload: dict[str, Any] | None = None
+        if request.method.upper() == "POST":
+            payload = await request.json(default={}) or {}
+        try:
+            result = await panel.proactive_queue(app, payload, status=status, limit=limit)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"回访队列操作失败：{exc}")
+        if payload is not None and result.get("ok") is False:
+            return error_response(str(result.get("message") or "操作失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _proactive_log(app: Any) -> Handler:
+    async def handler() -> Any:
+        limit = _int_param("limit", 20, low=1, high=100)
+        try:
+            return _ok(await panel.proactive_log(app, limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取回访日志失败：{exc}")
+
+    return handler
+
+
+def _group_context(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            return _ok(await panel.group_context(app))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取群上下文失败：{exc}")
+
+    return handler
+
+
+def _fusion_pipeline(app: Any) -> Handler:
+    async def handler() -> Any:
+        umo = _str_param("umo").strip()
+        try:
+            return _ok(await panel.fusion_pipeline(app, umo=umo))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取编排流水线失败：{exc}")
+
+    return handler
+
+
+def _fusion_health(app: Any) -> Handler:
+    async def handler() -> Any:
+        try:
+            return _ok(await panel.fusion_health(app))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取融合健康失败：{exc}")
+
+    return handler
+
+
+def _graph_rebuild(app: Any) -> Handler:
+    async def handler() -> Any:
+        payload = await request.json(default={}) or {}
+        try:
+            result = await panel.tkg_rebuild(app, payload)
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"重建时序图谱失败：{exc}")
+        if not result.get("ok"):
+            return error_response(str(result.get("message") or "重建失败"))
+        return _ok(result)
+
+    return handler
+
+
+def _graph_timeline(app: Any) -> Handler:
+    async def handler() -> Any:
+        limit = _int_param("limit", 20, low=1, high=100)
+        try:
+            return _ok(await panel.tkg_timeline(app, limit=limit))
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"读取关系时间线失败：{exc}")
 
     return handler

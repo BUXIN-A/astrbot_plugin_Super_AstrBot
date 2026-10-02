@@ -20,7 +20,9 @@ from ..spec.scopes import MemoryScope, ScopeType
 from ..storage import Database, MemoryRepository, VectorRepository
 from ..support import tokenize
 from .config import MemoryConfig
+from .dedup import content_fingerprint, similar_enough
 from .models import (
+    KIND_JOURNAL,
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
     STATUS_BUFFERED,
@@ -32,6 +34,10 @@ from .models import (
 _MAINTENANCE_BATCH = 200
 _ARCHIVE_AFTER_DAYS = 90.0
 """无访问、低重要度的记忆在该天数后被归档（不再参与检索）。"""
+
+_DEDUP_SCAN_LIMIT = 500
+"""写前查重的作用域扫描上限（最新优先）。超出上限的久远记忆由独立的
+存量清理脚本兜底，避免每次写入都退化成全表扫描。"""
 
 
 @runtime_checkable
@@ -89,8 +95,20 @@ class MemoryLifecycle:
         时间戳：``draft.created_at`` 非空时按原值落库（导入历史数据用），
         否则取当前时刻；索引与图谱的记账时间始终用「本次写入时刻」——
         索引是刚刚才建好的，记成历史时间会误导后续的增量维护。
+
+        写前查重（不含周记与对话缓冲）：先与同作用域已有正式记忆比对，
+        内容指纹相同直接复用已有记忆（不重复落库），正文高度相似则就地
+        更新已有记忆——同一件事始终更新同一条记忆，不另建新行。
         """
         now = time.time()
+        if draft.status == STATUS_ACTIVE and draft.kind != KIND_JOURNAL:
+            try:
+                existing_id = await self._dedup_before_write(draft, now=now)
+            except Exception as exc:  # 查重失败不阻断写入主流程（失败安全）
+                self._warn("写前查重失败（按新记忆写入）：%s", exc)
+            else:
+                if existing_id is not None:
+                    return existing_id
         created_at = float(draft.created_at) if draft.created_at else now
         updated_at = float(draft.updated_at) if draft.updated_at else created_at
         op_id = f"mem-add-{uuid4().hex[:12]}"
@@ -130,6 +148,45 @@ class MemoryLifecycle:
         except Exception as exc:  # 索引失败不影响记忆本体可用
             self._warn("记忆 %s 的索引/向量写入失败，将在启动时修复：%s", memory_id, exc)
         return memory_id
+
+    async def _dedup_before_write(self, draft: MemoryDraft, *, now: float) -> int | None:
+        """写前查重：命中已有记忆则处理完毕并返回其 ID；未命中返回 None 走正常插入。
+
+        - 精确去重：同作用域内已有「同类型+同内容指纹」的记忆 → 直接复用，
+          不再插入（指纹跨反思轮次稳定，同内容恒命中）；
+        - 近义去重：正文存在包含关系或 2-gram 相似度达标 → 就地更新已有记忆
+          （内容以新抽取结果覆盖，对应「同一件事始终更新同一条记忆」的契约），
+          索引随正文刷新；类型、来源、重要度保持原记忆不动。
+
+        只在记忆自身作用域内比对（与检索的「会话+全局并集」不同）：跨作用域的
+        相似内容是否合并属于作用域迁移策略，不在写入路径上做。
+        """
+        scope = MemoryScope(ScopeType.parse(draft.scope_type), draft.scope_id)
+        rows = await self._memories.list_by_status(
+            [scope], status=STATUS_ACTIVE, limit=_DEDUP_SCAN_LIMIT, ascending=False
+        )
+        if not rows:
+            return None
+        items = [MemoryItem.from_row(row) for row in rows]
+        fingerprint = content_fingerprint(draft.content, draft.kind)
+        for item in items:
+            if content_fingerprint(item.content, item.kind) == fingerprint:
+                if self._logger is not None:
+                    self._logger.debug("记忆 #%s 内容指纹相同，跳过重复写入", item.id)
+                return item.id
+        for item in items:
+            if similar_enough(draft.content, item.content):
+                await self._memories.update_fields(
+                    item.id, content=draft.content, updated_at=now
+                )
+                try:
+                    await self.refresh_indexes(item.id, draft.content, now=now)
+                except Exception as exc:
+                    self._warn("合并更新记忆 #%s 的索引失败：%s", item.id, exc)
+                self._info("记忆 #%s 命中相似内容，已合并更新（未新建）", item.id)
+                return item.id
+        return None
+
     async def _apply_indexes(
         self,
         memory_id: int,

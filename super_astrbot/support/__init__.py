@@ -5,7 +5,7 @@
 """
 
 from .decay import half_life_factor
-from .json_utils import extract_json, parse_payload, strip_fences
+from .json_utils import extract_json, extract_json_entries, parse_payload, strip_fences
 from .prompts import (
     PROMPT_PREFIX,
     PromptOverlay,
@@ -47,6 +47,7 @@ __all__ = [
     "missing_placeholders",
     "render",
     "extract_json",
+    "extract_json_entries",
     "strip_fences",
     "parse_payload",
     "half_life_factor",

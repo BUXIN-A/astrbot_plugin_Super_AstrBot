@@ -14,7 +14,7 @@ const THEME_KEY = "super-astrbot-theme";
 const LOCAL_I18N = {
   "zh-CN": {
     "shell.title": "Super_AstrBot 控制台",
-    "shell.subtitle": "长期记忆 · 自我学习",
+    "shell.subtitle": "单人格 · 群聊拟人化",
     "nav.overview": "总览",
     "nav.features": "功能",
     "nav.memories": "记忆",
@@ -29,6 +29,151 @@ const LOCAL_I18N = {
     "nav.prompts": "提示词",
     "nav.system": "系统",
     "nav.identity": "身份",
+    "nav.groupPersona": "人格",
+    "nav.groupMemory": "记忆",
+    "nav.groupEmpathy": "共情与主动",
+    "nav.groupRecord": "记录",
+    "nav.groupSystem": "系统",
+    "nav.personaForge": "人格内核",
+    "nav.personaLegacy": "表达·黑话·好感度",
+    "nav.personaEvolution": "演化轨迹",
+    "nav.styleSamples": "风格样本",
+    "nav.memoryBackend": "记忆后端",
+    "nav.worldbook": "世界书",
+    "nav.empathy": "共情管线",
+    "nav.proactive": "主动关怀",
+    "domain.members": "群友识别",
+    "domain.forge": "三层人格",
+    "domain.evolution": "人格演化",
+    "domain.empathy": "共情管线",
+    "domain.latrace": "时序图谱",
+    "domain.tiers": "三级记忆",
+    "domain.worldbook": "世界书",
+    "domain.fusion": "融合与衰减",
+    "action.delete": "删除",
+    "action.edit": "编辑",
+    "action.cancel": "取消",
+    "action.confirm": "确认",
+    "overview.manageFeatures": "管理功能",
+    "overview.pipeline": "群聊消息编排流水线",
+    "overview.pipelineHint": "拟人化成败落在①身份识别 → ②作用域归属 → ⑤回复生成：识别不清=认错人，作用域错=记忆串台，无策略=对谁都一个调。",
+    "overview.fusion": "融合模块健康",
+    "features.groupContext": "群上下文与接管原则",
+    "forge.title": "三层人格（PersonaForge · 单人格）",
+    "forge.hint": "bot 只有一个稳定人格：注入与演化都作用在这一份画像上；群友差异由「群友策略」在表层微调。",
+    "forge.reset": "重置为出厂",
+    "forge.previewNow": "生成预览",
+    "forge.layerCore": "① 核心特质（认知与特质）",
+    "forge.layerStyle": "② 表层风格（语言与行为模式）",
+    "forge.layerState": "③ 动态状态（心情 · 能量 · 关系）",
+    "forge.mbti": "MBTI",
+    "forge.defense": "防御机制",
+    "forge.values": "价值观（逗号分隔）",
+    "forge.interests": "兴趣标签（逗号分隔）",
+    "forge.sentence": "句长偏好",
+    "forge.vocabulary": "词汇等级",
+    "forge.punctuation": "标点习惯",
+    "forge.emoji": "表情使用",
+    "forge.catchphrases": "口头禅（逗号分隔）",
+    "forge.toneMarkers": "语气词（逗号分隔）",
+    "forge.mood": "当前心情",
+    "forge.energy": "能量值（0-100）",
+    "forge.text": "注入预览（人格摘要）",
+    "forge.saved": "三层人格已保存",
+    "forge.resetDone": "已重置为出厂人格",
+    "evolution.title": "人格演化轨迹（character-sim）",
+    "evolution.hint": "每轮互动按经验类型施加微量特质漂移（单轮上限 0.03），长期累积成人物弧光。",
+    "evolution.resetEvents": "清空轨迹",
+    "evolution.radar": "9 轴人格雷达",
+    "evolution.radarHint": "5 个大五轴 + 3 个派生轴 + 兴趣广度；派生轴为线性折算，不额外引入自由度。",
+    "evolution.drift": "漂移曲线（按日）",
+    "evolution.timeline": "里程碑与事件时间线",
+    "styleSamples.tabSamples": "风格样本",
+    "styleSamples.tabReview": "待审",
+    "styleSamples.members": "群友风格档案（distilly 离线蒸馏 + 在线自写）",
+    "styleSamples.membersHint": "有离线蒸馏产物时优先接入，否则用该群友的高权重记忆在线自写；档案只存表层策略。",
+    "styleSamples.distill": "刷新档案",
+    "styleSamples.strategy": "差异化对话策略",
+    "styleSamples.member": "群友",
+    "styleSamples.loadStrategy": "载入策略",
+    "styleSamples.relation": "关系类型",
+    "styleSamples.tone": "语气",
+    "styleSamples.address": "称呼",
+    "styleSamples.topics": "话题（逗号分隔）",
+    "styleSamples.taboo": "禁忌（逗号分隔）",
+    "styleSamples.patterns": "表达样本（persona · StyleService）",
+    "styleSamples.strategySaved": "群友策略已保存",
+    "styleSamples.strategyDeleted": "群友策略已删除",
+    "styleSamples.noMember": "先在下方群友档案里选一位群友",
+    "styleSamples.senderIdHint": "发送者标识：",
+    "filter.tier": "层级（letta）",
+    "filter.sender": "发送者",
+    "filter.allSenders": "全部群友",
+    "filter.pageOnlyHint": "发送者 / 层级过滤作用于当前拉取的整批结果（最多 100 条）。",
+    "tier.core": "核心",
+    "tier.recall": "召回",
+    "tier.archive": "归档",
+    "recall.sender": "发送者过滤",
+    "recall.provenance": "证据链",
+    "recall.expanded": "图扩展召回",
+    "backend.title": "记忆后端状态（进程内）",
+    "backend.hint": "全部后端都在插件进程内运行：SQLite + LATRACE 时序图谱 + letta 三级分级；不启动任何外部服务。",
+    "backend.rebuild": "重建时序图谱",
+    "backend.tiers": "三级记忆占比（核心 / 召回 / 归档）",
+    "backend.decay": "艾宾浩斯衰减曲线（AMBRACE）",
+    "backend.curveNatural": "自然遗忘",
+    "backend.curveReviewed": "主动复习后",
+    "backend.curveThreshold": "接近遗忘阈值",
+    "worldbook.title": "世界书 / Lorebook（AMBRACE）",
+    "worldbook.hint": "触发词在当前消息里出现时注入；触发词留空表示手动条目（只存档不注入）。",
+    "worldbook.newEntry": "新条目",
+    "worldbook.triggers": "触发词（逗号分隔）",
+    "worldbook.priority": "优先级",
+    "worldbook.scope": "作用域",
+    "worldbook.scopeGlobal": "全局",
+    "worldbook.scopeUser": "指定群友",
+    "worldbook.scopeSession": "指定会话",
+    "worldbook.scopeId": "作用域标识（群友 ID / UMO）",
+    "worldbook.enabled": "启用",
+    "worldbook.on": "启用",
+    "worldbook.off": "停用",
+    "worldbook.content": "注入内容",
+    "worldbook.saved": "世界书条目已保存",
+    "worldbook.deleted": "世界书条目已删除",
+    "empathy.title": "三阶段共情（CogEmp）",
+    "empathy.hint": "识别 → 理解 → 共情：只在识别到情绪信号时注入「怎么回」的语气指引，不代写回复，也不改变人格。",
+    "empathy.stageIdentify": "① 情绪识别",
+    "empathy.stageUnderstand": "② 原因理解",
+    "empathy.stageEmpathize": "③ 认知共情润色",
+    "empathy.temperature": "共情温度",
+    "empathy.log": "最近共情事件",
+    "empathy.saved": "共情设置已保存",
+    "proactive.title": "主动关怀（约定回访 + 前瞻）",
+    "proactive.hint": "队列项到期后由调度器投递；发送失败自动重试，连续 3 次失败转为「已跳过」。",
+    "proactive.newItem": "+ 登记回访",
+    "proactive.pending": "待发",
+    "proactive.sent": "已发送",
+    "proactive.skipped": "已跳过",
+    "proactive.canceled": "已取消",
+    "proactive.kind": "类型",
+    "proactive.kindCallback": "约定回访",
+    "proactive.kindForecast": "前瞻关怀",
+    "proactive.umo": "目标会话（UMO）",
+    "proactive.dueIn": "延迟（小时）",
+    "proactive.content": "内容",
+    "proactive.schedule": "计划轨 / 空闲轨（原主动消息）",
+    "proactive.saved": "回访已登记",
+    "proactive.deleted": "队列项已删除",
+    "proactive.needUmo": "请填写目标会话 UMO",
+    "graph.layer": "图层",
+    "graph.layerTkg": "时序图谱（TKG）",
+    "graph.layerCooccur": "共现图谱",
+    "graph.rebuild": "重建时序图谱",
+    "graph.timeline": "关系时间线（证据链）",
+    "graph.edgeRecent": "近 7 天",
+    "graph.edgeNormal": "较早",
+    "graph.edgeStale": "超过 30 天",
+    "monitor.fusion": "融合服务健康",
     "features.title": "功能开关",
     "features.hint": "开关与「具体设置」都会立即写入插件配置并落盘，与插件配置页双向同步；标注「需重载」的项目将在重载插件后生效。",
     "features.empty": "没有可用的功能项。",
@@ -48,6 +193,7 @@ const LOCAL_I18N = {
     "domain.basic": "基础",
     "domain.memory": "记忆",
     "domain.reflection": "自我学习",
+    "domain.consolidation": "记忆整合",
     "domain.journal": "现实桥",
     "domain.agent": "Agent 工具",
     "domain.context": "上下文治理",
@@ -57,7 +203,6 @@ const LOCAL_I18N = {
     "domain.graph": "记忆图谱",
     "domain.review": "自动审核",
     "domain.maibot": "MaiBot 增强",
-    "overview.manageFeatures": "管理功能",
     "action.refresh": "刷新",
     "action.theme": "主题",
     "action.query": "查询",
@@ -98,7 +243,6 @@ const LOCAL_I18N = {
     "table.actions": "操作",
     "journals.emotion": "情绪 (1-5)",
     "journals.content": "内容",
-    "action.confirm": "确认",
     "journals.tags": "标签（逗号分隔）",
     "journals.exported": "已导出",
     "journals.imported": "导入完成：新增 %1，跳过 %2",
@@ -298,7 +442,7 @@ const LOCAL_I18N = {
   },
   "en-US": {
     "shell.title": "Super_AstrBot Console",
-    "shell.subtitle": "Long-term memory · Self-learning",
+    "shell.subtitle": "Single persona · Group chat anthropomorphic",
     "nav.overview": "Overview",
     "nav.features": "Features",
     "nav.memories": "Memories",
@@ -308,6 +452,151 @@ const LOCAL_I18N = {
     "nav.reviews": "Reviews",
     "nav.persona": "Learning",
     "nav.identity": "Identity",
+    "nav.groupPersona": "Persona",
+    "nav.groupMemory": "Memory",
+    "nav.groupEmpathy": "Empathy & proactive",
+    "nav.groupRecord": "Records",
+    "nav.groupSystem": "System",
+    "nav.personaForge": "Persona core",
+    "nav.personaLegacy": "Style · jargon · affinity",
+    "nav.personaEvolution": "Evolution",
+    "nav.styleSamples": "Style samples",
+    "nav.memoryBackend": "Memory backends",
+    "nav.worldbook": "Worldbook",
+    "nav.empathy": "Empathy pipeline",
+    "nav.proactive": "Proactive care",
+    "domain.members": "Member recognition",
+    "domain.forge": "PersonaForge",
+    "domain.evolution": "Persona evolution",
+    "domain.empathy": "Empathy pipeline",
+    "domain.latrace": "Temporal graph",
+    "domain.tiers": "Three-tier memory",
+    "domain.worldbook": "Worldbook",
+    "domain.fusion": "Fusion & decay",
+    "action.delete": "Delete",
+    "action.edit": "Edit",
+    "action.cancel": "Cancel",
+    "action.confirm": "Confirm",
+    "overview.manageFeatures": "Manage features",
+    "overview.pipeline": "Group chat orchestration pipeline",
+    "overview.pipelineHint": "Anthropomorphic quality hinges on ① identity → ② scope → ⑤ reply: mis-identification, cross-talk and one-size-fits-all tone are the failure modes.",
+    "overview.fusion": "Fusion module health",
+    "features.groupContext": "Group context & takeover rules",
+    "forge.title": "Three-layer persona (PersonaForge)",
+    "forge.hint": "One stable persona: injection and evolution both target this single profile; member-level differences are surface tweaks.",
+    "forge.reset": "Reset to default",
+    "forge.previewNow": "Preview",
+    "forge.layerCore": "① Core traits",
+    "forge.layerStyle": "② Speaking style",
+    "forge.layerState": "③ Dynamic state",
+    "forge.mbti": "MBTI",
+    "forge.defense": "Defense mechanism",
+    "forge.values": "Values (comma separated)",
+    "forge.interests": "Interests (comma separated)",
+    "forge.sentence": "Sentence length",
+    "forge.vocabulary": "Vocabulary level",
+    "forge.punctuation": "Punctuation habit",
+    "forge.emoji": "Emoji usage",
+    "forge.catchphrases": "Catchphrases (comma separated)",
+    "forge.toneMarkers": "Tone markers (comma separated)",
+    "forge.mood": "Current mood",
+    "forge.energy": "Energy (0-100)",
+    "forge.text": "Injection preview",
+    "forge.saved": "Persona saved",
+    "forge.resetDone": "Reset to default persona",
+    "evolution.title": "Persona evolution (character-sim)",
+    "evolution.hint": "Each exchange applies a micro trait shift (capped at 0.03 per turn), accumulating into a character arc.",
+    "evolution.resetEvents": "Clear events",
+    "evolution.radar": "9-axis persona radar",
+    "evolution.radarHint": "Five Big Five axes plus three derived axes and interest breadth; derived axes are linear projections.",
+    "evolution.drift": "Daily drift",
+    "evolution.timeline": "Milestones & events",
+    "styleSamples.tabSamples": "Style samples",
+    "styleSamples.tabReview": "Pending review",
+    "styleSamples.members": "Member style profiles",
+    "styleSamples.membersHint": "Prefers offline distilly artifacts, otherwise builds from top-weight memories; profiles store surface strategy only.",
+    "styleSamples.distill": "Refresh profiles",
+    "styleSamples.strategy": "Differentiated dialogue strategy",
+    "styleSamples.member": "Member",
+    "styleSamples.loadStrategy": "Load strategy",
+    "styleSamples.relation": "Relationship",
+    "styleSamples.tone": "Tone",
+    "styleSamples.address": "Address as",
+    "styleSamples.topics": "Topics (comma separated)",
+    "styleSamples.taboo": "Taboos (comma separated)",
+    "styleSamples.patterns": "Style samples",
+    "styleSamples.strategySaved": "Strategy saved",
+    "styleSamples.strategyDeleted": "Strategy deleted",
+    "styleSamples.noMember": "Pick a member from the roster first",
+    "styleSamples.senderIdHint": "Sender ID: ",
+    "filter.tier": "Tier (letta)",
+    "filter.sender": "Sender",
+    "filter.allSenders": "All members",
+    "filter.pageOnlyHint": "Sender / tier filters apply to the fetched batch (up to 100 rows).",
+    "tier.core": "Core",
+    "tier.recall": "Recall",
+    "tier.archive": "Archive",
+    "recall.sender": "Sender filter",
+    "recall.provenance": "Evidence chain",
+    "recall.expanded": "Graph-expanded",
+    "backend.title": "Memory backend status (in-process)",
+    "backend.hint": "All backends run inside the plugin process: SQLite, LATRACE temporal graph, letta tiering. No external services.",
+    "backend.rebuild": "Rebuild temporal graph",
+    "backend.tiers": "Three-tier distribution",
+    "backend.decay": "Ebbinghaus forgetting curve",
+    "backend.curveNatural": "Natural forgetting",
+    "backend.curveReviewed": "After active review",
+    "backend.curveThreshold": "Recall threshold",
+    "worldbook.title": "Worldbook / Lorebook",
+    "worldbook.hint": "Entries inject when a trigger appears in the current message; empty triggers mean manual-only.",
+    "worldbook.newEntry": "New entry",
+    "worldbook.triggers": "Triggers (comma separated)",
+    "worldbook.priority": "Priority",
+    "worldbook.scope": "Scope",
+    "worldbook.scopeGlobal": "Global",
+    "worldbook.scopeUser": "Specific member",
+    "worldbook.scopeSession": "Specific session",
+    "worldbook.scopeId": "Scope id (member id / UMO)",
+    "worldbook.enabled": "Enabled",
+    "worldbook.on": "On",
+    "worldbook.off": "Off",
+    "worldbook.content": "Injected content",
+    "worldbook.saved": "Entry saved",
+    "worldbook.deleted": "Entry deleted",
+    "empathy.title": "Three-stage empathy (CogEmp)",
+    "empathy.hint": "Identify → understand → empathize: injects tone guidance only when emotion is detected; never rewrites the reply or the persona.",
+    "empathy.stageIdentify": "① Emotion identification",
+    "empathy.stageUnderstand": "② Cause understanding",
+    "empathy.stageEmpathize": "③ Cognitive empathy",
+    "empathy.temperature": "Empathy temperature",
+    "empathy.log": "Recent empathy events",
+    "empathy.saved": "Empathy settings saved",
+    "proactive.title": "Proactive care (callbacks & forecast)",
+    "proactive.hint": "Due items are delivered by the scheduler; failures retry and then fall back to skipped.",
+    "proactive.newItem": "+ New callback",
+    "proactive.pending": "Pending",
+    "proactive.sent": "Sent",
+    "proactive.skipped": "Skipped",
+    "proactive.canceled": "Canceled",
+    "proactive.kind": "Kind",
+    "proactive.kindCallback": "Callback",
+    "proactive.kindForecast": "Forecast",
+    "proactive.umo": "Target session (UMO)",
+    "proactive.dueIn": "Delay (hours)",
+    "proactive.content": "Content",
+    "proactive.schedule": "Scheduled / idle tracks",
+    "proactive.saved": "Callback queued",
+    "proactive.deleted": "Queue item deleted",
+    "proactive.needUmo": "Please fill in the target session UMO",
+    "graph.layer": "Layer",
+    "graph.layerTkg": "Temporal graph (TKG)",
+    "graph.layerCooccur": "Co-occurrence graph",
+    "graph.rebuild": "Rebuild temporal graph",
+    "graph.timeline": "Relation timeline (evidence)",
+    "graph.edgeRecent": "Last 7 days",
+    "graph.edgeNormal": "Older",
+    "graph.edgeStale": "Older than 30 days",
+    "monitor.fusion": "Fusion service health",
     "nav.graph": "Graph",
     "nav.monitor": "Monitor",
     "nav.models": "Models",
@@ -332,6 +621,7 @@ const LOCAL_I18N = {
     "domain.basic": "Basics",
     "domain.memory": "Memory",
     "domain.reflection": "Self-learning",
+    "domain.consolidation": "Consolidation",
     "domain.journal": "Reality Bridge",
     "domain.agent": "Agent tools",
     "domain.context": "Context control",
@@ -341,7 +631,6 @@ const LOCAL_I18N = {
     "domain.graph": "Knowledge graph",
     "domain.review": "Auto review",
     "domain.maibot": "MaiBot boost",
-    "overview.manageFeatures": "Manage features",
     "action.refresh": "Refresh",
     "action.theme": "Theme",
     "action.query": "Query",
@@ -382,7 +671,6 @@ const LOCAL_I18N = {
     "table.actions": "Actions",
     "journals.emotion": "Emotion (1-5)",
     "journals.content": "Content",
-    "action.confirm": "Confirm",
     "journals.tags": "Tags (comma separated)",
     "journals.exported": "Exported",
     "journals.imported": "Imported: %1 added, %2 skipped",
@@ -595,7 +883,7 @@ const state = {
   memories: {
     offset: 0,
     limit: 20,
-    status: "active",
+    status: "all",
     kind: "",
     keyword: "",
     sort: "created_desc",
@@ -872,7 +1160,9 @@ function paintTable(target, entry) {
   const head = columns
     .map((column, index) => {
       const clickable = sortable && columnSortable(column);
-      const cls = clickable ? ' class="sortable"' : "";
+      // 让表头继承列类名（如 num），使数值列表头与单元格右对齐
+      const classes = [clickable ? "sortable" : "", column.className || ""].filter(Boolean).join(" ");
+      const cls = classes ? ` class="${classes}"` : "";
       const attr = clickable ? ` data-sort-col="${index}"` : "";
       const mark =
         clickable && index === sortIndex
@@ -956,7 +1246,7 @@ async function loadOverview(force = false) {
         .map(
           ([key, value]) =>
             `<span class="pill ${value ? "on" : "off"} clickable" data-goto="features" title="${esc(key)}">${esc(
-              key.replace(/^(basic|memory|reflection|journal)\./, "")
+              capabilityLabel(key)
             )}</span>`
         )
         .join("") +
@@ -973,6 +1263,16 @@ async function loadOverview(force = false) {
     $("ov-degraded").innerHTML = notes.length
       ? notes.map((text) => `<div class="item">${esc(text)}</div>`).join("")
       : "";
+
+    // 顶栏状态线：就绪 / 降级一目了然；存在降级或未就绪时转红（危急值观感）
+    const line = $("app-status-line");
+    if (line) {
+      const critical = !data.ready || notes.length > 0;
+      line.classList.toggle("critical", critical);
+      line.textContent = critical
+        ? `${data.ready ? "运行中" : "未就绪"} · 降级 ${notes.length} 项`
+        : "运行中 · 无降级";
+    }
   } catch (error) {
     renderError(statsEl, error);
   }
@@ -1001,6 +1301,10 @@ async function loadOverview(force = false) {
   } catch (error) {
     renderError($("ov-recent"), error);
   }
+
+  // 融合域：编排流水线（①→⑧）与融合模块健康；两块各自失败不影响总览其余部分
+  await loadPipeline();
+  await loadFusionHealth("ov-fusion");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1011,6 +1315,7 @@ const DOMAIN_TITLES = {
   basic: "domain.basic",
   memory: "domain.memory",
   reflection: "domain.reflection",
+  consolidation: "domain.consolidation",
   journal: "domain.journal",
   agent: "domain.agent",
   context: "domain.context",
@@ -1020,6 +1325,15 @@ const DOMAIN_TITLES = {
   graph: "domain.graph",
   review: "domain.review",
   maibot: "domain.maibot",
+  // 融合域（群聊拟人化）：与 spec/capabilities.py 的 domain 一一对应
+  members: "domain.members",
+  forge: "domain.forge",
+  evolution: "domain.evolution",
+  empathy: "domain.empathy",
+  latrace: "domain.latrace",
+  tiers: "domain.tiers",
+  worldbook: "domain.worldbook",
+  fusion: "domain.fusion",
 };
 
 function featureStatusPill(item) {
@@ -1206,6 +1520,8 @@ async function loadFeatures(options = {}) {
     state.featuresItems = items;
     renderFeatureGroups(items);
     updateFeatureSyncTime();
+    // 群上下文与接管原则：与开关同页展示，避免「开了群聊语义却不知道阈值」的猜测
+    await loadGroupContext();
   } catch (error) {
     if (silent) {
       // 官方配置页保存会触发插件热重载，重载窗口内请求可能失败：
@@ -1303,6 +1619,27 @@ async function handleFeatureToggle(key, enabled, input) {
 /* 章节：记忆                                                              */
 /* ---------------------------------------------------------------------- */
 
+function valClass(n, kind = "score") {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "v";
+  if (kind === "score") {
+    if (v >= 8) return "v v-critical";   // 高重要度 → 危急值观感
+    if (v >= 6) return "v v-warn";
+    return "v";
+  }
+  return "v";
+}
+
+/** 能力键 → 面板上的短标签：去掉通用后缀，保留域前缀（避免一屏「enabled」）。 */
+function capabilityLabel(key) {
+  const text = String(key || "");
+  return (
+    text
+      .replace(/\.(enabled|auto|decay|apply)$/, "")
+      .replace(/^basic$/, t("domain.basic")) || text
+  );
+}
+
 function memoryColumns() {
   return [
     { title: "#", key: "id", className: "num" },
@@ -1313,12 +1650,21 @@ function memoryColumns() {
         `<span class="clickable" data-memory="${esc(row.id)}">${esc(truncate(row.content, 150))}</span>`,
     },
     { title: "类型", render: (row) => kindPill(row.kind) },
+    {
+      title: "状态",
+      render: (row) =>
+        `<span class="pill ${memoryStatusPill(row.status)}">${esc(
+          t(`status.${row.status}`, row.status)
+        )}</span>`,
+    },
+    { title: "发送者", render: (row) => esc(row.sender_name || row.sender_id || "—") },
+    { title: "层级", render: (row) => tierPill(tierOf(row)) },
     { title: "来源", key: "source" },
     { title: "作用域", render: (row) => `<span class="muted">${esc(row.scope)}</span>` },
     {
       title: "重要度",
       className: "num",
-      render: (row) => esc(num(row.importance)),
+      render: (row) => `<span class="${valClass(row.importance)}">${esc(num(row.importance))}</span>`,
       sortValue: (row) => Number(row.importance || 0),
     },
     { title: "访问", className: "num", key: "access_count" },
@@ -1329,102 +1675,6 @@ function memoryColumns() {
       sortValue: (row) => Number(row.created_at || 0),
     },
   ];
-}
-
-async function loadMemories() {
-  const target = $("mem-table");
-  const cursor = state.memories;
-  try {
-    const result = await apiGet("memories", {
-      offset: cursor.offset,
-      limit: cursor.limit,
-      status: cursor.status,
-      kind: cursor.kind,
-      keyword: cursor.keyword,
-      sort: cursor.sort,
-    });
-    cursor.total = Number(result.total || 0);
-    // 服务端已按 cursor.sort 排序；表格不再提供列排序，避免两种排序口径打架。
-    renderTable(target, memoryColumns(), result.items || [], {
-      emptyText: "该筛选条件下没有记忆。",
-    });
-  } catch (error) {
-    renderError(target, error);
-  }
-  const from = cursor.total === 0 ? 0 : cursor.offset + 1;
-  const to = Math.min(cursor.offset + cursor.limit, cursor.total);
-  $("mem-page-info").textContent = `${from}-${to} / ${cursor.total}`;
-  $("mem-prev").disabled = cursor.offset <= 0;
-  $("mem-next").disabled = cursor.offset + cursor.limit >= cursor.total;
-}
-
-/* ---------------------------------------------------------------------- */
-/* 章节：检索                                                              */
-/* ---------------------------------------------------------------------- */
-
-async function runRecall() {
-  const query = $("recall-query").value.trim();
-  const umo = $("recall-umo").value.trim();
-  const limit = Math.max(1, Math.min(20, Number($("recall-limit").value) || 5));
-  const target = $("recall-table");
-  const meta = $("recall-meta");
-
-  if (!query) {
-    meta.textContent = "请输入检索词。";
-    renderEmpty(target, "请输入检索词。");
-    return;
-  }
-
-  meta.textContent = "检索中…";
-  renderEmpty(target, "检索中…");
-  try {
-    const result = await apiPost("search", { query, umo, limit });
-    const parts = [
-      `命中 ${result.total || 0} 条`,
-      `检索路：${result.routes || "—"}`,
-      `耗时：${result.elapsed_ms !== undefined ? `${result.elapsed_ms}ms` : "—"}`,
-    ];
-    if (result.rerank) parts.push(result.rerank);
-    if (result.degraded) parts.push(`提示：${result.degraded}`);
-    meta.textContent = parts.join("　|　");
-
-    renderTable(
-      target,
-      [
-        { title: "#", key: "id", className: "num" },
-        {
-          title: "内容",
-          className: "content",
-          render: (row) =>
-            `<span class="clickable" data-memory="${esc(row.id)}">${esc(truncate(row.content, 160))}</span>`,
-        },
-        {
-          title: "最终分",
-          className: "num",
-          render: (row) => esc(row.score === null || row.score === undefined ? "—" : num(row.score, 3)),
-        },
-        {
-          title: "打分构成",
-          render: (row) => {
-            const breakdown = row.breakdown || {};
-            // 只渲染数值项；rerank_source 是来源标签，单独翻译成中文可读说明。
-            const chips = Object.entries(breakdown)
-              .filter(([, value]) => typeof value === "number")
-              .map(([key, value]) => `${key}=${num(value, 3)}`);
-            const source = breakdown.rerank_source;
-            if (source === "provider") chips.push("重排序=模型");
-            else if (source === "lexical") chips.push("重排序=词法兜底");
-            if (chips.length === 0) return `<span class="muted">—</span>`;
-            return `<span class="muted">${esc(chips.join("  "))}</span>`;
-          },
-        },
-      ],
-      result.items || []
-    );
-  } catch (error) {
-    meta.textContent = "";
-    renderError(target, error);
-  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1952,24 +2202,9 @@ async function loadPersona() {
       { sortable: true, emptyText: "还没有收录群内用语" }
     );
 
-    renderTable(
-      $("pn-affinity"),
-      [
-        { title: "对象", key: "target_id", render: (row) => esc(row.target_id || "") },
-        { title: "好感度", key: "score", className: "num", render: (row) => esc(num(row.score)) },
-        { title: "情绪", key: "mood", render: (row) => esc(row.mood || "—") },
-        { title: "交互", className: "num", key: "interactions" },
-        { title: "作用域", key: "scope", render: (row) => `<span class="muted">${esc(row.scope || "")}</span>` },
-        {
-          title: "最近交互",
-          key: "last_interaction",
-          className: "num",
-          render: (row) => esc(row.last_interaction ? fmtTime(row.last_interaction) : "—"),
-        },
-      ],
-      result.affinity || [],
-      { sortable: true, emptyText: "还没有好感度记录" }
-    );
+    // 好感度：改用 persona/affinity 面板（按群友 + 人工校准滑块），
+    // 只读表由 loadAffinityPanel 内部渲染，避免两处口径漂移。
+    await loadAffinityPanel();
   } catch (error) {
     meta.textContent = "";
     renderError(target, error);
@@ -2254,7 +2489,7 @@ async function loadIdentity() {
   const hint = $("id-hint");
   const table = $("id-table");
   try {
-    const result = await apiGet("identities");
+    const result = await apiGet("identity/observe");
     const analysis = result.analysis || {};
     summary.innerHTML = [
       kv(t("identity.strategy"), result.strategy || "—"),
@@ -2329,7 +2564,7 @@ async function migrateScope(dryRun) {
   };
   const out = $("sc-result");
   try {
-    const result = await apiPost("scopes/migrate", payload);
+    const result = await apiPost("identity/migrate", payload);
     out.textContent = result.message || "";
     if (result.dry_run) {
       toast(result.message || "", "info");
@@ -2757,12 +2992,12 @@ function peekDelete() {
 /* ---------------------------------------------------------------------- */
 
 const GRAPH_COLORS = {
-  person: "#4c8dff",
-  place: "#3fb950",
-  org: "#d29922",
-  event: "#f85149",
-  concept: "#a371f7",
-  thing: "#39c5cf",
+  person: "#2f9fb0",
+  place: "#3aa86b",
+  org: "#d99a3c",
+  event: "#e05a5a",
+  concept: "#8a7fd4",
+  thing: "#4fb3c9",
 };
 
 const graphState = {
@@ -3073,6 +3308,8 @@ async function loadGraph() {
 
     buildGraphLayout(nodes);
     drawGraph(data);
+    // 时序图谱附加信息：关系时间线（证据链），失败不影响共现图谱渲染
+    await loadGraphTimeline();
   } catch (error) {
     meta.textContent = "";
     renderError(nodesEl, error);
@@ -3364,6 +3601,7 @@ async function loadMonitor(isRetry = false) {
     renderMonitorChart(data, chosen);
     renderMonitorTotals(data);
     renderMonitorReview(data);
+    await loadFusionHealth("mt-fusion");
   } catch (error) {
     meta.textContent = "";
     renderError($("mt-live"), error);
@@ -3472,17 +3710,23 @@ async function handlePromptReset(key, button) {
 /* 路由与事件绑定                                                          */
 /* ---------------------------------------------------------------------- */
 
+/* 导航顺序 = 页码顺序（导航重构版）：总览 / 功能 / 人格×4 / 记忆×5 / 共情与主动×2 / 记录×2 / 系统×4 */
 const PAGE_TITLES = {
   overview: "nav.overview",
   features: "nav.features",
+  "persona-forge": "nav.personaForge",
+  "persona-legacy": "nav.personaLegacy",
+  "persona-evolution": "nav.personaEvolution",
+  "style-samples": "nav.styleSamples",
   memories: "nav.memories",
   recall: "nav.recall",
+  graph: "nav.graph",
+  "memory-backend": "nav.memoryBackend",
+  worldbook: "nav.worldbook",
+  empathy: "nav.empathy",
+  proactive: "nav.proactive",
   journals: "nav.journals",
   weeklies: "nav.weeklies",
-  reviews: "nav.reviews",
-  persona: "nav.persona",
-  identity: "nav.identity",
-  graph: "nav.graph",
   monitor: "nav.monitor",
   models: "nav.models",
   prompts: "nav.prompts",
@@ -3492,17 +3736,23 @@ const PAGE_TITLES = {
 const LOADERS = {
   overview: () => loadOverview(true),
   features: () => loadFeatures(),
+  "persona-forge": () => loadForge(),
+  "persona-legacy": () => loadPersona(),
+  "persona-evolution": () => loadEvolution(),
+  "style-samples": () => loadStyleSamples(),
   memories: () => loadMemories(),
+  recall: () => runRecall(),
+  graph: () => loadGraph(),
+  "memory-backend": () => loadMemoryBackend(),
+  worldbook: () => loadWorldbook(),
+  empathy: () => loadEmpathy(),
+  proactive: () => loadProactive(),
   journals: () => loadJournals(),
   weeklies: () => loadWeeklies(),
-  reviews: () => loadReviews(),
-  persona: () => loadPersona(),
-  graph: () => loadGraph(),
   monitor: () => loadMonitor(),
   models: () => loadModels(),
   prompts: () => loadPrompts(),
   system: () => loadSystem(true),
-  identity: () => loadIdentity(),
 };
 
 /** 统一执行分区加载器，并驱动顶部加载条。 */
@@ -3529,6 +3779,7 @@ function navigate(page, options = {}) {
   // 编辑风页题：编号前缀（01/02…）随导航顺序生成
   const order = Object.keys(PAGE_TITLES);
   const index = String(order.indexOf(target) + 1).padStart(2, "0");
+  revealNavGroup(target);
   const indexNode = $("page-index");
   if (indexNode) indexNode.textContent = index;
   $("page-title").innerHTML = `<span class="title-index">${index}</span>${esc(t(PAGE_TITLES[target]))}`;
@@ -3564,6 +3815,10 @@ function applyStaticI18n() {
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  // 画布颜色取自 CSS 变量，主题切换后必须重绘，否则图谱仍是旧主题色
+  if (graphState && graphState.data) {
+    try { drawGraph(graphState.data); } catch (error) { /* 画布未挂载时忽略 */ }
+  }
 }
 
 function toggleTheme() {
@@ -3627,10 +3882,21 @@ function bindEvents() {
     if (event.key === "Enter") $("mem-search").click();
   });
   $("mem-prev").addEventListener("click", () => {
+    // 过滤模式下分页在「本批结果」内进行（见 loadMemoriesFiltered）
+    if (memFilterState.active) {
+      memFilterState.offset = Math.max(0, memFilterState.offset - memFilterState.limit);
+      paintMemoryBatch($("mem-table"));
+      return;
+    }
     state.memories.offset = Math.max(0, state.memories.offset - state.memories.limit);
     loadMemories();
   });
   $("mem-next").addEventListener("click", () => {
+    if (memFilterState.active) {
+      memFilterState.offset += memFilterState.limit;
+      paintMemoryBatch($("mem-table"));
+      return;
+    }
     state.memories.offset += state.memories.limit;
     loadMemories();
   });
@@ -4149,6 +4415,7 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  bindFusionControls();
   observeGraphResize();
 
   // 主题：本地记忆优先，其次跟随 Dashboard
@@ -4193,7 +4460,7 @@ async function init() {
     toast(t("errors.bridgeMissing"), "err");
   }
 
-  applyTheme(theme || "dark");
+  applyTheme(theme || "light");
   applyStaticI18n();
   navigate(currentPageFromHash(), { skipLoad: true, skipHash: true });
   await loadOverview(true);
@@ -4202,6 +4469,1720 @@ async function init() {
   }
   // 功能页与插件配置页的双向同步：轮询拉取外部改动（写方向即时落盘）
   startFeatureSyncPolling();
+  // 融合域首屏：群友清单（记忆页筛选项依赖它）与导航角标
+  loadMembers().catch(() => {});
+  loadFusionHealth("ov-fusion").catch(() => {});
+}
+
+/* ======================================================================
+ * 融合域页面逻辑（群聊拟人化 · 与实施总纲第 3 节逐页对应）
+ * ----------------------------------------------------------------------
+ * 本段追加在既有逻辑之后，只新增函数与两个绑定入口（bindNavGroups /
+ * bindFusionControls），不改写既有页面行为；所有请求仍只走 bridge。
+ * ====================================================================== */
+
+/* ---------------------------------------------------------------------- */
+/* 通用小工具                                                              */
+/* ---------------------------------------------------------------------- */
+
+/** 把「逗号分隔文本」拆成数组（中英文逗号与换行都接受）。 */
+function splitList(value) {
+  return String(value || "")
+    .replace(/，/g, ",")
+    .replace(/\n/g, ",")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/** 0~1 数值 → 百分比文本。 */
+function asPct(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return `${Math.round(number * 100)}%`;
+}
+
+/** 带符号的微小数值（特质漂移用），保留 3 位小数。 */
+function signed(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  const text = Math.abs(number) < 0.0005 ? "0" : number.toFixed(3);
+  return number > 0 ? `+${text}` : text;
+}
+
+/** 层级（letta）判定：与后端 memory/tiers.py 同一套只读规则。 */
+function tierOf(row) {
+  const status = String(row.status || "active");
+  if (status === "archived" || status === "forgotten") return "archive";
+  const importance = Number(row.importance || 0);
+  const access = Number(row.access_count || 0);
+  if (importance >= 0.75 || access >= 3) return "core";
+  if (importance < 0.35) return "archive";
+  return "recall";
+}
+
+const TIER_LABEL = { core: "核心", recall: "召回", archive: "归档" };
+const TIER_PILL = { core: "on", recall: "info", archive: "off" };
+
+function tierPill(tier) {
+  return `<span class="pill ${TIER_PILL[tier] || "off"}">${esc(TIER_LABEL[tier] || tier)}</span>`;
+}
+
+/** 读取主题色（SVG 图形着色用；主题切换后重绘即可换色）。 */
+function themeColor(name, fallback) {
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs = {}) {
+  const node = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+  return node;
+}
+
+/** 空态占位（与既有 renderEmpty 同款观感）。 */
+function renderSoftEmpty(target, text) {
+  if (!target) return;
+  target.innerHTML = `<div class="empty">${esc(text)}</div>`;
+}
+
+/* ---------------------------------------------------------------------- */
+/* 导航分组折叠 + 标签页                                                   */
+/* ---------------------------------------------------------------------- */
+
+const NAV_GROUPS_KEY = "super-astrbot-nav-groups";
+
+function bindNavGroups() {
+  let collapsed = [];
+  try {
+    collapsed = JSON.parse(window.localStorage.getItem(NAV_GROUPS_KEY) || "[]");
+  } catch (error) {
+    collapsed = [];
+  }
+  document.querySelectorAll(".nav-group").forEach((group) => {
+    const key = group.dataset.group;
+    if (!key) return;
+    if (collapsed.includes(key)) group.classList.add("collapsed");
+    const head = group.querySelector(".nav-group-head");
+    if (!head) return;
+    head.addEventListener("click", () => {
+      const next = !group.classList.contains("collapsed");
+      group.classList.toggle("collapsed", next);
+      head.setAttribute("aria-expanded", next ? "false" : "true");
+      const current = new Set(
+        Array.from(document.querySelectorAll(".nav-group.collapsed")).map((node) => node.dataset.group)
+      );
+      try {
+        window.localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(Array.from(current)));
+      } catch (error) {
+        /* 隐私模式忽略 */
+      }
+    });
+  });
+}
+
+/** 切页时自动展开目标页所在分组：折叠状态不该把用户挡在门外。 */
+function revealNavGroup(page) {
+  const item = document.querySelector(`.nav-item[data-page="${CSS.escape(page)}"]`);
+  if (!item) return;
+  const group = item.closest(".nav-group");
+  if (!group || !group.classList.contains("collapsed")) return;
+  group.classList.remove("collapsed");
+  const head = group.querySelector(".nav-group-head");
+  if (head) head.setAttribute("aria-expanded", "true");
+  const current = new Set(
+    Array.from(document.querySelectorAll(".nav-group.collapsed")).map((node) => node.dataset.group)
+  );
+  try {
+    window.localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(Array.from(current)));
+  } catch (error) {
+    /* 忽略 */
+  }
+}
+
+function bindTabs() {
+  const tabs = document.querySelectorAll(".tabs .tab");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const container = tab.closest(".page") || document;
+      const name = tab.dataset.tab;
+      container.querySelectorAll(".tabs .tab").forEach((node) => {
+        node.classList.toggle("active", node === tab);
+      });
+      container.querySelectorAll(".tab-pane").forEach((pane) => {
+        pane.classList.toggle("active", pane.id === name);
+      });
+    });
+  });
+}
+
+/** Notion 招牌「悬停出现拖拽手柄」：给每张卡片注入 ⋮⋮ 手柄。 */
+function injectDragHandles() {
+  document.querySelectorAll(".content .card").forEach((card) => {
+    if (card.querySelector(":scope > .drag-handle")) return;
+    const handle = document.createElement("span");
+    handle.className = "drag-handle";
+    handle.setAttribute("aria-hidden", "true");
+    handle.textContent = "⋮⋮";
+    card.insertBefore(handle, card.firstChild);
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* 总览：编排流水线 + 融合健康                                             */
+/* ---------------------------------------------------------------------- */
+
+async function loadPipeline() {
+  const flow = $("ov-flow");
+  const summary = $("ov-pipeline-summary");
+  if (!flow) return;
+  try {
+    const data = await apiGet("fusion/pipeline");
+    const stages = data.stages || [];
+    if (!stages.length) {
+      renderSoftEmpty(flow, data.degraded || "编排流水线未装配");
+      if (summary) summary.textContent = "";
+      return;
+    }
+    flow.innerHTML = stages
+      .map((stage) => {
+        const detail = stage.detail || {};
+        const hint = detail.hint || detail.error || "";
+        return `<div class="step ${esc(stage.status || "on")}">
+          <div class="n">${esc(stage.index)} ${esc(stage.status === "off" ? "未启用" : stage.status === "degraded" ? "降级" : "在线")}</div>
+          <div class="t">${esc(stage.title)}</div>
+          <div class="d">${esc(hint)}</div>
+          <div class="pg clickable" data-goto="${esc(stage.target)}">前往 →</div>
+        </div>`;
+      })
+      .join("");
+    const info = data.summary || {};
+    if (summary) {
+      summary.textContent = `①→⑧：在线 ${info.on || 0} · 降级 ${info.degraded || 0} · 未启用 ${info.off || 0}`;
+    }
+  } catch (error) {
+    renderError(flow, error);
+  }
+}
+
+async function loadFusionHealth(targetId) {
+  const target = $(targetId);
+  if (!target) return;
+  try {
+    const data = await apiGet("monitor/fusion");
+    const items = data.items || [];
+    if (!items.length) {
+      renderSoftEmpty(target, data.degraded || "融合模块未装配");
+      return;
+    }
+    renderTable(
+      target,
+      [
+        { title: "模块", render: (row) => `<span class="title">${esc(row.title)}</span>` },
+        {
+          title: "状态",
+          render: (row) =>
+            `<span class="pill ${row.status === "online" ? "on" : row.status === "degraded" ? "warn" : "off"}">${
+              row.status === "online" ? "在线" : row.status === "degraded" ? "降级" : "未启用"
+            }</span>`,
+        },
+        { title: "能力键", render: (row) => `<span class="mono muted">${esc(row.capability)}</span>` },
+        { title: "详情", className: "content", render: (row) => esc(row.detail || "—") },
+      ],
+      items,
+      { emptyText: "没有融合模块。" }
+    );
+    const summary = data.summary || {};
+    const nav = $("nav-latrace");
+    if (nav) {
+      const latrace = items.find((item) => item.key === "latrace");
+      nav.textContent = latrace
+        ? latrace.status === "online"
+          ? "就绪"
+          : latrace.status === "degraded"
+            ? "待回填"
+            : "未启用"
+        : "—";
+    }
+    if (targetId === "mt-fusion" && summary.degraded) {
+      /* 监控页把降级数体现在提示里，避免只看表格漏掉 */
+      $("mt-meta").textContent = `${$("mt-meta").textContent || ""}`.trim();
+    }
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 人格内核（PersonaForge 三层）                                           */
+/* ---------------------------------------------------------------------- */
+
+const forgeState = { snapshot: null };
+
+async function loadForge() {
+  try {
+    const snapshot = await apiGet("persona/forge");
+    forgeState.snapshot = snapshot;
+    renderForge(snapshot);
+  } catch (error) {
+    renderError($("pf-meta"), error);
+  }
+}
+
+function forgeDial(axis, label, value) {
+  const percent = Math.round(Number(value || 0) * 100);
+  return `<div class="dial">
+    <span class="name">${esc(label)}</span>
+    <input type="range" data-forge-axis="${esc(axis)}" min="0" max="100" step="1" value="${percent}" />
+    <span class="val mono" data-forge-axis-value="${esc(axis)}">${(percent / 100).toFixed(2)}</span>
+  </div>`;
+}
+
+function fillSelect(id, options, labels, current) {
+  const node = $(id);
+  if (!node) return;
+  node.innerHTML = options
+    .map(
+      (option) =>
+        `<option value="${esc(option)}"${option === current ? " selected" : ""}>${esc(
+          labels[option] || option
+        )}</option>`
+    )
+    .join("");
+}
+
+function renderForge(snapshot) {
+  const profile = snapshot.profile;
+  if (!profile) {
+    renderSoftEmpty($("pf-meta"), snapshot.degraded || "三层人格未装配");
+    return;
+  }
+  const meta = snapshot.meta || {};
+  const labels = snapshot.labels || {};
+  renderStats($("pf-meta"), [
+    ["双过程内省", meta.introspection_enabled ? "开启" : "关闭"],
+    ["当前心情", profile.dynamic_state.current_mood || "—"],
+    ["能量值", `${profile.dynamic_state.energy_level}/100`],
+    ["已建关系", `${meta.relationships || 0} 位群友`],
+    ["内省次数", meta.introspection_count || 0],
+    ["最近保存", meta.updated_at ? fmtTime(meta.updated_at) : "—"],
+  ]);
+
+  // ① 核心特质
+  const bigFive = profile.core_traits.big_five || {};
+  $("pf-mbti").value = profile.core_traits.mbti || "";
+  fillSelect("pf-defense", Object.keys(labels.defense || {}), labels.defense || {}, profile.core_traits.defense_mechanism);
+  $("pf-core").innerHTML = (snapshot.axes || [])
+    .map((axis) => forgeDial(axis, (labels.big_five || {})[axis] || axis, bigFive[axis]))
+    .join("");
+  $("pf-values").value = (profile.core_traits.values || []).join(", ");
+  $("pf-interests").value = (profile.interests || []).join(", ");
+
+  // ② 表层风格
+  const style = profile.speaking_style || {};
+  fillSelect("pf-sentence", Object.keys(labels.sentence || {}), labels.sentence || {}, style.sentence_length);
+  fillSelect("pf-vocabulary", Object.keys(labels.vocabulary || {}), labels.vocabulary || {}, style.vocabulary_level);
+  fillSelect("pf-punctuation", Object.keys(labels.punctuation || {}), labels.punctuation || {}, style.punctuation_habit);
+  fillSelect("pf-emoji", Object.keys(labels.emoji || {}), labels.emoji || {}, style.emoji_frequency);
+  $("pf-catchphrases").value = (style.catchphrases || []).join(", ");
+  $("pf-tone-markers").value = (style.tone_markers || []).join(", ");
+
+  // ③ 动态状态
+  const state = profile.dynamic_state || {};
+  $("pf-mood").value = state.current_mood || "";
+  const energy = Number(state.energy_level || 0);
+  $("pf-energy").value = String(energy);
+  $("pf-energy-value").textContent = String(energy);
+
+  const relations = Object.entries(state.relationship_map || {});
+  renderTable(
+    $("pf-relations"),
+    [
+      { title: "对象", render: (row) => `<span class="mono">${esc(row.target)}</span>` },
+      { title: "亲密度", className: "num", render: (row) => esc(num(row.intimacy, 1)) },
+      { title: "历史摘要", className: "content", render: (row) => esc(row.history_summary || "—") },
+    ],
+    relations.map(([target, info]) => ({ target, ...info })),
+    { emptyText: "还没有互动记录（聊过天之后关系会在这里累积）。" }
+  );
+
+  $("pf-monologue-state").textContent = meta.introspection_enabled
+    ? `双过程内省已开启${meta.last_introspection_at ? ` · 上次 ${fmtTime(meta.last_introspection_at)}` : ""}`
+    : "双过程内省关闭（功能页可开）";
+  $("pf-text").textContent = snapshot.profile_text || "—";
+}
+
+function forgePatchFromForm() {
+  const bigFive = {};
+  document.querySelectorAll("[data-forge-axis]").forEach((input) => {
+    bigFive[input.dataset.forgeAxis] = Number(input.value) / 100;
+  });
+  return {
+    core_traits: {
+      mbti: $("pf-mbti").value.trim(),
+      big_five: bigFive,
+      values: splitList($("pf-values").value),
+      defense_mechanism: $("pf-defense").value,
+    },
+    speaking_style: {
+      sentence_length: $("pf-sentence").value,
+      vocabulary_level: $("pf-vocabulary").value,
+      punctuation_habit: $("pf-punctuation").value,
+      emoji_frequency: $("pf-emoji").value,
+      catchphrases: splitList($("pf-catchphrases").value),
+      tone_markers: splitList($("pf-tone-markers").value),
+    },
+    dynamic_state: {
+      current_mood: $("pf-mood").value.trim() || "平静",
+      energy_level: Number($("pf-energy").value),
+    },
+    interests: splitList($("pf-interests").value),
+  };
+}
+
+async function saveForge(button) {
+  if (button) button.disabled = true;
+  try {
+    const result = await apiPost("persona/forge-update", {
+      action: "update",
+      patch: forgePatchFromForm(),
+    });
+    toast(result.message || t("forge.saved"), "ok");
+    if (result.snapshot) {
+      forgeState.snapshot = result.snapshot;
+      renderForge(result.snapshot);
+    }
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function resetForge() {
+  confirmRequest(
+    t("forge.reset"),
+    "会把三层人格恢复为出厂画像（当前数值不再保留），确定继续吗？",
+    async () => {
+      try {
+        const result = await apiPost("persona/forge-update", { action: "reset" });
+        toast(result.message || t("forge.resetDone"), "ok");
+        if (result.snapshot) renderForge(result.snapshot);
+      } catch (error) {
+        toast(error.message || String(error), "err");
+      }
+    }
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* 演化轨迹（character-sim）                                               */
+/* ---------------------------------------------------------------------- */
+
+const RADAR_AXES = [
+  "openness",
+  "conscientiousness",
+  "extraversion",
+  "agreeableness",
+  "emotional_stability",
+  "warmth",
+  "assertiveness",
+  "humor_inclination",
+  "interest_breadth",
+];
+
+const DRIFT_COLORS = ["#2383e2", "#d44c47", "#0f7b6c", "#a67c00", "#8250df", "#337ea9", "#eb5757", "#4dab9a"];
+
+async function loadEvolution() {
+  try {
+    const data = await apiGet("persona/evolution");
+    if (data.degraded) {
+      renderSoftEmpty($("pe-meta"), data.degraded);
+      return;
+    }
+    const stats = data.stats || {};
+    renderStats($("pe-meta"), [
+      ["事件总数", stats.total],
+      ["近 7 天", stats.recent],
+      ["里程碑", stats.milestones],
+      ["主要经验", (stats.by_experience || [])[0] ? `${(stats.by_experience || [])[0].label}×${(stats.by_experience || [])[0].count}` : "—"],
+      ["雷达轴数", (data.radar || {}).axes ? (data.radar || {}).axes.length : 0],
+      ["统计窗口", `${stats.window_days || 7} 天`],
+    ]);
+    drawRadar($("pe-radar"), data.radar || {});
+    drawDrift($("pe-drift"), data.drift || {}, $("pe-drift-legend"));
+    const timeline = data.timeline || [];
+    const target = $("pe-timeline");
+    if (!timeline.length) {
+      renderSoftEmpty(target, "还没有演化事件（聊天里出现情绪 / 冲突 / 高光等信号后会自动记录）。");
+      return;
+    }
+    target.innerHTML = timeline
+      .map((item) => {
+        const deltas = Object.entries(item.delta_labels || {})
+          .map(([axis, value]) => `${esc(axis)} ${esc(signed(value))}`)
+          .join("、");
+        return `<div class="ev ${esc(item.kind)}">
+          <div class="when">${esc(fmtTime(item.created_at))}</div>
+          <div class="dot-mark"></div>
+          <div class="what">
+            <span class="pill ${item.kind === "milestone" ? "warn" : "info"}">${esc(
+              item.kind === "milestone" ? "里程碑" : item.label || item.kind
+            )}</span>
+            ${esc(item.summary || "")}
+            ${deltas ? `<div class="muted">特质漂移：${deltas}</div>` : ""}
+          </div>
+        </div>`;
+      })
+      .join("");
+  } catch (error) {
+    renderError($("pe-meta"), error);
+  }
+}
+
+function drawRadar(svg, radar) {
+  if (!svg) return;
+  svg.innerHTML = "";
+  const values = radar.values || {};
+  const labels = radar.labels || {};
+  const centerX = 180;
+  const centerY = 150;
+  const radius = 100;
+  const axes = RADAR_AXES.filter((axis) => axis in labels || axis in values);
+  if (!axes.length) {
+    svg.appendChild(svgEl("text", { x: centerX, y: centerY, class: "axis-label", "text-anchor": "middle" }))
+      .textContent = "无数据";
+    return;
+  }
+  const gridColor = themeColor("--chart-grid", "rgba(55,53,47,0.12)");
+  const textColor = themeColor("--text-dim", "#787774");
+  const accent = themeColor("--accent", "#2383e2");
+
+  // 4 圈网格 + 轴线
+  [0.25, 0.5, 0.75, 1].forEach((ratio) => {
+    const points = axes
+      .map((axis, index) => {
+        const angle = (Math.PI * 2 * index) / axes.length - Math.PI / 2;
+        const r = radius * ratio;
+        return `${centerX + r * Math.cos(angle)},${centerY + r * Math.sin(angle)}`;
+      })
+      .join(" ");
+    svg.appendChild(svgEl("polygon", { points, fill: "none", stroke: gridColor, "stroke-width": 1 }));
+  });
+  axes.forEach((axis, index) => {
+    const angle = (Math.PI * 2 * index) / axes.length - Math.PI / 2;
+    svg.appendChild(
+      svgEl("line", {
+        x1: centerX,
+        y1: centerY,
+        x2: centerX + radius * Math.cos(angle),
+        y2: centerY + radius * Math.sin(angle),
+        stroke: gridColor,
+        "stroke-width": 1,
+      })
+    );
+    const label = svgEl("text", {
+      x: centerX + (radius + 18) * Math.cos(angle),
+      y: centerY + (radius + 18) * Math.sin(angle) + 3,
+      class: "axis-label",
+      fill: textColor,
+      "text-anchor": "middle",
+    });
+    label.textContent = labels[axis] || axis;
+    svg.appendChild(label);
+  });
+
+  // 数值多边形
+  const points = axes
+    .map((axis, index) => {
+      const angle = (Math.PI * 2 * index) / axes.length - Math.PI / 2;
+      const value = Math.max(0, Math.min(1, Number(values[axis] || 0)));
+      const r = radius * value;
+      return `${centerX + r * Math.cos(angle)},${centerY + r * Math.sin(angle)}`;
+    })
+    .join(" ");
+  svg.appendChild(
+    svgEl("polygon", { points, fill: accent, "fill-opacity": 0.16, stroke: accent, "stroke-width": 2 })
+  );
+}
+
+function drawDrift(svg, drift, legendEl) {
+  if (!svg) return;
+  svg.innerHTML = "";
+  const days = drift.days || [];
+  const axesMap = drift.axes || {};
+  const labels = drift.labels || {};
+  if (!days.length) {
+    const note = svgEl("text", { x: 400, y: 120, class: "axis-label", "text-anchor": "middle" });
+    note.textContent = "暂无漂移记录";
+    svg.appendChild(note);
+    if (legendEl) legendEl.innerHTML = "";
+    return;
+  }
+  const width = 800;
+  const height = 240;
+  const padLeft = 46;
+  const padBottom = 26;
+  const padTop = 22;
+  // 后端返回的形状是 {days: [...], axes: {day: {axis: delta}}}；
+  // 这里按「轴」重组成累计曲线（轴名取各日增量的键并集，缺日按 0 计）。
+  const axisNames = [];
+  days.forEach((day) => {
+    Object.keys(axesMap[day] || {}).forEach((axis) => {
+      if (!axisNames.includes(axis)) axisNames.push(axis);
+    });
+  });
+  const series = {};
+  axisNames.forEach((axis) => {
+    let cumulative = 0;
+    series[axis] = days.map((day) => {
+      cumulative += Number((axesMap[day] || {})[axis] || 0);
+      return cumulative;
+    });
+  });
+  const all = Object.values(series).flat();
+  const maxAbs = Math.max(0.02, ...all.map((value) => Math.abs(value)));
+  const zeroY = padTop + (height - padTop - padBottom) / 2;
+  const scaleY = (value) => zeroY - (value / maxAbs) * ((height - padTop - padBottom) / 2);
+  const scaleX = (index) =>
+    padLeft + (days.length === 1 ? 0 : (index * (width - padLeft - 20)) / (days.length - 1));
+
+  const gridColor = themeColor("--chart-grid", "rgba(55,53,47,0.12)");
+  const textColor = themeColor("--text-dim", "#787774");
+  [0.25, 0.5, 0.75, 1].forEach((ratio) => {
+    [1, -1].forEach((sign) => {
+      const y = zeroY - sign * ratio * ((height - padTop - padBottom) / 2);
+      svg.appendChild(svgEl("line", { x1: padLeft, y1: y, x2: width - 12, y2: y, class: "grid" }));
+    });
+  });
+  svg.appendChild(
+    svgEl("line", { x1: padLeft, y1: zeroY, x2: width - 12, y2: zeroY, stroke: gridColor, "stroke-width": 1 })
+  );
+  const zeroLabel = svgEl("text", { x: 8, y: zeroY + 3, class: "axis-label", fill: textColor });
+  zeroLabel.textContent = "0";
+  svg.appendChild(zeroLabel);
+  const maxLabel = svgEl("text", { x: 6, y: scaleY(maxAbs) + 3, class: "axis-label", fill: textColor });
+  maxLabel.textContent = `+${maxAbs.toFixed(2)}`;
+  svg.appendChild(maxLabel);
+
+  Object.entries(series).forEach(([axis, values], index) => {
+    const color = DRIFT_COLORS[index % DRIFT_COLORS.length];
+    const points = values.map((value, i) => `${scaleX(i)},${scaleY(value)}`).join(" ");
+    svg.appendChild(svgEl("polyline", { points, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round" }));
+  });
+  // x 轴首尾日期
+  const first = svgEl("text", { x: padLeft, y: height - 8, class: "axis-label", fill: textColor });
+  first.textContent = days[0];
+  svg.appendChild(first);
+  if (days.length > 1) {
+    const last = svgEl("text", { x: width - 12, y: height - 8, class: "axis-label", fill: textColor, "text-anchor": "end" });
+    last.textContent = days[days.length - 1];
+    svg.appendChild(last);
+  }
+  if (legendEl) {
+    legendEl.innerHTML = Object.keys(series)
+      .map(
+        (axis, index) =>
+          `<span><i style="background:${DRIFT_COLORS[index % DRIFT_COLORS.length]}"></i>${esc(labels[axis] || axis)}</span>`
+      )
+      .join("");
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 风格样本（群友档案 + 策略 + 表达样本）                                   */
+/* ---------------------------------------------------------------------- */
+
+const memberState = { members: [] };
+
+async function loadStyleSamples() {
+  await Promise.all([loadMembers(), loadStylePatterns()]);
+}
+
+async function loadMembers() {
+  try {
+    const data = await apiGet("members/list");
+    const members = data.members || [];
+    memberState.members = members;
+    const stability = data.stability || {};
+    const meta = $("ss-member-meta");
+    if (meta) {
+      meta.textContent = `群友 ${members.length} 位 · 标识稳定 ${stability.stable || 0} / 不稳定 ${stability.unstable || 0}`;
+    }
+    renderTable(
+      $("ss-member-table"),
+      [
+        { title: "群友", render: (row) => `<span class="title">${esc(row.stable_name || row.sender_id)}</span>` },
+        { title: "标识", render: (row) => `<span class="mono muted">${esc(row.sender_id)}</span>` },
+        {
+          title: "稳定性",
+          render: (row) =>
+            `<span class="pill ${row.stability === "stable" ? "on" : row.stability === "unstable" ? "err" : "off"}">${
+              row.stability === "stable" ? "稳定" : row.stability === "unstable" ? "不稳定" : "未知"
+            }</span>`,
+        },
+        { title: "好感度", className: "num", render: (row) => esc(row.affinity === null || row.affinity === undefined ? "—" : num(row.affinity, 2)) },
+        { title: "记忆", className: "num", key: "memory_count" },
+        { title: "关系", render: (row) => esc(row.relation || "—") },
+        { title: "语气策略", render: (row) => esc(row.tone || "—") },
+        { title: "来源", render: (row) => `<span class="muted">${esc(row.source || "未建档")}</span>` },
+        { title: "最近互动", className: "num", render: (row) => esc(row.last_interact ? fmtTime(row.last_interact) : "—") },
+        {
+          title: "操作",
+          className: "ops",
+          render: (row) =>
+            `<button class="link-btn" data-member-distill="${esc(row.sender_id)}">蒸馏档案</button>` +
+            `<button class="link-btn" data-member-strategy="${esc(row.sender_id)}">编辑策略</button>`,
+        },
+      ],
+      members,
+      { emptyText: "还没有群友观测：让群友在群里说句话后，身份观测会自动建档。" }
+    );
+
+    const select = $("ss-strategy-member");
+    if (select) {
+      const current = select.value;
+      select.innerHTML = members
+        .map(
+          (row) =>
+            `<option value="${esc(row.sender_id)}">${esc(row.stable_name || row.sender_id)}（${esc(
+              row.sender_id
+            )}）</option>`
+        )
+        .join("");
+      if (current && members.some((row) => row.sender_id === current)) select.value = current;
+    }
+    // 发送者筛选项来自 memory/facets（带记忆条数，口径与记忆表一致）
+    let senderOptions = "";
+    try {
+      const facets = await apiGet("memory/facets");
+      senderOptions = (facets.senders || [])
+        .map(
+          (row) =>
+            `<option value="${esc(row.sender_id)}">${esc(row.sender_name || row.sender_id)}（${esc(
+              row.count
+            )}）</option>`
+        )
+        .join("");
+    } catch (error) {
+      senderOptions = members
+        .map((row) => `<option value="${esc(row.sender_id)}">${esc(row.stable_name || row.sender_id)}</option>`)
+        .join("");
+    }
+    ["mem-sender", "recall-sender"].forEach((id) => {
+      const node = $(id);
+      if (!node) return;
+      const current = node.value;
+      node.innerHTML = `<option value="">${esc(t("filter.allSenders"))}</option>${senderOptions}`;
+      node.value = current;
+    });
+  } catch (error) {
+    renderError($("ss-member-table"), error);
+  }
+}
+
+async function loadStrategy(senderId) {
+  const id = senderId || ($("ss-strategy-member") ? $("ss-strategy-member").value : "");
+  if (!id) {
+    toast(t("styleSamples.noMember"), "warn");
+    return;
+  }
+  try {
+    const data = await apiPost("members/strategy", { action: "get", sender_id: id });
+    const row = data.strategy || {};
+    $("ss-relation").value = row.relation || "";
+    $("ss-tone").value = row.tone || "";
+    $("ss-address").value = row.address_as || "";
+    $("ss-topics").value = (row.topics || []).join(", ");
+    $("ss-taboo").value = (row.taboo || []).join(", ");
+    $("ss-strategy-meta").textContent = row.source
+      ? `来源：${row.source}${row.updated_at ? ` · 更新于 ${fmtTime(row.updated_at)}` : ""}`
+      : "该群友还没有策略（保存后即刻生效：只微调语气 / 称呼 / 话题 / 禁忌）";
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function saveStrategy() {
+  const id = $("ss-strategy-member") ? $("ss-strategy-member").value : "";
+  if (!id) {
+    toast(t("styleSamples.noMember"), "warn");
+    return;
+  }
+  try {
+    const result = await apiPost("members/strategy", {
+      action: "save",
+      sender_id: id,
+      relation: $("ss-relation").value.trim(),
+      tone: $("ss-tone").value.trim(),
+      address_as: $("ss-address").value.trim(),
+      topics: splitList($("ss-topics").value),
+      taboo: splitList($("ss-taboo").value),
+      source: "manual",
+    });
+    toast(result.message || t("styleSamples.strategySaved"), "ok");
+    await loadMembers();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function deleteStrategy() {
+  const id = $("ss-strategy-member") ? $("ss-strategy-member").value : "";
+  if (!id) {
+    toast(t("styleSamples.noMember"), "warn");
+    return;
+  }
+  confirmRequest(t("action.delete"), `删除该群友的对话策略？（画像与记忆不受影响）`, async () => {
+    try {
+      const result = await apiPost("members/strategy", { action: "delete", sender_id: id });
+      toast(result.message || t("styleSamples.strategyDeleted"), "ok");
+      await loadMembers();
+      await loadStrategy(id);
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+}
+
+async function distillMember(senderId) {
+  try {
+    const result = await apiPost("members/strategy", { action: "distill", sender_id: senderId });
+    toast(`${result.origin === "distilly:offline" ? "已接入离线蒸馏档案" : "已用在线样本自写档案"}`, "ok");
+    await loadMembers();
+    await loadStrategy(senderId);
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function distillAll() {
+  try {
+    const result = await apiPost("members/strategy", { action: "distill-all", sender_id: "-" });
+    toast(`已为 ${result.distilled || 0} 位未建档群友生成档案`, "ok");
+    await loadMembers();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function loadStylePatterns() {
+  try {
+    const data = await apiGet("persona", { limit: 50 });
+    renderTable(
+      $("ss-pattern-table"),
+      [
+        { title: "场景", render: (row) => esc(truncate(row.situation || "", 40)) },
+        { title: "表达", className: "content", render: (row) => esc(truncate(row.expression || "", 60)) },
+        { title: "权重", className: "num", render: (row) => esc(num(row.weight, 2)) },
+        { title: "命中", className: "num", key: "hits" },
+        { title: "作用域", render: (row) => `<span class="muted mono">${esc(row.scope || "")}</span>` },
+      ],
+      data.style || [],
+      { emptyText: "还没有学习到表达样本（可在功能页开启「风格模仿」并批准待审记录）。" }
+    );
+  } catch (error) {
+    renderError($("ss-pattern-table"), error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 记忆：发送者 / 层级过滤（作用于本批最多 100 条）                         */
+/* ---------------------------------------------------------------------- */
+
+const memFilterState = { active: false, rows: [], offset: 0, limit: 20 };
+
+async function fetchMemoryBatch(cursor) {
+  // 导航重构版以 memory/list 为规范路由（后端与旧 memories 同源，兼容别名继续可用）
+  return apiGet("memory/list", {
+    offset: 0,
+    limit: 100,
+    status: cursor.status,
+    kind: cursor.kind,
+    keyword: cursor.keyword,
+    sort: cursor.sort,
+  });
+}
+
+function paintMemoryBatch(target) {
+  const rows = memFilterState.rows;
+  const page = rows.slice(memFilterState.offset, memFilterState.offset + memFilterState.limit);
+  renderTable(target, memoryColumns(), page, { emptyText: "该筛选条件下没有记忆。" });
+  const from = rows.length === 0 ? 0 : memFilterState.offset + 1;
+  const to = Math.min(memFilterState.offset + memFilterState.limit, rows.length);
+  $("mem-page-info").textContent = `${from}-${to} / ${rows.length}（本批）`;
+  $("mem-prev").disabled = memFilterState.offset <= 0;
+  $("mem-next").disabled = memFilterState.offset + memFilterState.limit >= rows.length;
+}
+
+async function loadMemoriesFiltered() {
+  const target = $("mem-table");
+  const cursor = state.memories;
+  try {
+    const result = await fetchMemoryBatch(cursor);
+    const sender = $("mem-sender") ? $("mem-sender").value : "";
+    const tier = $("mem-tier") ? $("mem-tier").value : "";
+    let rows = result.items || [];
+    if (sender) rows = rows.filter((row) => String(row.sender_id || "") === sender);
+    if (tier) rows = rows.filter((row) => tierOf(row) === tier);
+    memFilterState.rows = rows;
+    memFilterState.limit = cursor.limit;
+    paintMemoryBatch(target);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function loadMemories() {
+  const sender = $("mem-sender") ? $("mem-sender").value : "";
+  const tier = $("mem-tier") ? $("mem-tier").value : "";
+  if (sender || tier) {
+    memFilterState.active = true;
+    memFilterState.offset = 0;
+    return loadMemoriesFiltered();
+  }
+  memFilterState.active = false;
+  const target = $("mem-table");
+  const cursor = state.memories;
+  try {
+    const result = await apiGet("memory/list", {
+      offset: cursor.offset,
+      limit: cursor.limit,
+      status: cursor.status,
+      kind: cursor.kind,
+      keyword: cursor.keyword,
+      sort: cursor.sort,
+    });
+    cursor.total = Number(result.total || 0);
+    renderTable(target, memoryColumns(), result.items || [], {
+      emptyText: "该筛选条件下没有记忆。",
+    });
+  } catch (error) {
+    renderError(target, error);
+  }
+  const from = cursor.total === 0 ? 0 : cursor.offset + 1;
+  const to = Math.min(cursor.offset + cursor.limit, cursor.total);
+  $("mem-page-info").textContent = `${from}-${to} / ${cursor.total}`;
+  $("mem-prev").disabled = cursor.offset <= 0;
+  $("mem-next").disabled = cursor.offset + cursor.limit >= cursor.total;
+}
+
+/* ---------------------------------------------------------------------- */
+/* 检索：混合召回 + 证据链 + 图扩展                                        */
+/* ---------------------------------------------------------------------- */
+
+async function runRecall() {
+  const query = $("recall-query").value.trim();
+  const umo = $("recall-umo").value.trim();
+  const senderId = $("recall-sender") ? $("recall-sender").value : "";
+  const limit = Math.max(1, Math.min(20, Number($("recall-limit").value) || 5));
+  const target = $("recall-table");
+  const meta = $("recall-meta");
+
+  if (!query) {
+    meta.textContent = "请输入检索词。";
+    renderEmpty(target, "请输入检索词。");
+    return;
+  }
+
+  meta.textContent = "检索中…";
+  renderEmpty(target, "检索中…");
+  try {
+    const result = await apiPost("memory/recall", { query, umo, sender_id: senderId, limit });
+    const parts = [
+      `命中 ${result.total || 0} 条`,
+      `检索路：${result.routes || "—"}`,
+      `耗时：${result.elapsed_ms !== undefined ? `${result.elapsed_ms}ms` : "—"}`,
+    ];
+    if (result.sender_id) parts.push(`发送者过滤：${result.sender_id}（本页过滤掉 ${result.filtered_out || 0} 条）`);
+    if (result.tkg) parts.push("已附时序图谱证据链");
+    if ((result.expanded || []).length) parts.push(`图扩展补充 ${result.expanded.length} 条`);
+    if (result.rerank) parts.push(result.rerank);
+    if (result.degraded) parts.push(`提示：${result.degraded}`);
+    meta.textContent = parts.join("　|　");
+
+    const rows = [...(result.items || []), ...(result.expanded || [])];
+    renderTable(
+      target,
+      [
+        { title: "#", key: "id", className: "num" },
+        {
+          title: "内容",
+          className: "content",
+          render: (row) =>
+            `<span class="clickable" data-memory="${esc(row.id)}">${esc(truncate(row.content, 160))}</span>`,
+        },
+        { title: "发送者", render: (row) => esc(row.sender_name || row.sender_id || "—") },
+        {
+          title: "最终分",
+          className: "num",
+          render: (row) => esc(row.score === null || row.score === undefined ? "—" : num(row.score, 3)),
+        },
+        {
+          title: "Provenance",
+          className: "content",
+          render: (row) => {
+            if (row.source === "tkg-expand") {
+              return `<span class="muted">图扩展：${esc(row.via || "")}</span>`;
+            }
+            const entities = ((row.provenance || {}).entities || []).join("、");
+            const chips = [row.match ? esc(row.match) : "", entities ? `实体：${esc(entities)}` : ""].filter(Boolean);
+            return chips.length ? `<span class="muted">${chips.join("　")}</span>` : `<span class="muted">—</span>`;
+          },
+        },
+      ],
+      rows,
+      { emptyText: "没有命中任何记忆。" }
+    );
+  } catch (error) {
+    meta.textContent = "";
+    renderError(target, error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 记忆后端：后端状态 + 三级占比 + 衰减曲线                                */
+/* ---------------------------------------------------------------------- */
+
+const BACKEND_PILL = { online: "on", degraded: "warn", off: "off", "monitor-only": "info" };
+
+async function loadMemoryBackend() {
+  try {
+    const data = await apiGet("memory/backends");
+    const backends = data.backends || [];
+    renderTable(
+      $("mb-backends"),
+      [
+        { title: "后端", render: (row) => `<span class="title">${esc(row.title)}</span>` },
+        {
+          title: "状态",
+          render: (row) =>
+            `<span class="pill ${BACKEND_PILL[row.status] || "off"}">${
+              row.status === "online"
+                ? "就绪"
+                : row.status === "degraded"
+                  ? "降级"
+                  : row.status === "monitor-only"
+                    ? "仅展示"
+                    : "未启用"
+            }</span>`,
+        },
+        { title: "详情", className: "content", render: (row) => esc(row.detail || "—") },
+      ],
+      backends,
+      { emptyText: data.degraded || "没有可用的记忆后端。" }
+    );
+    $("mb-meta").textContent = `当前生效后端：${data.active_backend === "latrace" ? "LATRACE 时序图谱（进程内）" : "本地 SQLite"}`;
+
+    // 三级占比：走专用路由（含每层的样本与门槛说明）
+    let tiers = [];
+    try {
+      const tierData = await apiGet("memory/tiers", { samples: 5 });
+      tiers = tierData.tiers || [];
+    } catch (error) {
+      tiers = ((data.tiers_detail || {}).tiers) || [];
+    }
+    renderTable(
+      $("mb-tiers"),
+      [
+        { title: "层级", render: (row) => `${tierPill(row.tier)} ${esc(row.label)}` },
+        { title: "条数", className: "num", key: "count" },
+        { title: "占比", className: "num", render: (row) => esc(asPct(row.share)) },
+        { title: "说明", className: "content", render: (row) => esc(row.hint || "") },
+      ],
+      tiers,
+      { emptyText: "还没有记忆，三级占比为空。" }
+    );
+    const decoded = await apiGet("memory/decay", { limit: 8 });
+    drawDecayCurve($("mb-decay"), decoded.curves || {});
+    $("mb-decay-meta").textContent = decoded.degraded
+      ? decoded.degraded
+      : `默认强度 ${decoded.strength_days} 天 · 写回重要度：${decoded.write_back ? "开启" : "关闭"} · 接近遗忘阈值 ${decoded.threshold_pct}%`;
+    const samples = decoded.samples || [];
+    renderTable(
+      $("mb-decay-table"),
+      [
+        { title: "#", key: "id", className: "num" },
+        { title: "内容", className: "content", render: (row) => esc(truncate(row.content, 80)) },
+        { title: "发送者", render: (row) => esc(row.sender_name || row.sender_id || "—") },
+        { title: "保留率", className: "num", render: (row) => `<span class="${valClass(Number(row.retention || 0) / 100)}">${esc(num(row.retention, 1))}%</span>` },
+        { title: "强度(天)", className: "num", render: (row) => esc(num(row.strength_days, 1)) },
+        { title: "距上次活跃(天)", className: "num", render: (row) => esc(num(row.elapsed_days, 1)) },
+      ],
+      samples,
+      { emptyText: decoded.degraded || "暂无临近遗忘的记忆。" }
+    );
+  } catch (error) {
+    renderError($("mb-backends"), error);
+  }
+}
+
+function drawDecayCurve(svg, curves) {
+  if (!svg) return;
+  svg.innerHTML = "";
+  const points = curves.points || [];
+  const natural = curves.natural || [];
+  const reviewed = curves.reviewed || [];
+  if (!points.length) {
+    const note = svgEl("text", { x: 400, y: 130, class: "axis-label", "text-anchor": "middle" });
+    note.textContent = "暂无衰减数据";
+    svg.appendChild(note);
+    return;
+  }
+  const width = 800;
+  const height = 260;
+  const padLeft = 44;
+  const padRight = 16;
+  const padTop = 18;
+  const padBottom = 30;
+  const maxPct = Number(curves.max_pct || 120);
+  const maxDay = Math.max(...points);
+  const scaleX = (day) => padLeft + (day / maxDay) * (width - padLeft - padRight);
+  const scaleY = (pct) => padTop + (1 - pct / maxPct) * (height - padTop - padBottom);
+  const gridColor = themeColor("--chart-grid", "rgba(55,53,47,0.12)");
+  const textColor = themeColor("--text-dim", "#787774");
+
+  [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {
+    const y = padTop + ratio * (height - padTop - padBottom);
+    svg.appendChild(svgEl("line", { x1: padLeft, y1: y, x2: width - padRight, y2: y, class: "grid" }));
+    const label = svgEl("text", { x: 8, y: y + 3, class: "axis-label", fill: textColor });
+    label.textContent = `${Math.round(maxPct * (1 - ratio))}%`;
+    svg.appendChild(label);
+  });
+  const threshold = svgEl("line", {
+    x1: padLeft,
+    y1: scaleY(Number(curves.threshold_pct || 20)),
+    x2: width - padRight,
+    y2: scaleY(Number(curves.threshold_pct || 20)),
+    class: "line threshold",
+  });
+  svg.appendChild(threshold);
+
+  const line = (series, className) => {
+    const polyline = svgEl("polyline", {
+      points: series.map((item) => `${scaleX(item.day)},${scaleY(item.retention)}`).join(" "),
+      class: `line ${className}`,
+    });
+    svg.appendChild(polyline);
+  };
+  line(natural, "natural");
+  line(reviewed, "reviewed");
+
+  points.forEach((day) => {
+    const label = svgEl("text", {
+      x: scaleX(day),
+      y: height - 8,
+      class: "axis-label",
+      fill: textColor,
+      "text-anchor": "middle",
+    });
+    label.textContent = `${day}d`;
+    svg.appendChild(label);
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* 世界书（Lorebook）                                                      */
+/* ---------------------------------------------------------------------- */
+
+const worldbookState = { editingId: 0 };
+
+function resetWorldbookEditor() {
+  worldbookState.editingId = 0;
+  $("wb-triggers").value = "";
+  $("wb-priority").value = "5";
+  $("wb-scope-type").value = "global";
+  $("wb-scope-id").value = "";
+  $("wb-enabled").value = "1";
+  $("wb-content").value = "";
+  $("wb-editor-meta").textContent = "新条目（保存后生效）";
+}
+
+async function loadWorldbook() {
+  try {
+    const data = await apiGet("memory/worldbook");
+    const items = data.items || [];
+    const stats = data.stats || {};
+    renderTable(
+      $("wb-table"),
+      [
+        { title: "#", key: "id", className: "num" },
+        {
+          title: "触发词",
+          render: (row) =>
+            (row.triggers || []).length
+              ? (row.triggers || []).map((trigger) => `<span class="tag">${esc(trigger)}</span>`).join("")
+              : `<span class="muted">手动条目</span>`,
+        },
+        { title: "注入内容", className: "content", render: (row) => esc(truncate(row.content, 120)) },
+        { title: "作用域", render: (row) => `<span class="muted mono">${esc(row.scope)}</span>` },
+        { title: "优先级", className: "num", key: "priority" },
+        {
+          title: "状态",
+          render: (row) => `<span class="pill ${row.enabled ? "on" : "off"}">${row.enabled ? "启用" : "停用"}</span>`,
+        },
+        { title: "命中", className: "num", key: "hits" },
+        {
+          title: "操作",
+          className: "ops",
+          render: (row) =>
+            `<button class="link-btn" data-worldbook-edit="${esc(row.id)}">编辑</button>` +
+            `<button class="link-btn danger" data-worldbook-del="${esc(row.id)}">删除</button>`,
+        },
+      ],
+      items,
+      { emptyText: data.degraded || "还没有世界书条目（新增后按触发词自动注入）。" }
+    );
+    $("wb-editor-meta").textContent = `共 ${stats.entries || 0} 条 · 启用 ${stats.enabled || 0} 条 · 累计命中 ${stats.hits || 0} 次`;
+    worldbookState.items = items;
+  } catch (error) {
+    renderError($("wb-table"), error);
+  }
+}
+
+function editWorldbook(id) {
+  const row = (worldbookState.items || []).find((item) => String(item.id) === String(id));
+  if (!row) return;
+  worldbookState.editingId = row.id;
+  $("wb-triggers").value = (row.triggers || []).join(", ");
+  $("wb-priority").value = String(row.priority);
+  $("wb-scope-type").value = row.scope_type || "global";
+  $("wb-scope-id").value = row.scope_id || "";
+  $("wb-enabled").value = row.enabled ? "1" : "0";
+  $("wb-content").value = row.content || "";
+  $("wb-editor-meta").textContent = `编辑条目 #${row.id}`;
+}
+
+async function saveWorldbook() {
+  const content = $("wb-content").value.trim();
+  if (!content) {
+    toast("注入内容不能为空", "warn");
+    return;
+  }
+  const payload = {
+    triggers: splitList($("wb-triggers").value),
+    content,
+    priority: Number($("wb-priority").value) || 5,
+    scope_type: $("wb-scope-type").value,
+    scope_id: $("wb-scope-id").value.trim(),
+    enabled: $("wb-enabled").value === "1",
+  };
+  const endpoint = worldbookState.editingId ? "memory/worldbook-update" : "memory/worldbook-add";
+  if (worldbookState.editingId) payload.id = worldbookState.editingId;
+  try {
+    const result = await apiPost(endpoint, payload);
+    toast(result.message || t("worldbook.saved"), "ok");
+    resetWorldbookEditor();
+    await loadWorldbook();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function deleteWorldbook(id) {
+  confirmRequest(t("action.delete"), `删除世界书条目 #${id}？`, async () => {
+    try {
+      const result = await apiPost("memory/worldbook-del", { id: Number(id) });
+      toast(result.message || t("worldbook.deleted"), "ok");
+      await loadWorldbook();
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* 共情管线（CogEmp）                                                      */
+/* ---------------------------------------------------------------------- */
+
+async function loadEmpathy() {
+  try {
+    const data = await apiGet("empathy/config");
+    // 事件流单独走 empathy/log：与配置解耦，可按会话过滤
+    const logData = await apiGet("empathy/log", { limit: 50 }).catch(() => ({ items: [] }));
+    const config = data.config || {};
+    const stats = data.stats || {};
+    renderStats($("ep-meta"), [
+      ["开关", config.enabled ? "开启" : "关闭"],
+      ["共情温度", config.temperature !== undefined ? num(config.temperature, 2) : "—"],
+      ["强度门槛", config.min_intensity !== undefined ? num(config.min_intensity, 2) : "—"],
+      ["近 24h 事件", stats.events || 0],
+      ["阶段数", (config.stage_identify ? 1 : 0) + (config.stage_understand ? 1 : 0) + (config.stage_empathize ? 1 : 0)],
+      ["注入上限", `${config.max_injected_chars || 0} 字`],
+    ]);
+    if ($("ep-stage-identify")) $("ep-stage-identify").checked = Boolean(config.stage_identify);
+    if ($("ep-stage-understand")) $("ep-stage-understand").checked = Boolean(config.stage_understand);
+    if ($("ep-stage-empathize")) $("ep-stage-empathize").checked = Boolean(config.stage_empathize);
+    if ($("ep-temperature")) {
+      const value = Math.round(Number(config.temperature || 0.55) * 100);
+      $("ep-temperature").value = String(value);
+      $("ep-temperature-value").textContent = (value / 100).toFixed(2);
+    }
+    const items = (logData.items && logData.items.length ? logData.items : data.items) || [];
+    renderTable(
+      $("ep-log"),
+      [
+        { title: "时间", className: "num", render: (row) => esc(fmtTime(row.created_at)) },
+        { title: "群友", render: (row) => esc(row.sender_name || row.sender_id || "—") },
+        {
+          title: "情绪",
+          render: (row) => `<span class="pill ${row.emotion === "开心" || row.emotion === "感激" ? "on" : "warn"}">${esc(row.emotion || "—")}</span>`,
+        },
+        { title: "强度", className: "num", render: (row) => esc(num(row.intensity, 2)) },
+        { title: "原因线索", render: (row) => esc((row.causes || []).join("、") || "—") },
+        { title: "共情润色", className: "content", render: (row) => esc(truncate(row.guidance || "", 90)) },
+      ],
+      items,
+      { emptyText: data.degraded || "还没有共情事件（识别到情绪后会自动留痕）。" }
+    );
+  } catch (error) {
+    renderError($("ep-meta"), error);
+  }
+}
+
+async function saveEmpathy() {
+  try {
+    const payload = {
+      stage_identify: $("ep-stage-identify").checked,
+      stage_understand: $("ep-stage-understand").checked,
+      stage_empathize: $("ep-stage-empathize").checked,
+      temperature: Number($("ep-temperature").value) / 100,
+    };
+    const result = await apiPost("empathy/config", payload);
+    toast(result.message || t("empathy.saved"), "ok");
+    await loadEmpathy();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 主动关怀（回访队列 + 计划轨）                                            */
+/* ---------------------------------------------------------------------- */
+
+const proactiveState = { editingId: 0 };
+
+async function loadProactive() {
+  try {
+    const status = $("pq-status") ? $("pq-status").value : "";
+    const data = await apiGet("proactive/queue", { status, limit: 50 });
+    const stats = data.stats || {};
+    if ($("pq-meta")) {
+      $("pq-meta").textContent = `待发 ${stats.pending || 0} · 到期 ${stats.due || 0} · 已发送 ${stats.sent || 0} · 总数 ${stats.total || 0}`;
+    }
+    const nav = $("nav-queue");
+    if (nav) nav.textContent = stats.pending ? String(stats.pending) : "—";
+    renderTable(
+      $("pq-table"),
+      [
+        { title: "#", key: "id", className: "num" },
+        { title: "类型", render: (row) => `<span class="pill info">${esc(row.kind_label)}</span>` },
+        { title: "对象", render: (row) => esc(row.target || row.umo || "—") },
+        { title: "到期时间", className: "num", render: (row) => esc(row.due_at ? fmtTime(row.due_at) : "—") },
+        { title: "内容", className: "content", render: (row) => esc(truncate(row.content, 90)) },
+        {
+          title: "状态",
+          render: (row) =>
+            `<span class="pill ${row.status === "pending" ? "warn" : row.status === "sent" ? "on" : "off"}">${esc(row.status_label)}</span>`,
+        },
+        { title: "尝试", className: "num", key: "attempts" },
+        {
+          title: "操作",
+          className: "ops",
+          render: (row) =>
+            (row.status === "pending"
+              ? `<button class="link-btn" data-queue-sent="${esc(row.id)}">标记已发</button>` +
+                `<button class="link-btn" data-queue-cancel="${esc(row.id)}">取消</button>`
+              : "") +
+            `<button class="link-btn danger" data-queue-del="${esc(row.id)}">删除</button>`,
+        },
+      ],
+      data.items || [],
+      { emptyText: data.degraded || "回访队列为空（登记后到期自动投递）。" }
+    );
+
+    // 计划轨 / 空闲轨
+    try {
+      const schedule = await apiGet("proactive/schedule");
+      const config = schedule.config || {};
+      const snapshot = schedule.snapshot || {};
+      renderStats($("pq-schedule"), [
+        ["主动消息开关", config.enabled ? "开启" : "关闭"],
+        ["计划轨", config.daily_enabled ? `每天 ${config.daily_time || "—"}` : "关闭"],
+        ["空闲轨", config.idle_enabled ? `静默 ${config.idle_minutes || 0} 分钟` : "关闭"],
+        ["目标会话", (config.targets || []).length],
+        ["每日上限", config.daily_max || "—"],
+        ["已发送", snapshot.sent !== undefined ? snapshot.sent : "—"],
+      ]);
+      const log = await apiGet("proactive/log", { limit: 20 });
+      renderTable(
+        $("pq-log"),
+        [
+          { title: "#", key: "id", className: "num" },
+          { title: "类型", render: (row) => esc(row.kind_label) },
+          { title: "对象", render: (row) => esc(row.target || row.umo || "—") },
+          { title: "内容", className: "content", render: (row) => esc(truncate(row.content, 80)) },
+          { title: "状态", render: (row) => esc(row.status_label) },
+          { title: "更新时间", className: "num", render: (row) => esc(row.updated_at ? fmtTime(row.updated_at) : "—") },
+        ],
+        log.items || [],
+        { emptyText: "还没有投递记录。" }
+      );
+    } catch (error) {
+      renderSoftEmpty($("pq-log"), error.message || String(error));
+    }
+  } catch (error) {
+    renderError($("pq-table"), error);
+  }
+}
+
+function newProactiveItem() {
+  proactiveState.editingId = 0;
+  $("pq-content").value = "";
+  $("pq-umo").value = "";
+  $("pq-due-hours").value = "24";
+  $("pq-editor-meta").textContent = "新登记（到期后自动投递）";
+}
+
+async function saveProactive() {
+  const content = $("pq-content").value.trim();
+  const umo = $("pq-umo").value.trim();
+  if (!content) {
+    toast("内容不能为空", "warn");
+    return;
+  }
+  if (!umo) {
+    toast(t("proactive.needUmo"), "warn");
+    return;
+  }
+  try {
+    const result = await apiPost("proactive/queue", {
+      action: "add",
+      kind: $("pq-kind").value,
+      umo,
+      target: umo,
+      content,
+      due_in_hours: Number($("pq-due-hours").value) || 24,
+    });
+    toast(result.message || t("proactive.saved"), "ok");
+    newProactiveItem();
+    await loadProactive();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function updateQueueStatus(id, action) {
+  try {
+    await apiPost("proactive/queue", { action, id: Number(id) });
+    toast("队列状态已更新", "ok");
+    await loadProactive();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+async function deleteQueueItem(id) {
+  confirmRequest(t("action.delete"), `删除队列项 #${id}？`, async () => {
+    try {
+      const result = await apiPost("proactive/queue", { action: "delete", id: Number(id) });
+      toast(result.message || t("proactive.deleted"), "ok");
+      await loadProactive();
+    } catch (error) {
+      toast(error.message || String(error), "err");
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* 功能页：群上下文卡片                                                    */
+/* ---------------------------------------------------------------------- */
+
+async function loadGroupContext() {
+  const target = $("feat-group");
+  if (!target) return;
+  try {
+    const data = await apiGet("group/context");
+    if (data.degraded) {
+      renderSoftEmpty(target, data.degraded);
+      return;
+    }
+    const pairs = [
+      ["群聊语义", data.enabled ? "开启" : "关闭"],
+      ["插话阈值", num(data.attention_threshold, 2)],
+      ["冷却（秒）", data.cooldown_seconds],
+      ["每小时上限", data.max_per_hour],
+      ["合并窗口（秒）", num(data.merge_window_seconds, 1)],
+      ["称呼词", (data.bot_aliases || []).join("、") || "—"],
+      ["白名单", (data.whitelist || []).join("、") || "不限"],
+      ["黑名单", (data.blacklist || []).join("、") || "无"],
+    ];
+    target.innerHTML = pairs.map(([label, value]) => kv(label, String(value))).join("");
+  } catch (error) {
+    renderSoftEmpty(target, error.message || String(error));
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 图谱页：图层切换 / 时间线 / 重建                                        */
+/* ---------------------------------------------------------------------- */
+
+async function rebuildTkg(button) {
+  if (button) button.disabled = true;
+  try {
+    const result = await apiPost("graph/rebuild", { limit: 300 });
+    toast(`时序图谱已回填：扫描 ${result.memories || 0} 条记忆，实体 ${result.entities || 0} 个`, "ok");
+    await loadGraph();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadGraphTimeline() {
+  const target = $("gp-timeline");
+  if (!target) return;
+  try {
+    const data = await apiGet("graph/timeline", { limit: 20 });
+    const items = data.items || [];
+    renderTable(
+      target,
+      [
+        { title: "时间", className: "num", render: (row) => esc(row.valid_from ? fmtTime(row.valid_from) : "—") },
+        { title: "主体", render: (row) => esc(row.src || "—") },
+        { title: "关系", render: (row) => `<span class="pill info">${esc(row.relation)}</span>` },
+        { title: "客体", render: (row) => esc(row.dst || "—") },
+        { title: "权重", className: "num", render: (row) => esc(num(row.weight, 2)) },
+        { title: "证据", className: "content", render: (row) => `<span class="muted mono">${esc(row.evidence || "—")}</span>` },
+      ],
+      items,
+      { emptyText: data.degraded || "时序图谱为空：点「重建时序图谱」从既有记忆回填。" }
+    );
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 新页面控件绑定（在 init 中调用一次）                                     */
+/* ---------------------------------------------------------------------- */
+
+function bindFusionControls() {
+  bindNavGroups();
+  bindTabs();
+  injectDragHandles();
+
+  // 人格内核
+  if ($("pf-save")) $("pf-save").addEventListener("click", (event) => saveForge(event.currentTarget));
+  if ($("pf-reload")) $("pf-reload").addEventListener("click", loadForge);
+  if ($("pf-reset")) $("pf-reset").addEventListener("click", resetForge);
+  if ($("pf-preview")) {
+    $("pf-preview").addEventListener("click", () => {
+      const snapshot = forgeState.snapshot || {};
+      $("pf-text").textContent = snapshot.profile_text || "—";
+      toast("已刷新注入预览（保存后生效的是表单内容）", "info");
+    });
+  }
+  if ($("pf-core")) {
+    $("pf-core").addEventListener("input", (event) => {
+      const input = event.target.closest("[data-forge-axis]");
+      if (!input) return;
+      const chip = document.querySelector(`[data-forge-axis-value="${CSS.escape(input.dataset.forgeAxis)}"]`);
+      if (chip) chip.textContent = (Number(input.value) / 100).toFixed(2);
+    });
+  }
+  if ($("pf-energy")) {
+    $("pf-energy").addEventListener("input", () => {
+      $("pf-energy-value").textContent = $("pf-energy").value;
+    });
+  }
+
+  // 演化轨迹
+  if ($("pe-reload")) $("pe-reload").addEventListener("click", loadEvolution);
+  if ($("pe-reset")) {
+    $("pe-reset").addEventListener("click", () => {
+      confirmRequest(t("evolution.resetEvents"), "清空全部演化事件？当前人格画像不会被重置。", async () => {
+        try {
+          const result = await apiPost("persona/evolution-reset", {});
+          toast(`已清空 ${result.deleted || 0} 条演化事件`, "ok");
+          await loadEvolution();
+        } catch (error) {
+          toast(error.message || String(error), "err");
+        }
+      });
+    });
+  }
+
+  // 风格样本 / 群友档案
+  if ($("ss-distill")) $("ss-distill").addEventListener("click", distillAll);
+  if ($("ss-strategy-load")) $("ss-strategy-load").addEventListener("click", () => loadStrategy());
+  if ($("ss-strategy-save")) $("ss-strategy-save").addEventListener("click", saveStrategy);
+  if ($("ss-strategy-del")) $("ss-strategy-del").addEventListener("click", deleteStrategy);
+  if ($("ss-strategy-member")) {
+    $("ss-strategy-member").addEventListener("change", () => loadStrategy());
+  }
+  if ($("ss-member-table")) {
+    $("ss-member-table").addEventListener("click", (event) => {
+      const distill = event.target.closest("[data-member-distill]");
+      if (distill) return distillMember(distill.dataset.memberDistill);
+      const strategy = event.target.closest("[data-member-strategy]");
+      if (strategy) {
+        if ($("ss-strategy-member")) $("ss-strategy-member").value = strategy.dataset.memberStrategy;
+        return loadStrategy(strategy.dataset.memberStrategy);
+      }
+    });
+  }
+
+  // 记忆页：过滤与分页
+  if ($("mem-sender")) $("mem-sender").addEventListener("change", () => { memFilterState.offset = 0; loadMemories(); });
+  if ($("mem-tier")) $("mem-tier").addEventListener("change", () => { memFilterState.offset = 0; loadMemories(); });
+  if ($("mem-prev")) {
+    $("mem-prev").addEventListener("click", () => {
+      if (!memFilterState.active) return;
+      memFilterState.offset = Math.max(0, memFilterState.offset - memFilterState.limit);
+      paintMemoryBatch($("mem-table"));
+    });
+  }
+  if ($("mem-next")) {
+    $("mem-next").addEventListener("click", () => {
+      if (!memFilterState.active) return;
+      memFilterState.offset += memFilterState.limit;
+      paintMemoryBatch($("mem-table"));
+    });
+  }
+
+  // 记忆后端
+  if ($("mb-reload")) $("mb-reload").addEventListener("click", loadMemoryBackend);
+  if ($("mb-rebuild")) $("mb-rebuild").addEventListener("click", (event) => rebuildTkg(event.currentTarget));
+
+  // 世界书
+  if ($("wb-reload")) $("wb-reload").addEventListener("click", loadWorldbook);
+  if ($("wb-clear-editor")) $("wb-clear-editor").addEventListener("click", resetWorldbookEditor);
+  if ($("wb-save")) $("wb-save").addEventListener("click", saveWorldbook);
+  if ($("wb-table")) {
+    $("wb-table").addEventListener("click", (event) => {
+      const edit = event.target.closest("[data-worldbook-edit]");
+      if (edit) return editWorldbook(edit.dataset.worldbookEdit);
+      const del = event.target.closest("[data-worldbook-del]");
+      if (del) return deleteWorldbook(del.dataset.worldbookDel);
+    });
+  }
+
+  // 共情
+  if ($("ep-reload")) $("ep-reload").addEventListener("click", loadEmpathy);
+  if ($("ep-save")) $("ep-save").addEventListener("click", saveEmpathy);
+  if ($("ep-temperature")) {
+    $("ep-temperature").addEventListener("input", () => {
+      $("ep-temperature-value").textContent = (Number($("ep-temperature").value) / 100).toFixed(2);
+    });
+  }
+
+  // 主动关怀
+  if ($("pq-reload")) $("pq-reload").addEventListener("click", loadProactive);
+  if ($("pq-status")) $("pq-status").addEventListener("change", loadProactive);
+  if ($("pq-new")) $("pq-new").addEventListener("click", newProactiveItem);
+  if ($("pq-save")) $("pq-save").addEventListener("click", saveProactive);
+  if ($("pq-table")) {
+    $("pq-table").addEventListener("click", (event) => {
+      const sent = event.target.closest("[data-queue-sent]");
+      if (sent) return updateQueueStatus(sent.dataset.queueSent, "sent");
+      const cancel = event.target.closest("[data-queue-cancel]");
+      if (cancel) return updateQueueStatus(cancel.dataset.queueCancel, "cancel");
+      const del = event.target.closest("[data-queue-del]");
+      if (del) return deleteQueueItem(del.dataset.queueDel);
+    });
+  }
+
+  // 好感度校准（滑块改动即写入）
+  bindAffinityPanel();
+
+  // 图谱
+  if ($("gp-rebuild")) $("gp-rebuild").addEventListener("click", (event) => rebuildTkg(event.currentTarget));
+  if ($("gp-timeline-refresh")) $("gp-timeline-refresh").addEventListener("click", loadGraphTimeline);
+  if ($("gp-layer")) $("gp-layer").addEventListener("change", loadGraph);
+}
+
+
+/* ---------------------------------------------------------------------- */
+/* 好感度（按群友 · 人工校准滑块）                                          */
+/* ---------------------------------------------------------------------- */
+
+async function loadAffinityPanel() {
+  const target = $("pn-affinity");
+  if (!target) return;
+  const umo = $("pn-umo") ? $("pn-umo").value.trim() : "";
+  try {
+    const data = await apiGet("persona/affinity", { umo, limit: 100 });
+    const items = data.items || [];
+    if (!items.length) {
+      renderSoftEmpty(target, data.degraded || "还没有好感度记录（开启「社交好感度」后随互动累积）。");
+      return;
+    }
+    target.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>群友</th><th>作用域</th><th>好感度</th><th>人工校准</th>
+            <th>心情</th><th>互动次数</th><th>最近互动</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items
+            .map((row) => {
+              const score = Number(row.score || 0);
+              return `<tr>
+                <td class="mono">${esc(row.target_id || "—")}</td>
+                <td class="muted mono">${esc(row.scope || "")}</td>
+                <td class="num"><span class="${valClass(score)}">${esc(num(score, 2))}</span></td>
+                <td>
+                  <input type="range" min="0" max="100" step="1" value="${Math.round(score * 100)}"
+                    data-affinity-target="${esc(row.target_id || "")}" />
+                </td>
+                <td>${esc(row.mood || "—")}</td>
+                <td class="num">${esc(row.interactions ?? 0)}</td>
+                <td class="num">${esc(row.last_interaction ? fmtTime(row.last_interaction) : "—")}</td>
+              </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+      <p class="muted">拖动滑块即可人工校准：带 UMO 时写入会话作用域，不带时写入按用户归属的记录。</p>`;
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function saveAffinity(input) {
+  const targetId = input.dataset.affinityTarget;
+  if (!targetId) return;
+  const umo = $("pn-umo") ? $("pn-umo").value.trim() : "";
+  try {
+    const result = await apiPost("persona/affinity", {
+      target_id: targetId,
+      umo,
+      score: Number(input.value) / 100,
+    });
+    toast(`好感度已更新为 ${num(result.score, 2)}`, "ok");
+    await loadAffinityPanel();
+  } catch (error) {
+    toast(error.message || String(error), "err");
+  }
+}
+
+function bindAffinityPanel() {
+  const target = $("pn-affinity");
+  if (!target) return;
+  target.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-affinity-target]");
+    if (input) saveAffinity(input);
+  });
 }
 
 if (document.readyState === "loading") {

@@ -324,6 +324,147 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX IF NOT EXISTS idx_identity_name ON identity_seen(sender_name)",
         ),
     ),
+    Migration(
+        version=6,
+        description="拟人化融合层：群友策略、三层人格、演化事件、共情日志、世界书、时序图谱、回访队列",
+        statements=(
+            # ---------------- 群友差异化对话策略（members/） ----------------
+            # 一位群友一份策略：底层人格恒定，这里只存「表层微调」——
+            # 语气 / 称呼 / 话题 / 禁忌，注入时改写表达而不切换人格。
+            """
+            CREATE TABLE IF NOT EXISTS member_profiles (
+                sender_id       TEXT PRIMARY KEY,
+                stable_name     TEXT NOT NULL DEFAULT '',
+                relation        TEXT NOT NULL DEFAULT '',
+                tone            TEXT NOT NULL DEFAULT '',
+                address_as      TEXT NOT NULL DEFAULT '',
+                topics          TEXT NOT NULL DEFAULT '[]',
+                taboo           TEXT NOT NULL DEFAULT '[]',
+                source          TEXT NOT NULL DEFAULT 'online',
+                notes           TEXT NOT NULL DEFAULT '',
+                updated_at      REAL NOT NULL DEFAULT 0,
+                created_at      REAL NOT NULL DEFAULT 0
+            )
+            """,
+            # ---------------- 融合层通用 KV（三层人格画像等单例 JSON） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS fusion_state (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL DEFAULT '{}',
+                updated_at REAL NOT NULL DEFAULT 0
+            )
+            """,
+            # ---------------- 人格演化事件（character-sim 影响向量留痕） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS persona_events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind        TEXT NOT NULL DEFAULT 'shift',
+                experience  TEXT NOT NULL DEFAULT 'neutral',
+                sender_id   TEXT NOT NULL DEFAULT '',
+                scope_type  TEXT NOT NULL DEFAULT '',
+                scope_id    TEXT NOT NULL DEFAULT '',
+                summary     TEXT NOT NULL DEFAULT '',
+                deltas      TEXT NOT NULL DEFAULT '{}',
+                confidence  REAL NOT NULL DEFAULT 0,
+                created_at  REAL NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_persona_events_time ON persona_events(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_persona_events_kind ON persona_events(kind, created_at DESC)",
+            # ---------------- 共情事件日志（CogEmp 三阶段留痕） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS empathy_events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type  TEXT NOT NULL DEFAULT '',
+                scope_id    TEXT NOT NULL DEFAULT '',
+                sender_id   TEXT NOT NULL DEFAULT '',
+                sender_name TEXT NOT NULL DEFAULT '',
+                emotion     TEXT NOT NULL DEFAULT '',
+                intensity   REAL NOT NULL DEFAULT 0,
+                cause       TEXT NOT NULL DEFAULT '',
+                stage_mask  TEXT NOT NULL DEFAULT '',
+                guidance    TEXT NOT NULL DEFAULT '',
+                created_at  REAL NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_empathy_events_time ON empathy_events(created_at DESC)",
+            # ---------------- 世界书 / Lorebook 条目（AMBRACE 重写） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS worldbook_entries (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                triggers    TEXT NOT NULL DEFAULT '[]',
+                content     TEXT NOT NULL DEFAULT '',
+                priority    INTEGER NOT NULL DEFAULT 5,
+                scope_type  TEXT NOT NULL DEFAULT '',
+                scope_id    TEXT NOT NULL DEFAULT '',
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                hits        INTEGER NOT NULL DEFAULT 0,
+                created_at  REAL NOT NULL,
+                updated_at  REAL NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_worldbook_scope ON worldbook_entries(scope_type, scope_id, enabled)",
+            # ---------------- 时序知识图谱（LATRACE 思想，进程内重写） ----------------
+            # 节点/边都带时间语义：valid_from/valid_to 让「时间线回溯」可查询，
+            # evidence 保存来源引用（对话 / 离线蒸馏 / 周记），sender 归属防串台。
+            """
+            CREATE TABLE IF NOT EXISTS tkg_nodes (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type  TEXT NOT NULL DEFAULT '',
+                scope_id    TEXT NOT NULL DEFAULT '',
+                name        TEXT NOT NULL,
+                canonical   TEXT NOT NULL DEFAULT '',
+                entity_type TEXT NOT NULL DEFAULT 'topic',
+                sender_id   TEXT NOT NULL DEFAULT '',
+                weight      REAL NOT NULL DEFAULT 1.0,
+                mentions    INTEGER NOT NULL DEFAULT 1,
+                evidence    TEXT NOT NULL DEFAULT '',
+                first_seen  REAL NOT NULL,
+                last_seen   REAL NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tkg_node_unique ON tkg_nodes(scope_type, scope_id, canonical)",
+            "CREATE INDEX IF NOT EXISTS idx_tkg_node_sender ON tkg_nodes(sender_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tkg_node_seen ON tkg_nodes(last_seen DESC)",
+            """
+            CREATE TABLE IF NOT EXISTS tkg_edges (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                src_id     INTEGER NOT NULL,
+                dst_id     INTEGER NOT NULL,
+                relation   TEXT NOT NULL DEFAULT 'co_occur',
+                weight     REAL NOT NULL DEFAULT 1.0,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                evidence   TEXT NOT NULL DEFAULT '',
+                sender_id  TEXT NOT NULL DEFAULT '',
+                valid_from REAL NOT NULL,
+                valid_to   REAL NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tkg_edge_unique ON tkg_edges(src_id, dst_id, relation)",
+            "CREATE INDEX IF NOT EXISTS idx_tkg_edge_src ON tkg_edges(src_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tkg_edge_dst ON tkg_edges(dst_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tkg_edge_time ON tkg_edges(valid_from DESC)",
+            # ---------------- 主动关怀回访队列（AMBRACE 约定回访 + Sibyl 前瞻） ----------------
+            """
+            CREATE TABLE IF NOT EXISTS proactive_queue (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                umo        TEXT NOT NULL DEFAULT '',
+                target     TEXT NOT NULL DEFAULT '',
+                due_at     REAL NOT NULL DEFAULT 0,
+                content    TEXT NOT NULL DEFAULT '',
+                kind       TEXT NOT NULL DEFAULT 'callback',
+                status     TEXT NOT NULL DEFAULT 'pending',
+                attempts   INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_proactive_queue_due ON proactive_queue(status, due_at)",
+            "CREATE INDEX IF NOT EXISTS idx_proactive_queue_umo ON proactive_queue(umo, status)",
+        ),
+    ),
 )
 """迁移列表。当前 schema 版本 = 最后一项的 version。"""
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -17,23 +17,70 @@
         </span>
       </div>
 
-      <div class="side-label" data-i18n="shell.subtitle">长期记忆 · 自我学习</div>
+      <div class="side-label" data-i18n="shell.subtitle">单人格 · 群聊拟人化</div>
 
       <nav class="nav" id="nav">
         <button class="nav-item" data-page="overview" data-i18n="nav.overview">总览</button>
         <button class="nav-item" data-page="features" data-i18n="nav.features">功能</button>
-        <button class="nav-item" data-page="memories" data-i18n="nav.memories">记忆</button>
-        <button class="nav-item" data-page="recall" data-i18n="nav.recall">检索</button>
-        <button class="nav-item" data-page="journals" data-i18n="nav.journals">现实桥</button>
-        <button class="nav-item" data-page="weeklies" data-i18n="nav.weeklies">每周总结</button>
-        <button class="nav-item" data-page="reviews" data-i18n="nav.reviews">待审</button>
-        <button class="nav-item" data-page="persona" data-i18n="nav.persona">学习</button>
-        <button class="nav-item" data-page="identity" data-i18n="nav.identity">身份</button>
-        <button class="nav-item" data-page="graph" data-i18n="nav.graph">图谱</button>
-        <button class="nav-item" data-page="monitor" data-i18n="nav.monitor">监控</button>
-        <button class="nav-item" data-page="models" data-i18n="nav.models">模型</button>
-        <button class="nav-item" data-page="prompts" data-i18n="nav.prompts">提示词</button>
-        <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
+
+        <div class="nav-group" data-group="persona">
+          <button class="nav-group-head" aria-expanded="true">
+            <span class="chev" aria-hidden="true">▾</span>
+            <span data-i18n="nav.groupPersona">人格</span>
+          </button>
+          <div class="nav-items">
+            <button class="nav-item" data-page="persona-forge" data-i18n="nav.personaForge">人格内核</button>
+            <button class="nav-item" data-page="persona-legacy" data-i18n="nav.personaLegacy">表达·黑话·好感度</button>
+            <button class="nav-item" data-page="persona-evolution" data-i18n="nav.personaEvolution">演化轨迹</button>
+            <button class="nav-item" data-page="style-samples" data-i18n="nav.styleSamples">风格样本<span class="tag-right" id="nav-pending">—</span></button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="memory">
+          <button class="nav-group-head" aria-expanded="true">
+            <span class="chev" aria-hidden="true">▾</span>
+            <span data-i18n="nav.groupMemory">记忆</span>
+          </button>
+          <div class="nav-items">
+            <button class="nav-item" data-page="memories" data-i18n="nav.memories">记忆</button>
+            <button class="nav-item" data-page="recall" data-i18n="nav.recall">检索</button>
+            <button class="nav-item" data-page="graph" data-i18n="nav.graph">图谱</button>
+            <button class="nav-item" data-page="memory-backend" data-i18n="nav.memoryBackend">记忆后端<span class="tag-right" id="nav-latrace">—</span></button>
+            <button class="nav-item" data-page="worldbook" data-i18n="nav.worldbook">世界书</button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="empathy">
+          <button class="nav-group-head" aria-expanded="true">
+            <span class="chev" aria-hidden="true">▾</span>
+            <span data-i18n="nav.groupEmpathy">共情与主动</span>
+          </button>
+          <div class="nav-items">
+            <button class="nav-item" data-page="empathy" data-i18n="nav.empathy">共情管线<span class="tag-right" id="nav-empathy">—</span></button>
+            <button class="nav-item" data-page="proactive" data-i18n="nav.proactive">主动关怀<span class="tag-right" id="nav-queue">—</span></button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="record">
+          <button class="nav-group-head" aria-expanded="true">
+            <span class="chev" aria-hidden="true">▾</span>
+            <span data-i18n="nav.groupRecord">记录</span>
+          </button>
+          <div class="nav-items">
+            <button class="nav-item" data-page="journals" data-i18n="nav.journals">现实桥</button>
+            <button class="nav-item" data-page="weeklies" data-i18n="nav.weeklies">每周总结</button>
+          </div>
+        </div>
+
+        <div class="nav-group flat" data-group="system">
+          <div class="nav-group-label" data-i18n="nav.groupSystem">系统</div>
+          <div class="nav-items">
+            <button class="nav-item" data-page="monitor" data-i18n="nav.monitor">监控</button>
+            <button class="nav-item" data-page="models" data-i18n="nav.models">模型</button>
+            <button class="nav-item" data-page="prompts" data-i18n="nav.prompts">提示词</button>
+            <button class="nav-item" data-page="system" data-i18n="nav.system">系统</button>
+          </div>
+        </div>
       </nav>
 
       <div class="sidebar-footer">
@@ -44,22 +91,38 @@
 
     <main class="main">
       <header class="topbar">
-        <h1 id="page-title" data-i18n="nav.overview"><span class="title-index" id="page-index">01</span>总览</h1>
+        <h1 id="page-title"><span class="title-index" id="page-index">01</span>总览</h1>
+        <div class="app-status-line" id="app-status-line"></div>
         <div class="topbar-actions">
           <button class="btn ghost" id="btn-theme" data-i18n="action.theme">主题</button>
-          <button class="btn" id="btn-refresh" data-i18n="action.refresh">刷新</button>
+          <button class="btn ghost" id="btn-refresh" data-i18n="action.refresh">刷新</button>
         </div>
       </header>
 
       <div class="content">
         <div class="loading-bar" id="loading-bar" aria-hidden="true"></div>
-        <!-- 总览 -->
+
+        <!-- ① 总览 -->
         <section class="page" id="page-overview">
           <div class="stat-grid" id="ov-stats"></div>
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="overview.pipeline">群聊消息编排流水线</h2>
+              <div class="row"><span class="muted" id="ov-pipeline-summary">—</span></div>
+            </div>
+            <div class="flow" id="ov-flow"></div>
+            <p class="muted" data-i18n="overview.pipelineHint">
+              拟人化成败落在①身份识别 → ②作用域归属 → ⑤回复生成：识别不清=认错人，作用域错=记忆串台，无策略=对谁都一个调。
+            </p>
+          </div>
           <div class="card">
             <h2 data-i18n="overview.capabilities">能力状态</h2>
             <div class="pill-row" id="ov-caps"></div>
             <div class="degraded" id="ov-degraded"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="overview.fusion">融合模块健康</h2>
+            <div class="table-wrap" id="ov-fusion"></div>
           </div>
           <div class="card">
             <h2 data-i18n="overview.recent">最近写入的记忆</h2>
@@ -67,7 +130,7 @@
           </div>
         </section>
 
-        <!-- 功能开关 -->
+        <!-- ② 功能 -->
         <section class="page" id="page-features">
           <div class="card">
             <h2 data-i18n="features.title">功能开关</h2>
@@ -80,9 +143,263 @@
             </p>
             <div class="feature-list" id="feat-list"></div>
           </div>
+          <div class="card">
+            <h2 data-i18n="features.groupContext">群上下文与接管原则</h2>
+            <div class="kv-grid" id="feat-group"></div>
+          </div>
         </section>
 
-        <!-- 记忆 -->
+        <!-- ③ 人格内核（PersonaForge 三层） -->
+        <section class="page" id="page-persona-forge">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="forge.title">三层人格（PersonaForge · 单人格）</h2>
+              <div class="row">
+                <button class="btn ghost" id="pf-reload" data-i18n="action.query">查询</button>
+                <button class="btn ghost" id="pf-reset" data-i18n="forge.reset">重置为出厂</button>
+                <button class="btn primary" id="pf-save" data-i18n="action.save">保存</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="forge.hint">
+              bot 只有一个稳定人格：所有注入与演化都作用在这一份画像上；群友差异由「群友策略」在表层微调，不切换人格。
+            </p>
+            <div class="kv-grid" id="pf-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="forge.layerCore">① 核心特质（认知与特质）</h2>
+            <div class="form-grid">
+              <label class="field"><span data-i18n="forge.mbti">MBTI</span><input type="text" id="pf-mbti" placeholder="INFJ-T" /></label>
+              <label class="field"><span data-i18n="forge.defense">防御机制</span><select id="pf-defense"></select></label>
+            </div>
+            <div id="pf-core"></div>
+            <div class="form-grid">
+              <label class="field grow"><span data-i18n="forge.values">价值观（逗号分隔）</span><input type="text" id="pf-values" placeholder="真诚, 好奇, 分寸感" /></label>
+              <label class="field grow"><span data-i18n="forge.interests">兴趣标签（逗号分隔）</span><input type="text" id="pf-interests" placeholder="技术, 猫, 长文本阅读" /></label>
+            </div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="forge.layerStyle">② 表层风格（语言与行为模式）</h2>
+            <div class="form-grid">
+              <label class="field"><span data-i18n="forge.sentence">句长偏好</span><select id="pf-sentence"></select></label>
+              <label class="field"><span data-i18n="forge.vocabulary">词汇等级</span><select id="pf-vocabulary"></select></label>
+              <label class="field"><span data-i18n="forge.punctuation">标点习惯</span><select id="pf-punctuation"></select></label>
+              <label class="field"><span data-i18n="forge.emoji">表情使用</span><select id="pf-emoji"></select></label>
+            </div>
+            <div class="form-grid">
+              <label class="field grow"><span data-i18n="forge.catchphrases">口头禅（逗号分隔）</span><input type="text" id="pf-catchphrases" placeholder="说白了, 其实吧" /></label>
+              <label class="field grow"><span data-i18n="forge.toneMarkers">语气词（逗号分隔）</span><input type="text" id="pf-tone-markers" placeholder="吧, 呢, 啊" /></label>
+            </div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="forge.layerState">③ 动态状态（心情 · 能量 · 关系）</h2>
+            <div class="form-grid">
+              <label class="field"><span data-i18n="forge.mood">当前心情</span><input type="text" id="pf-mood" placeholder="平静" /></label>
+              <label class="field grow">
+                <span data-i18n="forge.energy">能量值（0-100）</span>
+                <input type="range" id="pf-energy" min="0" max="100" step="1" value="60" />
+              </label>
+              <span class="mono value-chip" id="pf-energy-value">60</span>
+            </div>
+            <div class="table-wrap" id="pf-relations"></div>
+          </div>
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="forge.text">注入预览（人格摘要）</h2>
+              <div class="row">
+                <button class="btn ghost small" id="pf-preview" data-i18n="forge.previewNow">生成预览</button>
+                <span class="muted" id="pf-monologue-state">—</span>
+              </div>
+            </div>
+            <pre class="peek-textarea" id="pf-text">—</pre>
+          </div>
+        </section>
+
+        <!-- ④ 表达·黑话·好感度 -->
+        <section class="page" id="page-persona-legacy">
+          <div class="card">
+            <h2 data-i18n="persona.title">拟人化学习</h2>
+            <p class="muted" data-i18n="persona.hint">
+              风格样本、群内用语与好感度都在这里查看；未经批准的学习结果不会影响对话。
+            </p>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="persona.umo">会话 UMO（可选）</span>
+                <input type="text" id="pn-umo" placeholder="aiocqhttp:GroupMessage:1081062427" />
+              </label>
+              <button class="btn primary" id="pn-query" data-i18n="action.query">查询</button>
+            </div>
+            <div class="muted" id="pn-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="persona.styles">表达样本</h2>
+            <div class="table-wrap" id="pn-style"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="persona.jargons">群内用语</h2>
+            <div class="table-wrap" id="pn-jargon"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="persona.affinity">好感度（按群友）</h2>
+            <div class="table-wrap" id="pn-affinity"></div>
+          </div>
+        </section>
+
+        <!-- ⑤ 演化轨迹 -->
+        <section class="page" id="page-persona-evolution">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="evolution.title">人格演化轨迹（character-sim）</h2>
+              <div class="row">
+                <button class="btn ghost" id="pe-reload" data-i18n="action.query">查询</button>
+                <button class="btn ghost danger-soft" id="pe-reset" data-i18n="evolution.resetEvents">清空轨迹</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="evolution.hint">
+              每轮互动按经验类型（冲突 / 脆弱 / 连接 / 成功…）施加微量特质漂移（单轮上限 0.03），长期累积成人物弧光。
+            </p>
+            <div class="kv-grid" id="pe-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="evolution.radar">9 轴人格雷达</h2>
+            <div class="chart-box"><svg class="chart" id="pe-radar" viewBox="0 0 360 320" preserveAspectRatio="xMidYMid meet"></svg></div>
+            <p class="muted" data-i18n="evolution.radarHint">
+              5 个大五轴 + 3 个派生轴（温暖 / 果断 / 幽默）+ 兴趣广度；派生轴是线性折算，不额外引入自由度。
+            </p>
+          </div>
+          <div class="card">
+            <h2 data-i18n="evolution.drift">漂移曲线（按日）</h2>
+            <div class="chart-box"><svg class="chart" id="pe-drift" viewBox="0 0 800 240" preserveAspectRatio="none"></svg></div>
+            <div class="legend" id="pe-drift-legend"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="evolution.timeline">里程碑与事件时间线</h2>
+            <div class="tl" id="pe-timeline"></div>
+          </div>
+        </section>
+
+        <!-- ⑥ 风格样本（含群友档案 / 待审） -->
+        <section class="page" id="page-style-samples">
+          <div class="tabs" id="ss-tabs">
+            <button class="tab active" data-tab="ss-samples" data-i18n="styleSamples.tabSamples">风格样本</button>
+            <button class="tab" data-tab="ss-review" data-i18n="styleSamples.tabReview">待审</button>
+          </div>
+
+          <div class="tab-pane active" id="ss-samples">
+            <div class="card">
+              <div class="panel-head">
+                <h2 data-i18n="styleSamples.members">群友风格档案（distilly 离线蒸馏 + 在线自写）</h2>
+                <div class="row">
+                  <span class="muted" id="ss-member-meta">—</span>
+                  <button class="btn ghost small" id="ss-distill" data-i18n="styleSamples.distill">刷新档案</button>
+                </div>
+              </div>
+              <p class="muted" data-i18n="styleSamples.membersHint">
+                有离线蒸馏产物（distilly）时优先接入，否则用该群友的高权重记忆在线自写；档案只存表层策略（语气 / 称呼 / 话题 / 禁忌）。
+              </p>
+              <div class="table-wrap" id="ss-member-table"></div>
+            </div>
+            <div class="card">
+              <h2 data-i18n="styleSamples.strategy">差异化对话策略</h2>
+              <div class="filter-bar">
+                <label class="field grow">
+                  <span data-i18n="styleSamples.member">群友</span>
+                  <select id="ss-strategy-member"></select>
+                </label>
+                <button class="btn ghost" id="ss-strategy-load" data-i18n="styleSamples.loadStrategy">载入策略</button>
+                <button class="btn primary" id="ss-strategy-save" data-i18n="action.save">保存</button>
+                <button class="btn ghost danger-soft" id="ss-strategy-del" data-i18n="action.delete">删除</button>
+              </div>
+              <div class="form-grid">
+                <label class="field"><span data-i18n="styleSamples.relation">关系类型</span><input type="text" id="ss-relation" placeholder="挚友/互怼" /></label>
+                <label class="field"><span data-i18n="styleSamples.tone">语气</span><input type="text" id="ss-tone" placeholder="毒舌互怼 / 温柔倾听 / 专业简洁" /></label>
+                <label class="field"><span data-i18n="styleSamples.address">称呼</span><input type="text" id="ss-address" placeholder="阿柯" /></label>
+                <label class="field grow"><span data-i18n="styleSamples.topics">话题（逗号分隔）</span><input type="text" id="ss-topics" placeholder="游戏, 考研" /></label>
+                <label class="field grow"><span data-i18n="styleSamples.taboo">禁忌（逗号分隔）</span><input type="text" id="ss-taboo" placeholder="煽情" /></label>
+              </div>
+              <div class="muted" id="ss-strategy-meta"></div>
+            </div>
+            <div class="card">
+              <h2 data-i18n="styleSamples.patterns">表达样本（persona · StyleService）</h2>
+              <div class="table-wrap" id="ss-pattern-table"></div>
+            </div>
+            <div class="card">
+              <h2 data-i18n="identity.title">身份诊断</h2>
+              <p class="muted" data-i18n="identity.hint">
+                记忆按「谁说的」归属，而部分平台的用户标识会随会话变化。这里观测每条会话上出现过的发送者标识：
+                若同一昵称对应多个 ID，说明平台 ID 不稳定，应改用昵称策略，否则记忆仍会被会话切碎。
+              </p>
+              <div class="filter-bar">
+                <button class="btn ghost" id="id-refresh" data-i18n="action.query">查询</button>
+                <button class="btn ghost" id="id-clear" data-i18n="identity.clear">清空观测</button>
+              </div>
+              <div class="kv-grid" id="id-summary"></div>
+              <div class="muted" id="id-hint"></div>
+              <div class="table-wrap" id="id-table"></div>
+            </div>
+            <div class="card">
+              <h2 data-i18n="identity.scopeTitle">作用域分布与迁移</h2>
+              <p class="muted" data-i18n="identity.scopeHint">
+                只有带发送者标识的记忆才能按用户归属；迁移前请先预览，落库前插件会自动备份数据库。
+              </p>
+              <div class="filter-bar">
+                <label class="field">
+                  <span data-i18n="identity.fromScope">来源作用域</span>
+                  <select id="sc-from">
+                    <option value="session">session</option>
+                    <option value="user">user</option>
+                    <option value="global">global</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span data-i18n="identity.toScope">迁移目标</span>
+                  <select id="sc-to">
+                    <option value="user_else_archive" data-i18n="identity.toUserElseArchive">能归属的归用户，其余归档</option>
+                    <option value="user" data-i18n="identity.toUser">按发送者归属到用户</option>
+                    <option value="global" data-i18n="identity.toGlobal">整体提升为全局</option>
+                    <option value="archive" data-i18n="identity.toArchive">仅归档</option>
+                  </select>
+                </label>
+                <button class="btn ghost" id="sc-preview" data-i18n="identity.preview">预览</button>
+                <button class="btn primary" id="sc-apply" data-i18n="identity.apply">执行迁移</button>
+              </div>
+              <div class="muted" id="sc-result"></div>
+              <div class="table-wrap" id="sc-table"></div>
+            </div>
+          </div>
+
+          <div class="tab-pane" id="ss-review">
+            <div class="card">
+              <h2 data-i18n="reviews.title">待审记录（reflection + 人工纠偏）</h2>
+              <div class="filter-bar">
+                <label class="field">
+                  <span data-i18n="filter.origin">来源</span>
+                  <select id="rv-origin">
+                    <option value="" data-i18n="filter.all">全部</option>
+                  </select>
+                </label>
+                <label class="field grow">
+                  <span data-i18n="persona.umo">会话 UMO（可选）</span>
+                  <input type="text" id="rv-umo" placeholder="aiocqhttp:GroupMessage:1081062427" />
+                </label>
+                <button class="btn primary" id="rv-search" data-i18n="action.query">查询</button>
+              </div>
+              <div class="bulk-bar">
+                <button type="button" class="link-btn" id="rv-approve-all" data-i18n="reviews.approveAll">批准当前筛选全部</button>
+                <button type="button" class="link-btn danger" id="rv-reject-all" data-i18n="reviews.rejectAll">驳回当前筛选全部</button>
+                <span class="muted" id="rv-batch-result"></span>
+              </div>
+              <p class="muted" id="rv-hint"></p>
+              <div class="table-wrap" id="rv-table"></div>
+              <div class="pager">
+                <button class="btn ghost" id="rv-prev" data-i18n="action.prev">上一页</button>
+                <span class="muted" id="rv-page-info">—</span>
+                <button class="btn ghost" id="rv-next" data-i18n="action.next">下一页</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ⑦ 记忆 -->
         <section class="page" id="page-memories">
           <div class="card">
             <div class="row" style="justify-content: flex-end; margin-bottom: 10px">
@@ -94,9 +411,9 @@
               <label class="field">
                 <span data-i18n="filter.status">状态</span>
                 <select id="mem-status">
+                  <option value="all" data-i18n="filter.all">全部</option>
                   <option value="active" data-i18n="status.active">正式</option>
                   <option value="buffered" data-i18n="status.buffered">缓冲</option>
-                  <option value="pending" data-i18n="status.pending">待审</option>
                   <option value="archived" data-i18n="status.archived">归档</option>
                   <option value="forgotten" data-i18n="status.forgotten">已遗忘</option>
                 </select>
@@ -110,6 +427,21 @@
                   <option value="preference">preference</option>
                   <option value="journal">journal</option>
                   <option value="episode">episode</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="filter.tier">层级（letta）</span>
+                <select id="mem-tier">
+                  <option value="" data-i18n="filter.all">全部</option>
+                  <option value="core" data-i18n="tier.core">核心</option>
+                  <option value="recall" data-i18n="tier.recall">召回</option>
+                  <option value="archive" data-i18n="tier.archive">归档</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="filter.sender">发送者</span>
+                <select id="mem-sender">
+                  <option value="" data-i18n="filter.allSenders">全部群友</option>
                 </select>
               </label>
               <label class="field">
@@ -127,7 +459,7 @@
                 <span data-i18n="filter.keyword">关键词</span>
                 <input type="text" id="mem-keyword" placeholder="内容包含…" />
               </label>
-              <button class="btn" id="mem-search" data-i18n="action.query">查询</button>
+              <button class="btn primary" id="mem-search" data-i18n="action.query">查询</button>
             </div>
             <div class="table-wrap" id="mem-table"></div>
             <div class="pager">
@@ -138,37 +470,270 @@
           </div>
         </section>
 
-        <!-- 检索 -->
+        <!-- ⑧ 检索 -->
         <section class="page" id="page-recall">
           <div class="card">
             <div class="filter-bar">
               <label class="field grow">
                 <span data-i18n="recall.query">检索词</span>
-                <input type="text" id="recall-query" placeholder="例如：项目 上线 疲惫" />
+                <input type="text" id="recall-query" placeholder="例如：论文 焦虑 深夜" />
               </label>
               <label class="field grow">
                 <span data-i18n="recall.umo">会话 UMO（可选）</span>
-                <input type="text" id="recall-umo" placeholder="aiocqhttp:FriendMessage:12345" />
+                <input type="text" id="recall-umo" placeholder="aiocqhttp:GroupMessage:1081062427" />
+              </label>
+              <label class="field">
+                <span data-i18n="recall.sender">发送者过滤</span>
+                <select id="recall-sender">
+                  <option value="" data-i18n="filter.allSenders">全部群友</option>
+                </select>
               </label>
               <label class="field">
                 <span data-i18n="recall.limit">条数</span>
                 <input type="number" id="recall-limit" value="5" min="1" max="20" />
               </label>
-              <button class="btn" id="recall-run" data-i18n="action.search">检索</button>
+              <button class="btn primary" id="recall-run" data-i18n="action.search">检索</button>
             </div>
-            <p class="muted" data-i18n="recall.hint">不填 UMO 时按关键词跨作用域匹配；填写后走混合检索并展示打分构成。</p>
+            <p class="muted" data-i18n="recall.hint">按发送者过滤避免把 A 的事安到 B 头上——拟人化防串台的关键。</p>
             <div class="muted" id="recall-meta"></div>
             <div class="table-wrap" id="recall-table"></div>
           </div>
         </section>
 
-        <!-- 现实桥（周记 / 日记 / 随笔） -->
+        <!-- ⑨ 图谱（TKG） -->
+        <section class="page" id="page-graph">
+          <div class="card">
+            <h2 data-i18n="graph.title">记忆图谱（TKG 时序）</h2>
+            <p class="muted" data-i18n="graph.hint">
+              实体与关系从长期记忆中抽取并按作用域隔离；时序图层额外携带时间语义与证据链（来源引用）。
+            </p>
+            <div class="filter-bar">
+              <label class="field grow">
+                <span data-i18n="graph.umo">会话 UMO（可选）</span>
+                <input type="text" id="gp-umo" placeholder="aiocqhttp:GroupMessage:1081062427" />
+              </label>
+              <label class="field">
+                <span data-i18n="graph.limit">节点上限</span>
+                <select id="gp-limit">
+                  <option value="60">60</option>
+                  <option value="120" selected>120</option>
+                  <option value="200">200</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="graph.layer">图层</span>
+                <select id="gp-layer">
+                  <option value="tkg" data-i18n="graph.layerTkg">时序图谱（TKG）</option>
+                  <option value="cooccur" data-i18n="graph.layerCooccur">共现图谱</option>
+                </select>
+              </label>
+              <button class="btn primary" id="gp-query" data-i18n="graph.query">查询</button>
+              <button class="btn ghost" id="gp-rebuild" data-i18n="graph.rebuild">重建时序图谱</button>
+            </div>
+            <div class="muted" id="gp-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="graph.canvas">图谱可视化</h2>
+            <div class="graph-stage">
+              <canvas id="gp-canvas"></canvas>
+              <div class="graph-tip" id="gp-tip" hidden></div>
+            </div>
+            <div class="legend">
+              <span><i class="edge recent"></i><span data-i18n="graph.edgeRecent">近 7 天</span></span>
+              <span><i class="edge normal"></i><span data-i18n="graph.edgeNormal">较早</span></span>
+              <span><i class="edge stale"></i><span data-i18n="graph.edgeStale">超过 30 天</span></span>
+            </div>
+            <p class="muted" data-i18n="graph.layout">环形布局 · 滚轮缩放 · 拖拽平移</p>
+          </div>
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="graph.timeline">关系时间线（证据链）</h2>
+              <div class="row"><button class="btn ghost small" id="gp-timeline-refresh" data-i18n="action.query">查询</button></div>
+            </div>
+            <div class="table-wrap" id="gp-timeline"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="graph.nodes">节点</h2>
+            <div class="table-wrap" id="gp-nodes"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="graph.edges">关系</h2>
+            <div class="table-wrap" id="gp-edges"></div>
+          </div>
+        </section>
+
+        <!-- ⑩ 记忆后端 -->
+        <section class="page" id="page-memory-backend">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="backend.title">记忆后端状态（进程内）</h2>
+              <div class="row">
+                <button class="btn ghost" id="mb-reload" data-i18n="action.query">查询</button>
+                <button class="btn ghost" id="mb-rebuild" data-i18n="backend.rebuild">重建时序图谱</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="backend.hint">
+              全部后端都在插件进程内运行：本地 SQLite 持久化 + LATRACE 时序图谱 + letta 三级分级；不启动任何外部服务。
+            </p>
+            <div class="table-wrap" id="mb-backends"></div>
+            <div class="muted" id="mb-meta"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="backend.tiers">三级记忆占比（核心 / 召回 / 归档）</h2>
+            <div class="table-wrap" id="mb-tiers"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="backend.decay">艾宾浩斯衰减曲线（AMBRACE）</h2>
+            <div class="chart-box"><svg class="chart" id="mb-decay" viewBox="0 0 800 260" preserveAspectRatio="none"></svg></div>
+            <div class="legend">
+              <span><i class="line natural"></i><span data-i18n="backend.curveNatural">自然遗忘</span></span>
+              <span><i class="line reviewed"></i><span data-i18n="backend.curveReviewed">主动复习后</span></span>
+              <span><i class="line threshold"></i><span data-i18n="backend.curveThreshold">接近遗忘阈值</span></span>
+            </div>
+            <div class="muted" id="mb-decay-meta"></div>
+            <div class="table-wrap" id="mb-decay-table"></div>
+          </div>
+        </section>
+
+        <!-- ⑪ 世界书 -->
+        <section class="page" id="page-worldbook">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="worldbook.title">世界书 / Lorebook（AMBRACE）</h2>
+              <div class="row">
+                <button class="btn ghost" id="wb-reload" data-i18n="action.query">查询</button>
+                <button class="btn ghost" id="wb-clear-editor" data-i18n="worldbook.newEntry">新条目</button>
+                <button class="btn primary" id="wb-save" data-i18n="action.save">保存</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="worldbook.hint">
+              关于用户 / 群 / 世界的事实卡：触发词在当前消息里出现时注入；触发词留空表示手动条目（只存档不注入）。
+            </p>
+            <div class="form-grid">
+              <label class="field grow"><span data-i18n="worldbook.triggers">触发词（逗号分隔）</span><input type="text" id="wb-triggers" placeholder="实验室, 猫舍" /></label>
+              <label class="field"><span data-i18n="worldbook.priority">优先级</span><input type="number" id="wb-priority" value="5" min="1" max="100" /></label>
+              <label class="field">
+                <span data-i18n="worldbook.scope">作用域</span>
+                <select id="wb-scope-type">
+                  <option value="global" data-i18n="worldbook.scopeGlobal">全局</option>
+                  <option value="user" data-i18n="worldbook.scopeUser">指定群友</option>
+                  <option value="session" data-i18n="worldbook.scopeSession">指定会话</option>
+                </select>
+              </label>
+              <label class="field grow"><span data-i18n="worldbook.scopeId">作用域标识（群友 ID / UMO）</span><input type="text" id="wb-scope-id" placeholder="3186805099" /></label>
+              <label class="field"><span data-i18n="worldbook.enabled">启用</span><select id="wb-enabled"><option value="1" data-i18n="worldbook.on">启用</option><option value="0" data-i18n="worldbook.off">停用</option></select></label>
+            </div>
+            <label class="field"><span data-i18n="worldbook.content">注入内容</span><textarea id="wb-content" rows="3" placeholder="某校 AI 实验室，阿柯所在"></textarea></label>
+            <div class="muted" id="wb-editor-meta">—</div>
+            <div class="table-wrap" id="wb-table"></div>
+          </div>
+        </section>
+
+        <!-- ⑫ 共情管线 -->
+        <section class="page" id="page-empathy">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="empathy.title">三阶段共情（CogEmp）</h2>
+              <div class="row">
+                <button class="btn ghost" id="ep-reload" data-i18n="action.query">查询</button>
+                <button class="btn primary" id="ep-save" data-i18n="action.save">保存设置</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="empathy.hint">
+              识别 → 理解 → 共情：只在识别到情绪信号时注入「怎么回」的语气指引，不代写回复，也不改变人格。
+            </p>
+            <div class="kv-grid" id="ep-meta"></div>
+            <div class="stage-list">
+              <div class="switch-row">
+                <div class="switch-text">
+                  <div class="switch-title" data-i18n="empathy.stageIdentify">① 情绪识别</div>
+                  <div class="muted">empathy.stage_identify</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="ep-stage-identify" /><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="switch-row">
+                <div class="switch-text">
+                  <div class="switch-title" data-i18n="empathy.stageUnderstand">② 原因理解</div>
+                  <div class="muted">empathy.stage_understand</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="ep-stage-understand" /><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="switch-row">
+                <div class="switch-text">
+                  <div class="switch-title" data-i18n="empathy.stageEmpathize">③ 认知共情润色</div>
+                  <div class="muted">empathy.stage_empathize</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="ep-stage-empathize" /><span class="track"></span><span class="thumb"></span></label>
+              </div>
+            </div>
+            <div class="dial">
+              <span class="name" data-i18n="empathy.temperature">共情温度</span>
+              <input type="range" id="ep-temperature" min="0" max="100" step="1" value="55" />
+              <span class="val mono" id="ep-temperature-value">0.55</span>
+            </div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="empathy.log">最近共情事件</h2>
+            <div class="table-wrap" id="ep-log"></div>
+          </div>
+        </section>
+
+        <!-- ⑬ 主动关怀 -->
+        <section class="page" id="page-proactive">
+          <div class="card">
+            <div class="panel-head">
+              <h2 data-i18n="proactive.title">主动关怀（约定回访 + 前瞻）</h2>
+              <div class="row">
+                <button class="btn ghost" id="pq-reload" data-i18n="action.query">查询</button>
+                <button class="btn ghost" id="pq-new" data-i18n="proactive.newItem">+ 登记回访</button>
+                <button class="btn primary" id="pq-save" data-i18n="action.save">保存</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="proactive.hint">
+              队列项到期后由调度器投递（复用宿主发送能力）；发送失败自动重试，连续 3 次失败转为「已跳过」。
+            </p>
+            <div class="filter-bar">
+              <label class="field">
+                <span data-i18n="filter.status">状态</span>
+                <select id="pq-status">
+                  <option value="" data-i18n="filter.all">全部</option>
+                  <option value="pending" data-i18n="proactive.pending">待发</option>
+                  <option value="sent" data-i18n="proactive.sent">已发送</option>
+                  <option value="skipped" data-i18n="proactive.skipped">已跳过</option>
+                  <option value="canceled" data-i18n="proactive.canceled">已取消</option>
+                </select>
+              </label>
+              <label class="field">
+                <span data-i18n="proactive.kind">类型</span>
+                <select id="pq-kind">
+                  <option value="callback" data-i18n="proactive.kindCallback">约定回访</option>
+                  <option value="forecast" data-i18n="proactive.kindForecast">前瞻关怀</option>
+                </select>
+              </label>
+              <label class="field grow"><span data-i18n="proactive.umo">目标会话（UMO）</span><input type="text" id="pq-umo" placeholder="aiocqhttp:GroupMessage:1081062427" /></label>
+              <label class="field"><span data-i18n="proactive.dueIn">延迟（小时）</span><input type="number" id="pq-due-hours" value="24" min="1" max="720" /></label>
+            </div>
+            <label class="field"><span data-i18n="proactive.content">内容</span><textarea id="pq-content" rows="2" placeholder="答辩完问问进展"></textarea></label>
+            <div class="muted" id="pq-editor-meta">—</div>
+            <div class="row">
+              <span class="muted" id="pq-meta">—</span>
+            </div>
+            <div class="table-wrap" id="pq-table"></div>
+          </div>
+          <div class="card">
+            <h2 data-i18n="proactive.schedule">计划轨 / 空闲轨（原主动消息）</h2>
+            <div class="kv-grid" id="pq-schedule"></div>
+            <div class="table-wrap" id="pq-log"></div>
+          </div>
+        </section>
+
+        <!-- ⑭ 现实桥 -->
         <section class="page" id="page-journals">
           <div class="card">
             <div class="panel-head">
               <h2 data-i18n="journals.title">现实桥</h2>
               <div class="row">
-                <button class="btn" id="jr-add" data-i18n="journals.add">+ 新增记录</button>
+                <button class="btn primary" id="jr-add" data-i18n="journals.add">+ 新增记录</button>
                 <button class="btn ghost" id="jr-export" data-i18n="action.exportJournals">导出全部 JSON</button>
                 <button class="btn ghost" id="jr-import-label" data-i18n="action.importJournals">导入 JSON</button>
                 <input type="file" id="jr-import" accept="application/json" hidden />
@@ -196,7 +761,7 @@
                   <option value="created_desc" data-i18n="sort.createdDesc">最近写入</option>
                 </select>
               </label>
-              <button class="btn" id="jr-search" data-i18n="action.query">查询</button>
+              <button class="btn primary" id="jr-search" data-i18n="action.query">查询</button>
             </div>
             <div class="bulk-bar">
               <label class="check-inline">
@@ -224,7 +789,7 @@
           </div>
         </section>
 
-        <!-- 每周总结 -->
+        <!-- ⑮ 每周总结 -->
         <section class="page" id="page-weeklies">
           <div class="card">
             <div class="panel-head">
@@ -243,7 +808,7 @@
                 <span data-i18n="filter.keyword">关键词</span>
                 <input type="text" id="wk-keyword" placeholder="内容包含…" />
               </label>
-              <button class="btn" id="wk-search" data-i18n="action.query">查询</button>
+              <button class="btn primary" id="wk-search" data-i18n="action.query">查询</button>
             </div>
             <div class="table-wrap" id="wk-table"></div>
             <div class="pager">
@@ -254,111 +819,7 @@
           </div>
         </section>
 
-        <!-- 待审 -->
-        <section class="page" id="page-reviews">
-          <div class="card">
-            <h2 data-i18n="reviews.title">待审记录</h2>
-            <div class="filter-bar">
-              <label class="field">
-                <span data-i18n="filter.origin">来源</span>
-                <select id="rv-origin">
-                  <option value="" data-i18n="filter.all">全部</option>
-                </select>
-              </label>
-              <label class="field grow">
-                <span data-i18n="persona.umo">会话 UMO（可选）</span>
-                <input type="text" id="rv-umo" placeholder="aiocqhttp:GroupMessage:10086" />
-              </label>
-              <button class="btn" id="rv-search" data-i18n="action.query">查询</button>
-            </div>
-            <div class="bulk-bar">
-              <button type="button" class="link-btn" id="rv-approve-all" data-i18n="reviews.approveAll">批准当前筛选全部</button>
-              <button type="button" class="link-btn danger-soft" id="rv-reject-all" data-i18n="reviews.rejectAll">驳回当前筛选全部</button>
-              <span class="muted" id="rv-batch-result"></span>
-            </div>
-            <p class="muted" id="rv-hint"></p>
-            <div class="table-wrap" id="rv-table"></div>
-            <div class="pager">
-              <button class="btn ghost" id="rv-prev" data-i18n="action.prev">上一页</button>
-              <span class="muted" id="rv-page-info">—</span>
-              <button class="btn ghost" id="rv-next" data-i18n="action.next">下一页</button>
-            </div>
-          </div>
-        </section>
-
-        <!-- 拟人化学习 -->
-        <section class="page" id="page-persona">
-          <div class="card">
-            <h2 data-i18n="persona.title">拟人化学习</h2>
-            <p class="muted" data-i18n="persona.hint">
-              风格样本、群内用语与好感度都在这里查看；未经批准的学习结果不会影响对话。
-            </p>
-            <div class="filter-bar">
-              <label class="field grow">
-                <span data-i18n="persona.umo">会话 UMO（可选）</span>
-                <input type="text" id="pn-umo" placeholder="aiocqhttp:GroupMessage:10086" />
-              </label>
-              <button class="btn" id="pn-query" data-i18n="action.query">查询</button>
-            </div>
-            <div class="muted" id="pn-meta"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="persona.styles">表达样本</h2>
-            <div class="table-wrap" id="pn-style"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="persona.jargons">群内用语</h2>
-            <div class="table-wrap" id="pn-jargon"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="persona.affinity">好感度</h2>
-            <div class="table-wrap" id="pn-affinity"></div>
-          </div>
-        </section>
-
-        <!-- 图谱 -->
-        <section class="page" id="page-graph">
-          <div class="card">
-            <h2 data-i18n="graph.title">记忆图谱</h2>
-            <p class="muted" data-i18n="graph.hint">
-              实体与关系从长期记忆中抽取并按作用域隔离；填写 UMO 只查看对应会话的图谱。
-            </p>
-            <div class="filter-bar">
-              <label class="field grow">
-                <span data-i18n="graph.umo">会话 UMO（可选）</span>
-                <input type="text" id="gp-umo" placeholder="aiocqhttp:GroupMessage:10086" />
-              </label>
-              <label class="field">
-                <span data-i18n="graph.limit">节点上限</span>
-                <select id="gp-limit">
-                  <option value="60">60</option>
-                  <option value="120" selected>120</option>
-                  <option value="200">200</option>
-                </select>
-              </label>
-              <button class="btn" id="gp-query" data-i18n="graph.query">查询</button>
-            </div>
-            <div class="muted" id="gp-meta"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="graph.canvas">图谱可视化</h2>
-            <div class="graph-stage">
-              <canvas id="gp-canvas"></canvas>
-              <div class="graph-tip" id="gp-tip" hidden></div>
-            </div>
-            <p class="muted" data-i18n="graph.layout">环形布局 · 滚轮缩放 · 拖拽平移</p>
-          </div>
-          <div class="card">
-            <h2 data-i18n="graph.nodes">节点</h2>
-            <div class="table-wrap" id="gp-nodes"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="graph.edges">关系</h2>
-            <div class="table-wrap" id="gp-edges"></div>
-          </div>
-        </section>
-
-        <!-- 监控 -->
+        <!-- ⑯ 监控 -->
         <section class="page" id="page-monitor">
           <div class="card">
             <h2 data-i18n="monitor.title">运行监控</h2>
@@ -386,7 +847,7 @@
                 <span data-i18n="monitor.metric">指标</span>
                 <select id="mt-metric"></select>
               </label>
-              <button class="btn" id="mt-query" data-i18n="action.query">查询</button>
+              <button class="btn primary" id="mt-query" data-i18n="action.query">查询</button>
             </div>
             <div class="muted" id="mt-meta"></div>
           </div>
@@ -396,7 +857,7 @@
           </div>
           <div class="card">
             <h2 data-i18n="monitor.trend">趋势</h2>
-            <svg id="mt-chart" class="chart" viewBox="0 0 800 240" preserveAspectRatio="none"></svg>
+            <div class="chart-box"><svg id="mt-chart" class="chart" viewBox="0 0 800 240" preserveAspectRatio="none"></svg></div>
             <div class="muted" id="mt-legend"></div>
           </div>
           <div class="card">
@@ -407,9 +868,13 @@
             <h2 data-i18n="monitor.review">自动审核</h2>
             <div class="kv-grid" id="mt-review"></div>
           </div>
+          <div class="card">
+            <h2 data-i18n="monitor.fusion">融合服务健康</h2>
+            <div class="table-wrap" id="mt-fusion"></div>
+          </div>
         </section>
 
-        <!-- 模型 -->
+        <!-- ⑰ 模型 -->
         <section class="page" id="page-models">
           <div class="card">
             <h2 data-i18n="models.title">模型与提供商</h2>
@@ -432,7 +897,7 @@
           </div>
         </section>
 
-        <!-- 提示词 -->
+        <!-- ⑱ 提示词 -->
         <section class="page" id="page-prompts">
           <div class="card">
             <h2 data-i18n="prompts.title">提示词定制</h2>
@@ -446,7 +911,7 @@
           </div>
         </section>
 
-        <!-- 系统 -->
+        <!-- ⑲ 系统 -->
         <section class="page" id="page-system">
           <div class="card">
             <h2 data-i18n="system.framework">框架与环境</h2>
@@ -464,7 +929,7 @@
             <h2 data-i18n="system.configMaintenance">配置维护</h2>
             <p class="muted" data-i18n="system.configHint">导出当前插件配置为 JSON 备份；导入会按配置 Schema 校验并合并，导入后自动热应用（能力开关与各模块配置即时生效，无需重载）。</p>
             <div class="row">
-              <button class="btn" id="cfg-export" data-i18n="action.exportConfig">导出配置 JSON</button>
+              <button class="btn ghost" id="cfg-export" data-i18n="action.exportConfig">导出配置 JSON</button>
               <button class="btn ghost" id="cfg-import-label" data-i18n="action.importConfig">导入配置 JSON</button>
               <input type="file" id="cfg-import" accept="application/json" hidden />
             </div>
@@ -472,12 +937,12 @@
           <div class="card">
             <h2 data-i18n="system.maintenance">维护</h2>
             <div class="row">
-              <button class="btn" id="btn-reindex" data-i18n="action.reindex">重建检索索引</button>
+              <button class="btn ghost" id="btn-reindex" data-i18n="action.reindex">重建检索索引</button>
               <span class="muted" data-i18n="system.reindexHint">根据当前配置重建关键词索引与向量索引，不会删除记忆。</span>
             </div>
             <div class="muted" id="sys-reindex-note"></div>
           </div>
-           <div class="card">
+          <div class="card">
             <h2 data-i18n="backup.title">备份与导出</h2>
             <p class="muted" data-i18n="backup.hint">
               把插件配置、数据库快照与各类数据打包成一个 zip 备份包。包内 manifest.json 记录每个文件的大小与
@@ -495,7 +960,7 @@
                   <option value="replace" data-i18n="backup.modeReplace">完全覆盖（恢复到备份时刻）</option>
                 </select>
               </label>
-              <button class="btn" id="bk-export" data-i18n="backup.export">导出备份 ZIP</button>
+              <button class="btn primary" id="bk-export" data-i18n="backup.export">导出备份 ZIP</button>
               <button class="btn ghost" id="bk-import-label" data-i18n="backup.import">导入备份 ZIP</button>
               <input type="file" id="bk-import" accept=".zip,application/zip" hidden />
             </div>
@@ -506,53 +971,6 @@
             <div class="muted" id="bk-meta"></div>
             <div class="muted" id="bk-result"></div>
             <div class="table-wrap" id="bk-table"></div>
-          </div>
-        </section>
-
-        <!-- 身份诊断：判定平台用户标识是否跨会话稳定 -->
-        <section class="page" id="page-identity">
-          <div class="card">
-            <h2 data-i18n="identity.title">身份诊断</h2>
-            <p class="muted" data-i18n="identity.hint">
-              记忆按「谁说的」归属，而部分平台的用户标识会随会话变化。这里观测每条会话上出现过的发送者标识：
-              若同一昵称对应多个 ID，说明平台 ID 不稳定，应改用昵称策略，否则记忆仍会被会话切碎。
-            </p>
-            <div class="filter-bar">
-              <button class="btn" id="id-refresh" data-i18n="action.query">查询</button>
-              <button class="btn ghost" id="id-clear" data-i18n="identity.clear">清空观测</button>
-            </div>
-            <div class="kv-grid" id="id-summary"></div>
-            <div class="muted" id="id-hint"></div>
-            <div class="table-wrap" id="id-table"></div>
-          </div>
-          <div class="card">
-            <h2 data-i18n="identity.scopeTitle">作用域分布与迁移</h2>
-            <p class="muted" data-i18n="identity.scopeHint">
-              只有带发送者标识的记忆才能按用户归属；迁移前请先预览，落库前插件会自动备份数据库。
-            </p>
-            <div class="filter-bar">
-              <label class="field">
-                <span data-i18n="identity.fromScope">来源作用域</span>
-                <select id="sc-from">
-                  <option value="session">session</option>
-                  <option value="user">user</option>
-                  <option value="global">global</option>
-                </select>
-              </label>
-              <label class="field">
-                <span data-i18n="identity.toScope">迁移目标</span>
-                <select id="sc-to">
-                  <option value="user_else_archive" data-i18n="identity.toUserElseArchive">能归属的归用户，其余归档</option>
-                  <option value="user" data-i18n="identity.toUser">按发送者归属到用户</option>
-                  <option value="global" data-i18n="identity.toGlobal">整体提升为全局</option>
-                  <option value="archive" data-i18n="identity.toArchive">仅归档</option>
-                </select>
-              </label>
-              <button class="btn ghost" id="sc-preview" data-i18n="identity.preview">预览</button>
-              <button class="btn" id="sc-apply" data-i18n="identity.apply">执行迁移</button>
-            </div>
-            <div class="muted" id="sc-result"></div>
-            <div class="table-wrap" id="sc-table"></div>
           </div>
         </section>
       </div>

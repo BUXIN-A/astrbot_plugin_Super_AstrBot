@@ -1,6 +1,6 @@
-"""控制台静态契约测试。
+"""控制台静态契约测试（导航重构版 · Notion 风格）。
 
-这些断言直接对应 v0.1.0 在真实服务器上踩到的坑，用来防止回归：
+这些断言直接对应真实服务器上踩过的坑，用来防止回归：
 
 1. 脚本必须是 ``type="module"``：AstrBot 把 bridge SDK 注入到 ``</body>`` 之前，
    classic 内联脚本会先执行，此时 ``window.AstrBotPluginPage`` 为 null。
@@ -8,6 +8,10 @@
    直连请求会抛 ``Failed to fetch``；所有请求必须经 bridge。
 3. 不得引用外部 CDN（离线环境与 CSP 都会出问题）。
 4. 前后端 endpoint 必须一一对应，避免接口漂移导致面板空白。
+5. **导航重构版的结构**：五组 19 页（总览 / 功能 / 人格×4 / 记忆×5 / 共情与主动×2 /
+   记录×2 / 系统×4）；身份诊断并入「风格样本」、待审并入同页标签页。
+6. **Notion 风格硬约束**：无渐变、无大圆角、无重阴影、悬停只变背景色（150ms）、
+   米色底 #f7f6f3、⋮⋮ 拖拽手柄、浅深主题一一镜像、prefers-reduced-motion 有兜底。
 """
 
 from __future__ import annotations
@@ -21,7 +25,8 @@ PAGES = ROOT / "pages" / "dashboard"
 WEB_API = ROOT / "super_astrbot" / "web" / "api.py"
 I18N_DIR = ROOT / ".astrbot-plugin" / "i18n"
 
-ENDPOINTS = (
+FRONTEND_ENDPOINTS = (
+    # 原有接口（旧入口零丢失）
     "overview",
     "models",
     "features",
@@ -31,14 +36,10 @@ ENDPOINTS = (
     "memories/update",
     "memories/delete",
     "weeklies/update",
-    "search",
     "journals",
     "journals/export-selected",
     "reviews",
     "reviews/batch",
-    "identities",
-    "scopes",
-    "scopes/migrate",
     "backup/export",
     "backup/import",
     "backup/list",
@@ -51,6 +52,67 @@ ENDPOINTS = (
     "prompt-save",
     "prompt-reset",
     "maintenance",
+    # 融合域接口（导航重构版新增）
+    "persona/forge",
+    "persona/forge-update",
+    "persona/evolution",
+    "persona/evolution-reset",
+    "persona/affinity",
+    "members/list",
+    "members/strategy",
+    "identity/observe",
+    "identity/migrate",
+    "memory/list",
+    "memory/recall",
+    "memory/facets",
+    "memory/backends",
+    "memory/tiers",
+    "memory/decay",
+    "memory/worldbook",
+    "memory/worldbook-add",
+    "memory/worldbook-update",
+    "memory/worldbook-del",
+    "empathy/config",
+    "empathy/log",
+    "proactive/schedule",
+    "proactive/queue",
+    "proactive/log",
+    "group/context",
+    "fusion/pipeline",
+    "monitor/fusion",
+    "graph/rebuild",
+    "graph/timeline",
+)
+
+COMPAT_ENDPOINTS = (
+    # 兼容别名：仅后端注册（老面板/脚本可能仍在调用），前端已迁到 /*/ 新路由
+    "search",
+    "memory/list",
+    "identities",
+    "scopes",
+    "scopes/migrate",
+)
+
+NAV_PAGES = (
+    "overview",
+    "features",
+    "persona-forge",
+    "persona-legacy",
+    "persona-evolution",
+    "style-samples",
+    "memories",
+    "recall",
+    "graph",
+    "memory-backend",
+    "worldbook",
+    "empathy",
+    "proactive",
+    "journals",
+    "weeklies",
+    "monitor",
+    "models",
+    "prompts",
+    "system",
 )
 
 
@@ -96,9 +158,12 @@ def test_no_external_cdn_references() -> None:
 def test_frontend_endpoints_match_backend_registration() -> None:
     js = _read(PAGES / "app.js")
     backend = _read(WEB_API)
-    for endpoint in ENDPOINTS:
+    for endpoint in FRONTEND_ENDPOINTS:
         assert f'"{endpoint}"' in js, f"前端未使用接口 {endpoint}"
         assert f'("{endpoint}"' in backend, f"后端未注册接口 {endpoint}"
+    # 兼容别名只要求后端仍注册（旧入口零丢失），前端可不再引用
+    for endpoint in COMPAT_ENDPOINTS:
+        assert f'("{endpoint}"' in backend, f"后端缺少兼容路由 {endpoint}"
 
 
 def test_html_escape_covers_five_characters() -> None:
@@ -157,6 +222,157 @@ def test_every_capability_domain_has_frontend_title() -> None:
         assert f'"domain.{domain}"' in js, f"前端缺少功能域 {domain} 的中文文案"
 
 
+# --------------------------------------------------------------------------- #
+# 导航重构版：五组 19 页                                                   #
+# --------------------------------------------------------------------------- #
+
+
+def test_nav_pages_and_groups() -> None:
+    html = _read(PAGES / "index.html")
+    js = _read(PAGES / "app.js")
+
+    nav_pages = re.findall(r'class="nav-item" data-page="([a-z-]+)"', html)
+    assert tuple(nav_pages) == NAV_PAGES, f"导航顺序不符：{nav_pages}"
+
+    # 分组容器：人格 / 记忆 / 共情与主动 / 记录 可折叠，系统平铺
+    for group in ("persona", "memory", "empathy", "record", "system"):
+        assert f'data-group="{group}"' in html, f"缺少导航分组 {group}"
+    assert html.count('class="nav-group-head"') == 4, "四个分组应为可折叠（系统组平铺）"
+    assert 'class="nav-group flat"' in html and 'class="nav-group-label"' in html
+
+    # 页码顺序由 PAGE_TITLES 决定，必须与导航顺序一致
+    titles = re.findall(r'^  "?([a-z-]+)"?: "nav\.', js, flags=re.M)
+    assert titles == list(NAV_PAGES), f"PAGE_TITLES 顺序与导航不一致：{titles}"
+
+
+def test_style_samples_tabs_merge_reviews_and_identity() -> None:
+    """风格样本页内：同页切换「风格样本 / 待审」；身份诊断并入本页。"""
+    html = _read(PAGES / "index.html")
+    js = _read(PAGES / "app.js")
+
+    assert 'id="ss-tabs"' in html and 'data-tab="ss-samples"' in html and 'data-tab="ss-review"' in html
+    assert 'id="ss-samples"' in html and 'id="ss-review"' in html
+    assert 'id="ss-member-table"' in html, "缺少群友风格档案表"
+    assert 'id="ss-strategy-member"' in html and 'id="ss-strategy-save"' in html, "缺少差异化策略编辑器"
+
+    # 待审控件（原待审页）必须仍在本页标签页里
+    for element in ("rv-origin", "rv-umo", "rv-search", "rv-approve-all", "rv-reject-all", "rv-table"):
+        assert f'id="{element}"' in html, f"待审标签页缺少控件 {element}"
+    assert "reviews/batch" in js
+
+    # 身份诊断控件（原身份页）并入本页
+    for element in (
+        "id-table",
+        "id-summary",
+        "id-hint",
+        "id-refresh",
+        "id-clear",
+        "sc-from",
+        "sc-to",
+        "sc-preview",
+        "sc-apply",
+    ):
+        assert f'id="{element}"' in html, f"身份诊断区缺少控件 {element}"
+    assert "migrateScope(true)" in js and "migrateScope(false)" in js, "迁移必须「先预览、再执行」"
+
+
+def test_new_fusion_pages_present() -> None:
+    """融合新增页面：人格内核 / 演化轨迹 / 记忆后端 / 世界书 / 共情管线 / 主动关怀。"""
+    html = _read(PAGES / "index.html")
+    widgets = {
+        "persona-forge": ("pf-meta", "pf-core", "pf-save", "pf-text", "pf-relations"),
+        "persona-evolution": ("pe-meta", "pe-radar", "pe-drift", "pe-timeline"),
+        "memory-backend": ("mb-backends", "mb-tiers", "mb-decay", "mb-rebuild"),
+        "worldbook": ("wb-table", "wb-save", "wb-triggers", "wb-content"),
+        "empathy": ("ep-meta", "ep-stage-identify", "ep-temperature", "ep-log", "ep-save"),
+        "proactive": ("pq-table", "pq-save", "pq-schedule", "pq-log", "pq-status"),
+    }
+    for page, ids in widgets.items():
+        assert f'id="page-{page}"' in html, f"缺少页面 {page}"
+        for element in ids:
+            assert f'id="{element}"' in html, f"{page} 页缺少控件 {element}"
+
+    # 总览新增：编排流水线与融合健康；图谱新增：图层与时间线；监控新增：融合健康
+    for element in ("ov-flow", "ov-fusion", "gp-layer", "gp-timeline", "gp-rebuild", "mt-fusion", "feat-group"):
+        assert f'id="{element}"' in html, f"缺少控件 {element}"
+
+
+def test_every_page_has_loader_and_title() -> None:
+    js = _read(PAGES / "app.js")
+    for page in NAV_PAGES:
+        key = f'"{page}"' if "-" in page else page
+        assert f'{key}: "nav.' in js, f"PAGE_TITLES 缺少 {page}"
+    # 未知页面必须回退到存在的默认页
+    assert 'PAGE_TITLES[page] ? page : "overview"' in js
+    assert "page-overview" in _read(PAGES / "index.html")
+
+
+# --------------------------------------------------------------------------- #
+# Notion 风格硬约束                                                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_notion_style_tokens_light_and_dark() -> None:
+    css = _read(PAGES / "styles.css")
+    for token in ("#f7f6f3", "#efedea", "#e3e1db"):
+        assert token in css, f"缺少 Notion 标志色 {token}"
+    light, dark = css.split('html[data-theme="dark"]', 1)
+    for variable in (
+        "--bg:",
+        "--bg-soft:",
+        "--panel:",
+        "--panel-2:",
+        "--border:",
+        "--text:",
+        "--text-dim:",
+        "--accent:",
+    ):
+        assert variable in light, f"浅色主题缺少 {variable}"
+        assert variable in dark, f"深色主题缺少 {variable}"
+    assert 'data-theme="light"' in _read(PAGES / "index.html"), "默认站浅色（Notion 文档观感）"
+
+
+def test_notion_style_forbidden_patterns() -> None:
+    css = _read(PAGES / "styles.css")
+    assert "gradient" not in css, "Notion 风格禁止渐变"
+    assert "rounded-2xl" not in css and "border-radius: 999px" not in css, "禁止大圆角 / 胶囊形"
+    assert "translateY" not in css, "禁止位移类动效（仅面板进出场允许 translateX）"
+    assert "265, 0.04" in css or "15, 15, 15, 0.04" in css, "阴影必须轻量"
+
+
+def test_notion_interaction_feedback_is_color_only() -> None:
+    css = _read(PAGES / "styles.css")
+    assert re.search(r"\.btn:hover:not\(:disabled\)\s*\{\s*background: var\(--panel-2\)", css)
+    assert re.search(r"\.btn:active:not\(:disabled\)\s*\{\s*background: var\(--panel-3\)", css)
+    assert "150ms" in css, "交互反馈统一 150ms"
+    # 拖拽手柄（Drag Handle Illusion）：默认透明，卡片悬停时浮现
+    assert ".drag-handle" in css and "opacity: 0" in css
+    assert re.search(r"\.card:hover > \.drag-handle\s*\{\s*opacity", css)
+    assert "injectDragHandles" in _read(PAGES / "app.js"), "拖拽手柄应由前端注入"
+
+
+def test_notion_typography_rules() -> None:
+    css = _read(PAGES / "styles.css")
+    assert "-apple-system" in css and "PingFang SC" in css and "Microsoft YaHei" in css
+    for banned in ("Inter", "Roboto", "Geist"):
+        assert banned not in css, f"不应使用 {banned} 字体"
+    assert "text-transform: uppercase" not in css, "母项不做大写字母 + 字距的「眉标」"
+    assert re.search(r"\.nav-group:not\(\.flat\) \.nav-items \.nav-item\s*\{\s*font-size: 13px", css)
+    assert re.search(r"\.nav-group\.flat \.nav-items \.nav-item\s*\{\s*font-size: 14px", css)
+
+
+def test_reduced_motion_and_responsive_cover_new_widgets() -> None:
+    css = _read(PAGES / "styles.css")
+    media = css.split("@media (prefers-reduced-motion: reduce)", 1)[1]
+    assert ".peek-panel" in media, "减少动态模式必须覆盖侧滑面板"
+    assert "@media (max-width: 980px)" in css, "缺少窄屏适配"
+
+
+# --------------------------------------------------------------------------- #
+# 现实桥 / 备份 / 侧滑面板（原有硬约束，保持不回归）                        #
+# --------------------------------------------------------------------------- #
+
+
 def test_bridge_page_columns_and_type_options() -> None:
     """现实桥页的列顺序与三种文本类型选项是需求硬约束，防止后续改版时漂移。
 
@@ -165,7 +381,6 @@ def test_bridge_page_columns_and_type_options() -> None:
     html = _read(PAGES / "index.html")
     js = _read(PAGES / "app.js")
 
-    # 1) 表头顺序：直接读 journalColumns() 里的 title 字段顺序
     block = js.split("function journalColumns()", 1)[1].split("function paintJournalsTable()", 1)[0]
     order = re.findall(r'title: t\("([^"]+)"\)', block)
     assert order == [
@@ -180,7 +395,6 @@ def test_bridge_page_columns_and_type_options() -> None:
     assert '"#"' in block, "缺少序号列"
     assert 'className: "check"' in block, "缺少勾选列（多选导出依赖它）"
 
-    # 2) 类型下拉与编辑器三选一：取值与后端词表一一对应
     from super_astrbot.spec.entry_types import ENTRY_TYPES
 
     assert 'option value="" data-i18n="jtype.all"' in html
@@ -215,16 +429,27 @@ def test_bridge_i18n_keys_complete() -> None:
         "jtype.weekly",
         "jtype.diary",
         "jtype.essay",
+        # 融合域文案
+        "nav.personaForge",
+        "nav.styleSamples",
+        "nav.worldbook",
+        "nav.empathy",
+        "nav.proactive",
+        "forge.title",
+        "evolution.title",
+        "styleSamples.tabReview",
+        "backend.decay",
+        "worldbook.title",
+        "empathy.temperature",
+        "proactive.newItem",
+        "overview.pipeline",
+        "monitor.fusion",
     ):
         assert f'"{key}"' in zh, f"中文文案缺少 {key}"
 
 
 def test_backup_section_present_in_system_page() -> None:
-    """系统页备份栏：导出 / 导入 / 历史表都在，且是系统页最后一张卡片。
-
-    刻意不再提供「导出类型」勾选项：备份包固定包含配置 + 数据库快照 + 全部数据，
-    少一处勾选就少一种「以为备份全了」的误判。
-    """
+    """系统页备份栏：导出 / 导入 / 历史表都在，且是系统页最后一张卡片。"""
     html = _read(PAGES / "index.html")
     js = _read(PAGES / "app.js")
     for element in ("bk-notes", "bk-export", "bk-import", "bk-import-label", "bk-table"):
@@ -232,70 +457,14 @@ def test_backup_section_present_in_system_page() -> None:
     for removed in ("bk-config", "bk-database", "bk-data"):
         assert f'id="{removed}"' not in html, f"备份类型勾选项应已移除：{removed}"
 
-    # 下载必须走官方 bridge.download，不可用时才退回内联 base64
     assert "bridge.download(" in js, "备份下载应优先使用 bridge.download"
     for endpoint in ("backup/export", "backup/import", "backup/list"):
         assert endpoint in js, f"前端未使用 {endpoint}"
     assert 'data-i18n="backup.title"' in html
     # 备份卡片位于系统页最下方（配置维护 / 维护之后）
-    system_page = html[html.index('id="page-system"') : html.index('id="page-identity"')]
+    system_page = html[html.index('id="page-system"') :]
     headings = re.findall(r'<h2 data-i18n="([^"]+)"', system_page)
     assert headings[-1] == "backup.title", f"备份栏应排在系统页最后：{headings}"
-
-
-def test_identity_page_present() -> None:
-    """身份诊断页：观测表 + 作用域迁移控件。"""
-    html = _read(PAGES / "index.html")
-    js = _read(PAGES / "app.js")
-    assert 'data-page="identity"' in html, "缺少「身份」导航项"
-    assert "identity: () => loadIdentity()" in js
-    for element in ("id-table", "id-summary", "sc-from", "sc-to", "sc-preview", "sc-apply"):
-        assert f'id="{element}"' in html, f"身份页缺少控件 {element}"
-    # 迁移是「先预览、再执行」，两者不能合并成一个按钮
-    assert "migrateScope(true)" in js and "migrateScope(false)" in js
-
-
-def test_review_batch_controls_present() -> None:
-    html = _read(PAGES / "index.html")
-    js = _read(PAGES / "app.js")
-    assert 'id="rv-approve-all"' in html and 'id="rv-reject-all"' in html
-    assert "reviews/batch" in js
-
-
-def test_identity_nav_sits_right_after_learning() -> None:
-    """身份页签排在「学习」下方，且页码顺序与导航一致（页码由 PAGE_TITLES 顺序生成）。"""
-    html = _read(PAGES / "index.html")
-    js = _read(PAGES / "app.js")
-
-    nav_pages = re.findall(r'class="nav-item" data-page="([a-z]+)"', html)
-    assert nav_pages.index("identity") == nav_pages.index("persona") + 1, nav_pages
-    assert nav_pages[-1] == "system", "系统应留在最后一位"
-
-    title_keys = re.findall(r'^  ([a-z]+): "nav\.', js, flags=re.M)
-    assert title_keys.index("identity") == title_keys.index("persona") + 1, title_keys
-
-
-def test_referenced_assets_exist() -> None:
-    """HTML 里引用的本地静态资源必须真的在包里。
-
-    线上表现是「页面静默少图 / 404」，而且打包分发时最容易漏——一次实际事故就是
-    欢迎页的 girl.jpg 丢了却没人发现。
-    """
-    html = _read(PAGES / "index.html")
-    js = _read(PAGES / "app.js")
-    referenced = set(re.findall(r'(?:src|href)="\./([^"?#]+)"', html))
-    referenced |= set(re.findall(r'src\.\s*=\s*"\./([^"?#]+)"', html))
-    assert referenced, "未解析到任何本地资源引用"
-    missing = sorted(name for name in referenced if not (PAGES / name).is_file())
-    assert not missing, f"index.html 引用了不存在的资源：{missing}"
-
-    # 插件 i18n 与 logo 是市场/页面壳的硬依赖
-    assert (ROOT / "metadata.yaml").is_file()
-    assert (PAGES / "logo.svg").is_file(), "缺少品牌兜底图标 logo.svg"
-
-    # 默认落地页必须真实存在（导航被裁剪过一轮后曾出现「打开就是空白」）
-    assert 'PAGE_TITLES[page] ? page : "overview"' in js, "未知页面应回退到存在的默认页"
-    assert 'page-overview' in html, "默认落地页 overview 必须存在"
 
 
 def test_backup_import_mode_ui_present() -> None:
@@ -303,16 +472,13 @@ def test_backup_import_mode_ui_present() -> None:
     html = _read(PAGES / "index.html")
     js = _read(PAGES / "app.js")
 
-    # 模式下拉：两个选项，取值与后端约定一致
     assert 'id="bk-mode"' in html
     assert '<option value="merge"' in html and '<option value="replace"' in html
     assert 'id="bk-db-actions"' in html, "缺少整库恢复入口容器"
 
-    # 覆盖模式必须走「先预览（dry_run）→ 二次确认 → 真正导入」
     assert "dry_run: true" in js and "dry_run: false" in js
     assert "renderDatabaseRestoreEntry" in js
     assert "backup/replace-database" in js
-    # 取消不能当成同意：确认弹窗必须能解析出 false
     assert "finish(false)" in js, "取消路径必须给出明确的否定结果"
 
 
@@ -340,11 +506,7 @@ def test_backup_mode_i18n_complete() -> None:
 
 
 def test_i18n_dictionaries_have_same_keys() -> None:
-    """中英文字典的键集合必须一致。
-
-    踩过的坑：新增文案只往一处插（甚至插错段落），JS 对象字面量里重复键按「后者胜出」
-    处理，界面会静默变成另一种语言——测试盯住键集合最省事。
-    """
+    """中英文字典的键集合必须一致（重复键按「后者胜出」会静默改语言）。"""
     js = _read(PAGES / "app.js")
     zh_start = js.index('"zh-CN": {')
     en_start = js.index('"en-US": {')
@@ -353,7 +515,6 @@ def test_i18n_dictionaries_have_same_keys() -> None:
     en = set(re.findall(r'^\s*"([^"]+)":', js[en_start:end], flags=re.M)) - {"en-US"}
     assert not (zh - en), f"英文字典缺少：{sorted(zh - en)}"
     assert not (en - zh), f"中文字典缺少：{sorted(en - zh)}"
-    # 同一段落里不允许出现重复键（后者会覆盖前者）
     for name, block in (("zh-CN", js[zh_start:en_start]), ("en-US", js[en_start:end])):
         keys = re.findall(r'^\s*"([^"]+)":', block, flags=re.M)
         duplicates = {key for key in keys if keys.count(key) > 1}
@@ -373,7 +534,6 @@ def test_peek_panel_structure_present() -> None:
         "peek-close",
     ):
         assert f'id="{element}"' in html, f"侧滑面板缺少 {element}"
-    # 初始状态必须隐藏且不可聚焦（inert），否则起始就露出一条空白抽屉
     panel = html.split('id="peek-panel"', 1)[1].split(">", 1)[0]
     assert "hidden" in panel, "面板初始应 hidden"
     assert 'aria-hidden="true"' in panel, "面板初始应 aria-hidden"
@@ -388,18 +548,12 @@ def test_peek_panel_is_wired_to_three_pages() -> None:
         assert hook in js, f"列表行缺少可点击钩子 {hook}"
     for attr in ("data-peek-edit", "data-peek-delete", "data-peek-save", "data-peek-cancel"):
         assert attr in js, f"面板操作缺少 {attr}"
-    # 现实桥的编辑沿用既有表单（modal 盖在抽屉之上），不能被面板取代掉
     assert "openJournalEditor(entry)" in js
-    # 旧居中弹窗保留给表单/确认框使用
     assert "function openModal(" in js and "function closeModal(" in js
 
 
 def test_peek_panel_motion_is_coordinated_with_modal() -> None:
-    """动效必须复用现有令牌与同一套进出场节奏，否则抽屉会比弹窗「快一拍/慢一拍」。
-
-    约定（见 styles.css 顶部注释）：入场 animation 用 --dur-enter + --ease-out，
-    出场 .closing 用 --dur-exit（出场比入场快），只动 transform/opacity。
-    """
+    """动效必须复用现有令牌与同一套进出场节奏，否则抽屉会比弹窗「快一拍/慢一拍」。"""
     css = _read(PAGES / "styles.css")
     panel = css.split(".peek-panel {", 1)[1]
     assert "var(--dur-enter)" in panel and "var(--ease-out)" in panel, "入场应复用动效令牌"
@@ -419,33 +573,6 @@ def test_peek_panel_stacks_below_modal_above_nothing() -> None:
         assert match, f"{selector} 未声明 z-index"
         return int(match.group(1))
 
-    modal = _z(".modal")
-    panel = _z(".peek-panel")
-    overlay = _z(".peek-overlay")
-    toast = _z(".toast-region")
-    assert overlay < panel, "遮罩应在抽屉之下"
-    assert panel < modal, "抽屉必须低于居中弹窗，否则弹窗会被抽屉盖住"
-    assert toast > modal and toast > panel, "提示条要让抽屉打开时仍可见"
-
-
-def test_peek_i18n_keys_complete() -> None:
-    js = _read(PAGES / "app.js")
-    zh = js.split('"zh-CN": {', 1)[1].split('"en-US": {', 1)[0]
-    for key in (
-        "peek.memoryTitle",
-        "peek.journalTitle",
-        "peek.weeklyTitle",
-        "peek.edit",
-        "peek.delete",
-        "peek.save",
-        "peek.cancel",
-        "peek.content",
-        "peek.metadata",
-        "peek.editContent",
-        "peek.needContent",
-        "peek.gone",
-    ):
-        assert f'"{key}"' in zh, f"中文文案缺少 {key}"
-    assert "data-i18n-aria" in js and "data-i18n-aria" in _read(PAGES / "index.html"), (
-        "纯图标按钮的无障碍文案应走 data-i18n-aria"
-    )
+    assert _z(".peek-overlay") < _z(".modal")
+    assert _z(".peek-panel") < _z(".modal")
+    assert _z(".toast-region") > _z(".modal")

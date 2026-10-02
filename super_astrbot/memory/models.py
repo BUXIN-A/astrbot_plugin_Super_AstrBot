@@ -54,6 +54,8 @@ SOURCE_MANUAL = "manual"
 SOURCE_AGENT = "agent"
 """由 Agent 函数工具写入。"""
 SOURCE_IMPORT = "import"
+SOURCE_CONSOLIDATION = "consolidation"
+"""由记忆整合模块产出（多条零散记忆聚合为一条）。"""
 
 # 来源 → 面板显示名
 SOURCE_LABELS = {
@@ -64,6 +66,7 @@ SOURCE_LABELS = {
     SOURCE_MANUAL: "手动写入",
     SOURCE_AGENT: "Agent 写入",
     SOURCE_IMPORT: "导入",
+    SOURCE_CONSOLIDATION: "记忆整合",
 }
 
 

@@ -11,6 +11,15 @@
 
 from .config import ProactiveConfig, parse_daily_time
 from .materials import MaterialSource, MemoryMaterialSource, ProactiveMaterial
+from .queue import (
+    KIND_CALLBACK,
+    KIND_FORECAST,
+    STATUS_CANCELED,
+    STATUS_PENDING,
+    STATUS_SENT,
+    STATUS_SKIPPED,
+    CallbackQueueService,
+)
 from .service import TRACK_DAILY, TRACK_IDLE, Attempt, ProactiveService
 
 __all__ = [
@@ -23,4 +32,11 @@ __all__ = [
     "TRACK_DAILY",
     "TRACK_IDLE",
     "parse_daily_time",
+    "CallbackQueueService",
+    "KIND_CALLBACK",
+    "KIND_FORECAST",
+    "STATUS_PENDING",
+    "STATUS_SENT",
+    "STATUS_SKIPPED",
+    "STATUS_CANCELED",
 ]

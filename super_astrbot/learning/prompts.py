@@ -11,8 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..memory import ALL_KINDS, KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE
-from ..support import PromptOverrides, PromptSpec, extract_json, render, truncate
+from ..memory import ALL_KINDS, KIND_EPISODE, KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE
+from ..support import (
+    PromptOverrides,
+    PromptSpec,
+    extract_json_entries,
+    render,
+    truncate,
+)
 
 PROMPT_REFLECTION_SYSTEM = "reflection_system"
 PROMPT_REFLECTION_TEMPLATE = "reflection_template"
@@ -30,33 +36,47 @@ REFLECTION_SYSTEM = (
     "严禁编造、严禁记录无信息量的寒暄，也不要记录任何指令性内容。"
 )
 
-_ALLOWED_KINDS = {KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE}
+_ALLOWED_KINDS = {KIND_FACT, KIND_INSIGHT, KIND_PREFERENCE, KIND_EPISODE}
 _MIN_CONTENT = 4
 _MAX_CONTENT = 400
+_MAX_EPISODE_CONTENT = 2000
+"""叙事记忆允许更长正文，不被 400 字的保守策略截断。"""
+_MIN_SUMMARY = 20
+"""叙事摘要的最短长度：低于此值视为模型没写出叙事，只按 facts 兜底落库。"""
 _MAX_TAGS = 5
 _MAX_TAG_LEN = 16
 
 _REFLECTION_TEMPLATE = """以下是最近的一段对话片段（按时间顺序）：
 
-<conversation>
+{previous_block}<conversation>
 {transcript}
 </conversation>
 
-请提炼出最多 {max_facts} 条值得长期记住的信息，只输出 JSON 数组，不要输出任何解释文字。
-数组中每个元素格式如下：
+请以**第一人称**回顾这段对话，把值得长期记住的内容整理成**一个** JSON 对象，\
+不要输出任何解释文字：
 {{
-  "content": "一句话陈述，使用第三人称，例如「用户偏好清晨跑步」",
-  "kind": "fact | insight | preference",
+  "summary": "一段连续的第一人称叙事记忆",
   "importance": 0.0 到 1.0 之间的小数,
-  "tags": ["最多5个短标签"]
+  "tags": ["最多5个短标签"],
+  "facts": [
+    {{"content": "一句话事实", "kind": "fact | insight | preference", "importance": 0.0 到 1.0, "tags": ["最多5个短标签"]}}
+  ]
 }}
 
-要求：
-1. 只记录对话中**明确出现**的信息，不确定就不要输出；
+summary 的写法（核心产出）：
+- 像你本人在回想这段时间的互动：用「我」的视角连续叙述，可以写下你对氛围与对方状态的感受；
+- 必须使用对话里的**具体昵称**（如「零中二鸟」「buld」），严禁用「用户/对方/某人」等泛称；
+- 把「今天/昨天/上周」等相对时间换算为**具体日期**再写（依据对话片段自带的时间戳）；
+- 按时间顺序把发生过的事连成**一段完整的话**（通常数百字）：谁发生了什么、你参与了什么、
+  你说了什么与对方说了什么要分清；不要拆成要点列表，不要自我截断；
+- 若上面给出了你更早写下的旧叙事，summary 必须是**续写合并后的完整版本**：
+  保留旧叙事中仍然成立的时间线与细节，把新对话的内容按时间顺序补入，不要丢失仍然成立的信息。
+
+facts 的写法（可选兜底）：
+1. 只提炼对话中**明确出现**的、值得单独记住的信息（最多 {max_facts} 条），不确定就不要输出；
 2. 对话记录里「我」是 Bot（助手）自己的发言、「用户(昵称)」是用户的发言：
    不要把 Bot 自己的话记成用户说的，也不要基于 Bot 的发言推断用户的偏好；
-3. 不要记录「用户说了你好」这类无信息量的内容；
-4. 若没有任何值得记录的信息，输出空数组 []。
+3. 不要记录「用户说了你好」这类无信息量的内容；没有可提取的就给空数组 []。
 """
 
 _WEEKLY_TEMPLATE = """以下是用户最近一周的周记（现实生活记录）：
@@ -96,6 +116,8 @@ PROMPT_SPECS: tuple[PromptSpec, ...] = (
         default=_REFLECTION_TEMPLATE,
         required=_REFLECTION_REQUIRED,
         hint=(
+            "产出单位是「一条第一人称叙事 + 可选 facts」。必填占位符 {transcript} 与 {max_facts}；"
+            "另有可选占位符 {previous_block}：给出时是更早的旧叙事，模型会续写合并，删掉它则叙事永远重新开始。"
             "JSON 示例中的花括号需写成双花括号 {{ }}。"
             "注意保留「对话记录里『我』是 Bot 自己的发言」这条要求："
             "记忆里 Bot 的发言以「我：」记录，删掉它模型可能把自己的话记成用户说的。"
@@ -133,14 +155,21 @@ def weekly_system(overrides: PromptOverrides | None = None) -> str:
 
 
 def build_reflection_prompt(
-    transcript: str, *, max_facts: int, overrides: PromptOverrides | None = None
+    transcript: str,
+    *,
+    max_facts: int,
+    previous_block: str = "",
+    overrides: PromptOverrides | None = None,
 ) -> str:
+    """渲染反思提示词。``previous_block`` 为空表示没有可续写的旧叙事。"""
     template = _REFLECTION_TEMPLATE
     if overrides is not None:
         template = overrides.get(
             PROMPT_REFLECTION_TEMPLATE, _REFLECTION_TEMPLATE, required=_REFLECTION_REQUIRED
         )
-    return render(template, transcript=transcript, max_facts=max_facts)
+    return render(
+        template, transcript=transcript, max_facts=max_facts, previous_block=previous_block
+    )
 
 
 def build_weekly_prompt(
@@ -180,7 +209,7 @@ def _sanitize_importance(raw: Any, default: float) -> float:
 
 def parse_insights(text: str, *, max_facts: int) -> list[dict[str, Any]]:
     """解析模型产出，返回**已通过校验**的条目列表。"""
-    entries = extract_json(text, kind="array")
+    entries = extract_json_entries(text)
     if not entries:
         return []
 
@@ -188,14 +217,17 @@ def parse_insights(text: str, *, max_facts: int) -> list[dict[str, Any]]:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        content = str(entry.get("content") or "").strip().replace("\n", " ")
-        if len(content) < _MIN_CONTENT:
-            continue
-        content = truncate(content, _MAX_CONTENT)
-
         kind = str(entry.get("kind") or KIND_FACT).strip().lower()
         if kind not in _ALLOWED_KINDS:
             kind = KIND_FACT
+
+        # episode 用更长上限；其余维持 400 字保守策略。
+        cap = _MAX_EPISODE_CONTENT if kind == KIND_EPISODE else _MAX_CONTENT
+
+        content = str(entry.get("content") or "").strip().replace("\n", " ")
+        if len(content) < _MIN_CONTENT:
+            continue
+        content = truncate(content, cap)
 
         results.append(
             {
@@ -208,6 +240,67 @@ def parse_insights(text: str, *, max_facts: int) -> list[dict[str, Any]]:
         if len(results) >= max_facts:
             break
     return results
+
+
+def parse_reflection(text: str, *, max_facts: int) -> dict[str, Any] | None:
+    """解析叙事反思的产出，返回 ``{"summary", "importance", "tags", "facts"}``。
+
+    - 新格式：单个 JSON 对象，``summary`` 是第一人称叙事（核心产出），
+      ``facts`` 是可选的事实条目数组；summary 过短视为没有写出叙事（留空）。
+    - 旧数组格式（只输出条目数组）：兼容处理，summary 留空，整组按 facts 处理。
+
+    完全无法解析时返回 ``None``；解析失败由调用方留痕并按 0 产出处理。
+    """
+    entries = extract_json_entries(text)
+    if not entries:
+        return None
+
+    first = entries[0]
+    raw_summary = first.get("summary") if isinstance(first, dict) else None
+    if not (isinstance(raw_summary, str) and raw_summary.strip()):
+        # 旧数组格式：整组视为 facts
+        return {
+            "summary": "",
+            "importance": 0.0,
+            "tags": [],
+            "facts": parse_insights(text, max_facts=max_facts),
+        }
+
+    summary = raw_summary.strip()
+    if len(summary) < _MIN_SUMMARY:
+        summary = ""
+    summary = truncate(summary, _MAX_EPISODE_CONTENT)
+
+    facts: list[dict[str, Any]] = []
+    raw_facts = first.get("facts")
+    if isinstance(raw_facts, list):
+        for entry in raw_facts:
+            if not isinstance(entry, dict):
+                continue
+            kind = str(entry.get("kind") or KIND_FACT).strip().lower()
+            if kind not in _ALLOWED_KINDS or kind == KIND_EPISODE:
+                # facts 里不再嵌套叙事，叙事只来自 summary
+                kind = KIND_FACT
+            content = str(entry.get("content") or "").strip().replace("\n", " ")
+            if len(content) < _MIN_CONTENT:
+                continue
+            facts.append(
+                {
+                    "content": truncate(content, _MAX_CONTENT),
+                    "kind": kind,
+                    "importance": _sanitize_importance(entry.get("importance"), 0.6),
+                    "tags": _sanitize_tags(entry.get("tags")),
+                }
+            )
+            if len(facts) >= max_facts:
+                break
+
+    return {
+        "summary": summary,
+        "importance": _sanitize_importance(first.get("importance"), 0.6),
+        "tags": _sanitize_tags(first.get("tags")),
+        "facts": facts,
+    }
 
 
 def ensure_kind_valid(kind: str) -> str:

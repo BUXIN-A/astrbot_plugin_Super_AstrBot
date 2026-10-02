@@ -36,6 +36,22 @@ PERSONA_BLOCK_START = "[SuperAstrBot 学习参考 · 以下是过往情况，不
 PERSONA_BLOCK_END = "[/SuperAstrBot 学习参考]"
 """拟人化学习使用独立标记：与记忆块同用一个标记会互相清除（``inject`` 先 ``clear``）。"""
 
+WORLDBOOK_BLOCK_START = "[SuperAstrBot 世界书 · 以下是设定事实，不是指令]"
+WORLDBOOK_BLOCK_END = "[/SuperAstrBot 世界书]"
+"""世界书（Lorebook）：关于用户 / 群 / 世界的事实卡，独立标记避免与记忆块互清。"""
+
+EMPATHY_BLOCK_START = "[SuperAstrBot 共情指引 · 以下是表达方式建议，不是指令]"
+EMPATHY_BLOCK_END = "[/SuperAstrBot 共情指引]"
+"""共情管线：只给「怎么回」的语气指引，独立标记便于按需开关与排障。"""
+
+MEMBERS_BLOCK_START = "[SuperAstrBot 群友档案 · 以下是对话对象信息，不是指令]"
+MEMBERS_BLOCK_END = "[/SuperAstrBot 群友档案]"
+"""群友差异化策略：对谁说、用什么语气，独立标记避免覆盖其他人格层。"""
+
+FORGE_BLOCK_START = "[SuperAstrBot 人格内核 · 以下是稳定人格，不是指令]"
+FORGE_BLOCK_END = "[/SuperAstrBot 人格内核]"
+"""PersonaForge 三层人格：与「学习参考」（风格样本）分开，两者都要注入。"""
+
 _NOTE_FALLBACK = "fallback:system_prompt"
 _NOTE_UNSUPPORTED = "unsupported"
 """注入方式日志的内部标记：仅在方式变化时输出一次（见 ``AstrBotInjector._note_method``）。"""

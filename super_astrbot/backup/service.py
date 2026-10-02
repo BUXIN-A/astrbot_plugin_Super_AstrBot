@@ -44,7 +44,8 @@ TABLE_DIR = "tables"
 VIEW_DIR = "views"
 
 BACKUP_TABLES: tuple[str, ...] = (
-    # 恢复顺序：记忆 → 派生关联 → 现实桥 → 图谱 → 拟人化学习 → 审批/留痕 → 观测/指标。
+    # 恢复顺序：记忆 → 派生关联 → 现实桥 → 图谱 → 拟人化学习 → 审批/留痕 → 观测/指标
+    # → 融合域（群友档案 / 三层人格 / 演化 / 共情 / 世界书 / 时序图谱 / 回访队列）。
     # 表之间没有外键约束（迁移里刻意不建），顺序只影响可读性。
     "memories",
     "memory_vectors",
@@ -60,6 +61,14 @@ BACKUP_TABLES: tuple[str, ...] = (
     "reflection_logs",
     "identity_seen",
     "metric_series",
+    "member_profiles",
+    "fusion_state",
+    "persona_events",
+    "empathy_events",
+    "worldbook_entries",
+    "tkg_nodes",
+    "tkg_edges",
+    "proactive_queue",
 )
 """参与全局备份与恢复的业务表。新增表时同步登记在这里，否则会被备份遗漏。"""
 

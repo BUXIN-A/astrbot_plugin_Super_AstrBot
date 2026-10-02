@@ -366,6 +366,114 @@
       }
     }
   },
+  "consolidation": {
+    "description": "记忆整合",
+    "type": "object",
+    "hint": "周期性把零散低价值的旧记忆按作用域聚类，用模型汇聚成一条更完整的记忆，原始条目归档；治「记忆过于零散」",
+    "items": {
+      "enabled": {
+        "description": "启用记忆整合",
+        "type": "bool",
+        "default": false,
+        "hint": "默认关闭；开启后按下方周期执行，失败不影响正常对话"
+      },
+      "interval_minutes": {
+        "description": "整合周期（分钟）",
+        "type": "int",
+        "default": 1440,
+        "slider": {
+          "min": 60,
+          "max": 10080,
+          "step": 60
+        },
+        "hint": "默认每天一次"
+      },
+      "min_age_days": {
+        "description": "只整合至少多少天前的记忆",
+        "type": "float",
+        "default": 7.0,
+        "slider": {
+          "min": 0.0,
+          "max": 90.0,
+          "step": 1.0
+        },
+        "hint": "给新记忆留出观察期，只整合足够旧的条目"
+      },
+      "max_importance": {
+        "description": "只整合重要度不高于该值的记忆",
+        "type": "float",
+        "default": 0.5,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "重要记忆不参与整合，避免被合并稀释"
+      },
+      "min_memories_per_group": {
+        "description": "每组最少记忆条数（不足不整合）",
+        "type": "int",
+        "default": 3,
+        "slider": {
+          "min": 2,
+          "max": 20,
+          "step": 1
+        }
+      },
+      "max_group_size": {
+        "description": "单次模型调用最多带多少条原始记忆",
+        "type": "int",
+        "default": 25,
+        "slider": {
+          "min": 5,
+          "max": 100,
+          "step": 5
+        },
+        "hint": "作用域内的组按时间切成若干窗口分别整合，避免一次调用塞进几百条撑爆上下文"
+      },
+      "max_groups_per_run": {
+        "description": "单轮最多整合多少组",
+        "type": "int",
+        "default": 5,
+        "slider": {
+          "min": 1,
+          "max": 50,
+          "step": 1
+        }
+      },
+      "max_candidates": {
+        "description": "单轮最多扫描多少条候选",
+        "type": "int",
+        "default": 500,
+        "slider": {
+          "min": 50,
+          "max": 5000,
+          "step": 50
+        }
+      },
+      "keep_original": {
+        "description": "整合后如何处理原始记忆",
+        "type": "string",
+        "options": [
+          "archive",
+          "delete"
+        ],
+        "labels": [
+          "归档（可回溯）",
+          "删除（不可恢复）"
+        ],
+        "default": "archive",
+        "hint": "建议归档：整合出错时还能找回原始条目"
+      },
+      "provider_id": {
+        "description": "整合所用模型",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider",
+        "hint": "留空则使用当前默认模型"
+      }
+    }
+  },
   "journal": {
     "description": "现实桥（周记 / 日记 / 随笔）",
     "type": "object",
@@ -1310,6 +1418,415 @@
           "step": 100
         },
         "hint": "内置向量检索为暴力余弦，上限用于防止超大记忆库拖慢主流程"
+      }
+    }
+  },
+  "members": {
+    "description": "群友识别（拟人化融合）",
+    "type": "object",
+    "hint": "把身份观测聚合成群友档案与差异化对话策略：语气 / 称呼 / 话题 / 禁忌只做表层微调，不切换人格（默认开启）",
+    "items": {
+      "enabled": {
+        "description": "启用群友识别",
+        "type": "bool",
+        "default": true,
+        "hint": "把 identity 观测聚合成档案；无档案时不注入任何内容，零影响"
+      },
+      "inject_strategy": {
+        "description": "注入群友策略",
+        "type": "bool",
+        "default": true,
+        "hint": "命中已有档案时注入「群友档案」块（称呼/语气/话题/禁忌）"
+      },
+      "max_members": {
+        "description": "档案聚合上限（人）",
+        "type": "int",
+        "default": 200,
+        "slider": {
+          "min": 10,
+          "max": 5000,
+          "step": 1
+        },
+        "hint": "面板聚合时最多处理多少位群友，超大群建议调低"
+      },
+      "max_injected_chars": {
+        "description": "策略注入字符上限",
+        "type": "int",
+        "default": 320,
+        "slider": {
+          "min": 80,
+          "max": 1200,
+          "step": 1
+        }
+      },
+      "distill_top_memories": {
+        "description": "蒸馏取样记忆条数",
+        "type": "int",
+        "default": 5,
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        },
+        "hint": "在线自写档案时取样该群友的高权重记忆条数"
+      },
+      "profile_ttl_days": {
+        "description": "档案新鲜度窗口（天）",
+        "type": "float",
+        "default": 60.0,
+        "slider": {
+          "min": 1.0,
+          "max": 3650.0,
+          "step": 1.0
+        },
+        "hint": "超过该时长未互动的档案标记为久未联系"
+      }
+    }
+  },
+  "forge": {
+    "description": "PersonaForge 三层人格",
+    "type": "object",
+    "hint": "单人格的三层建模（核心特质 / 表层风格 / 动态状态）：回复前注入人格摘要，抑制长对话漂移（默认开启）",
+    "items": {
+      "enabled": {
+        "description": "启用三层人格注入",
+        "type": "bool",
+        "default": true,
+        "hint": "把三层人格摘要注入 LLM 请求；单人格，不随对话对象切换"
+      },
+      "introspection": {
+        "description": "选择性双过程内省",
+        "type": "bool",
+        "default": false,
+        "hint": "仅在关键轮（首次对话/情绪强度高/触及核心兴趣）先产出内心独白，会产生额外模型调用"
+      },
+      "introspection_provider_id": {
+        "description": "内省所用模型",
+        "type": "string",
+        "default": "",
+        "hint": "留空跟随会话默认模型；建议用便宜的小模型"
+      },
+      "introspection_timeout_seconds": {
+        "description": "内省超时（秒）",
+        "type": "int",
+        "default": 45,
+        "slider": {
+          "min": 5,
+          "max": 300,
+          "step": 1
+        }
+      },
+      "max_monologue_chars": {
+        "description": "内心独白字符上限",
+        "type": "int",
+        "default": 400,
+        "slider": {
+          "min": 100,
+          "max": 2000,
+          "step": 1
+        }
+      },
+      "max_injected_chars": {
+        "description": "人格注入字符上限",
+        "type": "int",
+        "default": 900,
+        "slider": {
+          "min": 200,
+          "max": 3000,
+          "step": 1
+        }
+      }
+    }
+  },
+  "evolution": {
+    "description": "人格演化轨迹（character-sim）",
+    "type": "object",
+    "hint": "每轮互动按经验类型（冲突/脆弱/连接/成功…）施加微量特质漂移，长期累积成人物弧光",
+    "items": {
+      "enabled": {
+        "description": "启用人格演化轨迹",
+        "type": "bool",
+        "default": true,
+        "hint": "按经验类型对特质施加微量漂移并留痕（规则判定，零模型调用）"
+      },
+      "min_confidence": {
+        "description": "经验判定置信度门槛",
+        "type": "float",
+        "default": 0.45,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "低于该置信度的经验不写入画像"
+      },
+      "max_delta_per_exchange": {
+        "description": "单轮特质最大改动",
+        "type": "float",
+        "default": 0.03,
+        "slider": {
+          "min": 0.0,
+          "max": 0.2,
+          "step": 0.005
+        },
+        "hint": "character-sim 原护栏，建议保持默认"
+      },
+      "keep_events": {
+        "description": "演化事件保留条数",
+        "type": "int",
+        "default": 2000,
+        "slider": {
+          "min": 100,
+          "max": 20000,
+          "step": 1
+        }
+      }
+    }
+  },
+  "empathy": {
+    "description": "CogEmp 共情管线",
+    "type": "object",
+    "hint": "三阶段共情：情绪识别 → 原因理解 → 认知共情润色；识别到情绪信号时注入语气指引（默认开启）",
+    "items": {
+      "enabled": {
+        "description": "启用共情管线",
+        "type": "bool",
+        "default": true
+      },
+      "stage_identify": {
+        "description": "阶段①情绪识别",
+        "type": "bool",
+        "default": true,
+        "hint": "中文情绪词典命中即识别；关闭后整条管线不产出"
+      },
+      "stage_understand": {
+        "description": "阶段②原因理解",
+        "type": "bool",
+        "default": true,
+        "hint": "用因果线索词把情绪落到话题域（学业/工作/关系…）"
+      },
+      "stage_empathize": {
+        "description": "阶段③认知共情",
+        "type": "bool",
+        "default": true,
+        "hint": "产出「怎么回」的语气指引交给主模型，不代写回复"
+      },
+      "temperature": {
+        "description": "共情温度",
+        "type": "float",
+        "default": 0.55,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "低=克制理性，高=温暖陪伴"
+      },
+      "min_intensity": {
+        "description": "触发强度门槛",
+        "type": "float",
+        "default": 0.35,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "低于该情绪强度只留痕、不注入"
+      },
+      "max_injected_chars": {
+        "description": "指引注入字符上限",
+        "type": "int",
+        "default": 300,
+        "slider": {
+          "min": 80,
+          "max": 1200,
+          "step": 1
+        }
+      },
+      "log_limit": {
+        "description": "日志默认条数",
+        "type": "int",
+        "default": 50,
+        "slider": {
+          "min": 5,
+          "max": 200,
+          "step": 1
+        }
+      }
+    }
+  },
+  "latrace": {
+    "description": "LATRACE 时序图谱（进程内）",
+    "type": "object",
+    "hint": "进程内时序知识图谱：实体/关系带时间语义与证据链，检索时做图扩展并附 provenance（默认开启）",
+    "items": {
+      "enabled": {
+        "description": "启用时序图谱",
+        "type": "bool",
+        "default": true,
+        "hint": "全部在插件进程内运行，无 docker / 无外部服务"
+      },
+      "max_nodes": {
+        "description": "节点容量上限",
+        "type": "int",
+        "default": 4000,
+        "slider": {
+          "min": 200,
+          "max": 50000,
+          "step": 1
+        },
+        "hint": "超出后淘汰最久未活跃节点"
+      },
+      "recall_extra": {
+        "description": "图扩展补充条数",
+        "type": "int",
+        "default": 3,
+        "slider": {
+          "min": 0,
+          "max": 10,
+          "step": 1
+        },
+        "hint": "每条检索结果之外，额外从图上邻居召回的记忆条数"
+      },
+      "evidence_limit": {
+        "description": "证据链展示条数",
+        "type": "int",
+        "default": 3,
+        "slider": {
+          "min": 1,
+          "max": 10,
+          "step": 1
+        }
+      },
+      "ingest_on_write": {
+        "description": "写入时增量建图",
+        "type": "bool",
+        "default": true,
+        "hint": "记忆落库后顺带抽取实体入图；关闭后只按「重建」按钮批量回填"
+      }
+    }
+  },
+  "tiers": {
+    "description": "letta 三级记忆（概念移植）",
+    "type": "object",
+    "hint": "把记忆派生为 核心 / 召回 / 归档 三级并展示占比；只读分级，不改写记忆（默认开启）",
+    "items": {
+      "enabled": {
+        "description": "启用三级分级",
+        "type": "bool",
+        "default": true
+      },
+      "core_importance": {
+        "description": "核心层重要度门槛",
+        "type": "float",
+        "default": 0.75,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "core_access": {
+        "description": "核心层访问次数门槛",
+        "type": "int",
+        "default": 3,
+        "slider": {
+          "min": 0,
+          "max": 50,
+          "step": 1
+        }
+      },
+      "archive_importance": {
+        "description": "归档层重要度门槛",
+        "type": "float",
+        "default": 0.35,
+        "slider": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "hint": "低于该重要度归入归档层"
+      }
+    }
+  },
+  "worldbook": {
+    "description": "世界书 / Lorebook",
+    "type": "object",
+    "hint": "关于用户 / 群 / 世界的事实卡：按触发词命中后注入（默认开启，无条目时零影响）",
+    "items": {
+      "enabled": {
+        "description": "启用世界书",
+        "type": "bool",
+        "default": true
+      },
+      "max_entries": {
+        "description": "条目数上限",
+        "type": "int",
+        "default": 200,
+        "slider": {
+          "min": 10,
+          "max": 2000,
+          "step": 1
+        }
+      },
+      "max_injected_chars": {
+        "description": "单次注入字符上限",
+        "type": "int",
+        "default": 600,
+        "slider": {
+          "min": 100,
+          "max": 3000,
+          "step": 1
+        }
+      }
+    }
+  },
+  "fusion": {
+    "description": "融合与衰减（AMBRACE）",
+    "type": "object",
+    "hint": "艾宾浩斯保留率口径 R=exp(-Δt/S)：面板展示双曲线；写回重要度默认关闭，避免影响既有检索权重",
+    "items": {
+      "decay": {
+        "description": "启用艾宾浩斯衰减接管",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后监控页展示衰减风险，并可按维护任务结算"
+      },
+      "decay_write_back": {
+        "description": "保留率写回重要度",
+        "type": "bool",
+        "default": false,
+        "hint": "每日维护把保留率折算回 memories.importance；需同时开启「艾宾浩斯衰减接管」，且会改变检索排序，默认关闭"
+      },
+      "decay_default_strength_days": {
+        "description": "默认记忆强度 S（天）",
+        "type": "float",
+        "default": 7.0,
+        "slider": {
+          "min": 0.5,
+          "max": 365.0,
+          "step": 0.5
+        }
+      },
+      "decay_threshold_pct": {
+        "description": "接近遗忘阈值（%）",
+        "type": "float",
+        "default": 20.0,
+        "slider": {
+          "min": 0.0,
+          "max": 100.0,
+          "step": 1.0
+        }
+      },
+      "queue_max_pending": {
+        "description": "回访队列待发上限",
+        "type": "int",
+        "default": 200,
+        "slider": {
+          "min": 10,
+          "max": 2000,
+          "step": 1
+        }
       }
     }
   }

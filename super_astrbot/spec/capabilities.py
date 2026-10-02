@@ -137,6 +137,17 @@ CAPABILITIES: tuple[Capability, ...] = (
         description="定期回顾对话并沉淀洞察为长期记忆。",
     ),
     Capability(
+        key="consolidation.enabled",
+        title="记忆整合",
+        domain="consolidation",
+        default=False,
+        depends_on=("memory.enabled",),
+        description=(
+            "周期性把「足够旧 + 重要度低」的零散记忆按作用域聚类，"
+            "用模型汇聚成一条更完整的记忆，原始条目归档；默认关闭。"
+        ),
+    ),
+    Capability(
         key="journal.enabled",
         title="现实桥（周记 / 日记 / 随笔）",
         domain="journal",
@@ -261,6 +272,110 @@ CAPABILITIES: tuple[Capability, ...] = (
         description=(
             "MaiBot 风格的扩展学习：表达模式按发送者个性化、学习产物统一时间衰减。"
             "与拟人化学习、知识图谱配合使用；默认关闭。"
+        ),
+    ),
+    # ------------------------------------------------------------------ #
+    # 群聊拟人化融合域（全部为进程内模块，来源见「蒸馏项目」）
+    # ------------------------------------------------------------------ #
+    Capability(
+        key="members.enabled",
+        title="群友识别",
+        domain="members",
+        default=True,
+        depends_on=("basic.enabled",),
+        description=(
+            "把身份观测聚合成「一位群友一份档案」：稳定称呼、关系类型、"
+            "个人记忆摘要与差异化对话策略（语气 / 称呼 / 话题 / 禁忌）。"
+            "策略注入只改写表层表达，不切换人格；默认开启，无档案时零影响。"
+        ),
+    ),
+    Capability(
+        key="forge.enabled",
+        title="PersonaForge 三层人格",
+        domain="forge",
+        default=True,
+        depends_on=("basic.enabled",),
+        description=(
+            "单人格的三层建模：核心特质（大五人格 / 价值观 / 防御机制）· "
+            "表层风格（句长 / 词汇 / 口头禅 / 语气词）· 动态状态（心情 / 能量 / 关系）。"
+            "回复前注入人格摘要，抑制长对话中的风格漂移（来源 PersonaForge，进程内）。"
+        ),
+    ),
+    Capability(
+        key="forge.introspection",
+        title="选择性双过程内省",
+        domain="forge",
+        default=False,
+        depends_on=("forge.enabled",),
+        description=(
+            "仅在关键轮（首次对话 / 情绪强度高 / 触及核心兴趣）先做一次「内心独白」"
+            "再组织回复，用少量模型调用换取一致性。会产生额外模型调用；默认关闭。"
+        ),
+    ),
+    Capability(
+        key="evolution.enabled",
+        title="人格演化轨迹",
+        domain="evolution",
+        default=True,
+        depends_on=("forge.enabled",),
+        description=(
+            "每轮互动按经验类型（冲突 / 脆弱 / 连接 / 成功…）施加微量特质漂移并留痕，"
+            "长期累积成真实的人物弧光（来源 character-sim 影响向量，零成本规则判定）。"
+        ),
+    ),
+    Capability(
+        key="empathy.enabled",
+        title="CogEmp 共情管线",
+        domain="empathy",
+        default=True,
+        depends_on=("basic.enabled",),
+        description=(
+            "三阶段共情：情绪识别 → 原因理解 → 认知共情润色。"
+            "识别到情绪信号时注入对应语气指引（来源 CogEmp，进程内提示词模块）。"
+        ),
+    ),
+    Capability(
+        key="latrace.enabled",
+        title="LATRACE 时序图谱",
+        domain="latrace",
+        default=True,
+        depends_on=("memory.enabled",),
+        description=(
+            "进程内时序知识图谱：实体与关系带时间语义与证据链（来源对话 / 离线蒸馏），"
+            "检索时把图上相邻的记忆一并召回并附 provenance（来源 LATRACE 思想，进程内重写）。"
+        ),
+    ),
+    Capability(
+        key="tiers.enabled",
+        title="letta 三级记忆",
+        domain="tiers",
+        default=True,
+        depends_on=("memory.enabled",),
+        description=(
+            "把记忆分入核心（core）/ 归档（archive）/ 召回（recall）三级并给出占比，"
+            "核心层优先注入、归档层不参与召回（来源 letta 概念移植，不引入其服务）。"
+        ),
+    ),
+    Capability(
+        key="worldbook.enabled",
+        title="世界书 / Lorebook",
+        domain="worldbook",
+        default=True,
+        depends_on=("basic.enabled",),
+        description=(
+            "关于用户 / 群 / 世界的事实卡：按触发词命中后注入（来源 AMBRACE Lorebook）。"
+            "没有条目时零影响；默认开启。"
+        ),
+    ),
+    Capability(
+        key="fusion.decay",
+        title="艾宾浩斯衰减接管",
+        domain="fusion",
+        default=False,
+        depends_on=("memory.enabled",),
+        description=(
+            "用 R=exp(-Δt/S) 统一记忆保留率口径，面板展示自然遗忘与主动复习双曲线；"
+            "「写回重要度」默认关闭，避免影响既有检索权重（来源 AMBRACE，进程内）。"
         ),
     ),
 )

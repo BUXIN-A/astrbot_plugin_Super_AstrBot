@@ -14,6 +14,7 @@ from .config import (
     INJECTION_SYSTEM,
     MemoryConfig,
 )
+from .dedup import SIMILAR_THRESHOLD, content_fingerprint, similar_enough
 from .formatter import build_memory_body, format_search_results
 from .identity import (
     DEFAULT_IDENTITY_STRATEGY,
@@ -37,6 +38,7 @@ from .models import (
     KIND_PREFERENCE,
     SOURCE_AGENT,
     SOURCE_CAPTURE,
+    SOURCE_CONSOLIDATION,
     SOURCE_JOURNAL,
     SOURCE_MANUAL,
     SOURCE_REFLECTION,
@@ -94,6 +96,9 @@ __all__ = [
     "normalize_scores",
     "build_memory_body",
     "format_search_results",
+    "SIMILAR_THRESHOLD",
+    "content_fingerprint",
+    "similar_enough",
     "INJECTION_DISABLED",
     "INJECTION_EXTRA",
     "INJECTION_SYSTEM",
@@ -109,6 +114,7 @@ __all__ = [
     "SOURCE_JOURNAL",
     "SOURCE_AGENT",
     "SOURCE_MANUAL",
+    "SOURCE_CONSOLIDATION",
     "STATUS_ACTIVE",
     "STATUS_BUFFERED",
     "STATUS_PENDING",

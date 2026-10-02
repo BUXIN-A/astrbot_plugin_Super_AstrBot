@@ -11,6 +11,7 @@ from super_astrbot.learning.prompts import (
     build_reflection_prompt,
     build_weekly_prompt,
     parse_insights,
+    parse_reflection,
 )
 from super_astrbot.spec.errors import LlmError
 from super_astrbot.spec.scopes import MemoryScope, ScopeType
@@ -426,3 +427,158 @@ def test_scope_type_roundtrip_in_reflection_rows(tmp_path: Path) -> None:
         return str(rows[0]["scope_type"]) if rows else ""
 
     assert asyncio.run(_run()) == "user"
+
+
+# --------------------------------------------------------------------- #
+# 叙事反思：主产出是一条第一人称叙事（可续写），facts 只作兜底
+# --------------------------------------------------------------------- #
+
+NARRATIVE_JSON = (
+    '{"summary": "这几天群里围绕养猫聊了很多。2026-09-30 buld 问 выбрал哪种猫粮，'
+    '我整理了三个品牌的对比；10-01 他家猫体检正常，大家都松了口气。'
+    '语气上他从焦虑到放松，我就安静地陪着聊。",'
+    ' "importance": 0.7, "tags": ["养猫"],'
+    ' "facts": [{"content": "buld 的猫叫小鉴", "kind": "fact", "importance": 0.6}]}'
+)
+
+
+def test_parse_reflection_narrative_format() -> None:
+    out = parse_reflection(NARRATIVE_JSON, max_facts=5)
+    assert out is not None
+    assert "第一人称" not in out["summary"][:0]  # 占位：确有 summary
+    assert len(out["summary"]) >= 20
+    assert out["importance"] == 0.7
+    assert len(out["facts"]) == 1
+    assert out["facts"][0]["kind"] == "fact"
+
+
+def test_parse_reflection_accepts_legacy_array() -> None:
+    out = parse_reflection(VALID_JSON, max_facts=5)
+    assert out is not None
+    assert out["summary"] == ""
+    assert len(out["facts"]) == 2
+
+
+def test_parse_reflection_short_summary_dropped() -> None:
+    text = '{"summary": "太短", "importance": 0.5, "facts": []}'
+    out = parse_reflection(text, max_facts=5)
+    assert out is not None
+    assert out["summary"] == ""
+
+
+def test_parse_reflection_garbage_returns_none() -> None:
+    assert parse_reflection("模型胡说八道，没有 JSON", max_facts=5) is None
+
+
+def test_reflection_prompt_includes_previous_block() -> None:
+    prompt = build_reflection_prompt("[10-01 10:00] 用户：在吗", max_facts=3)
+    assert "<previous_summary>" not in prompt
+    prompt_with_prev = build_reflection_prompt(
+        "[10-01 10:00] 用户：在吗", max_facts=3, previous_block="<previous_summary>\n旧叙事\n</previous_summary>\n"
+    )
+    assert "<previous_summary>" in prompt_with_prev
+    assert "续写合并" in prompt_with_prev
+
+
+def test_reflect_writes_narrative_episode(tmp_path: Path) -> None:
+    async def _run() -> tuple[int, str, str, int]:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        for index in range(3):
+            await stack.memory.buffer_episode(scope, f"用户：聊到养猫的事 {index}")
+        config = ReflectionConfig(
+            min_messages=2, trigger_rounds=2, interval_minutes=1, cooldown_minutes=0, mode="rounds"
+        )
+        service = await _make_service(stack, FakeLlm(NARRATIVE_JSON), config)
+        outcome = await service.reflect(scope)
+        rows = await stack.memories.list_by_status([scope], status="active", limit=50)
+        episodes = [
+            row
+            for row in rows
+            if row["kind"] == "episode" and row["source"] == "reflection"
+        ]
+        remaining = await stack.memory.count_buffer(scope)
+        await stack.close()
+        return (
+            outcome.produced,
+            str(episodes[0]["content"])[:20] if episodes else "",
+            str(episodes[0]["status"]) if episodes else "",
+            remaining,
+        )
+
+    produced, head, status, remaining = asyncio.run(_run())
+    assert produced == 2, "1 条叙事 + 1 条 facts 兜底"
+    assert "养猫" in head
+    assert status == "active"
+    assert remaining == 0, "叙事产出后缓冲应被消费"
+
+
+def test_reflect_continues_recent_narrative_in_place(tmp_path: Path) -> None:
+    """14 天内的旧叙事应被就地续写：ID 不变、正文更新，而不是另建新行。"""
+
+    async def _run() -> tuple[int, str]:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        import time as _time
+
+        moment = _time.time()
+        old_id = await stack.memory.remember_text(
+            scope,
+            "九月底和谷雨聊了她换工作的事，我把简历建议发给了她。",
+            kind="episode",
+            source="reflection",
+            created_at=moment - 3 * 86400.0,
+        )
+        for index in range(3):
+            await stack.memory.buffer_episode(scope, f"用户：后续消息 {index}")
+        config = ReflectionConfig(
+            min_messages=2, trigger_rounds=2, interval_minutes=1, cooldown_minutes=0, mode="rounds"
+        )
+        service = await _make_service(stack, FakeLlm(NARRATIVE_JSON), config)
+        await service.reflect(scope)
+        rows = await stack.memories.list_by_status([scope], status="active", limit=50)
+        episodes = [
+            row for row in rows if row["kind"] == "episode" and row["source"] == "reflection"
+        ]
+        content = str(episodes[0]["content"]) if episodes else ""
+        await stack.close()
+        return old_id, len(episodes), int(episodes[0]["id"]) if episodes else -1, content
+
+    old_id, count, new_id, content = asyncio.run(_run())
+    assert count == 1, "续写不应新建叙事行"
+    assert new_id == old_id, "应复用原叙事行（ID 不变）"
+    assert "养猫" in content, "正文应更新为续写后的新叙事"
+
+
+def test_reflect_starts_new_narrative_outside_window(tmp_path: Path) -> None:
+    """超过续写窗口的旧叙事不再合并：新对话另起一条新叙事。"""
+
+    async def _run() -> int:
+        stack = await build_stack(tmp_path)
+        scope = MemoryScope.for_session("s1")
+        import time as _time
+
+        moment = _time.time()
+        await stack.memory.remember_text(
+            scope,
+            "六月的旧叙事，内容完全不同：讨论过服务器迁移的排期表。",
+            kind="episode",
+            source="reflection",
+            created_at=moment - 30 * 86400.0,
+        )
+        for index in range(3):
+            await stack.memory.buffer_episode(scope, f"用户：新话题消息 {index}")
+        config = ReflectionConfig(
+            min_messages=2, trigger_rounds=2, interval_minutes=1, cooldown_minutes=0, mode="rounds"
+        )
+        service = await _make_service(stack, FakeLlm(NARRATIVE_JSON), config)
+        await service.reflect(scope)
+        rows = await stack.memories.list_by_status([scope], status="active", limit=50)
+        episodes = [
+            row for row in rows if row["kind"] == "episode" and row["source"] == "reflection"
+        ]
+        await stack.close()
+        return len(episodes)
+
+    count = asyncio.run(_run())
+    assert count == 2, "窗口外应另起新叙事（旧 1 条 + 新 1 条）"

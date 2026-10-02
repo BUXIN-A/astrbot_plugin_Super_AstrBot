@@ -1203,3 +1203,41 @@ def test_reflection_scan_logs_skip_reason(tmp_path: Path) -> None:
     infos = [message for level, message in records if level == "info"]
     assert any("反思扫描" in msg for msg in infos), infos
     assert any("本作用域 1/20" in msg and "全库 1/50" in msg for msg in infos), infos
+
+
+def test_consolidation_job_registered_only_when_enabled(tmp_path: Path) -> None:
+    """记忆整合任务：默认关闭时零注册，配置开启后注册，热关停后移除。"""
+
+    async def _job_keys(config: dict) -> set[str]:
+        app = _new_app(tmp_path, config)
+        await app.start()
+        try:
+            return {job["key"] for job in (await app.status())["scheduler"]}
+        finally:
+            await app.shutdown()
+
+    default_keys = asyncio.run(_job_keys({}))
+    assert "memory-consolidation" not in default_keys, "默认关闭时不应注册整合任务"
+
+    enabled_keys = asyncio.run(_job_keys({"consolidation": {"enabled": True}}))
+    assert "memory-consolidation" in enabled_keys, "开启后应注册整合任务"
+
+
+def test_consolidation_config_wired_into_app(tmp_path: Path) -> None:
+    """整合服务随装配创建，且 enabled 跟随能力解析结果。"""
+
+    async def _run() -> tuple[bool, bool]:
+        app = _new_app(tmp_path, {"consolidation": {"enabled": True, "interval_minutes": 720}})
+        await app.start()
+        try:
+            service = app._consolidation_service
+            assert service is not None
+            config = service.config
+            enabled_by_capability = app._enabled("consolidation.enabled")
+            return bool(config.enabled), enabled_by_capability
+        finally:
+            await app.shutdown()
+
+    config_enabled, capability_enabled = asyncio.run(_run())
+    assert config_enabled is True
+    assert capability_enabled is True
